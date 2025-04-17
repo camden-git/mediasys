@@ -1,0 +1,9 @@
+mediasysbackend
+.env
+*.db
+*.db*
+
+generated_thumbnails/*
+generated_thumbnails
+test
+test/*
