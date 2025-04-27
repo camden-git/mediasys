@@ -23,11 +23,10 @@ type ThumbnailGenerator struct {
 	DB       *sql.DB
 	Wg       sync.WaitGroup
 	StopChan chan struct{}
-	Pending  map[string]bool // tracks jobs currently being processed or queued
+	Pending  map[string]bool
 	Mutex    sync.Mutex
 }
 
-// NewThumbnailGenerator creates and starts a new thumbnail generator pool
 func NewThumbnailGenerator(cfg config.Config, db *sql.DB, queueSize, numWorkers int) *ThumbnailGenerator {
 	if numWorkers <= 0 {
 		numWorkers = 1
@@ -53,7 +52,6 @@ func NewThumbnailGenerator(cfg config.Config, db *sql.DB, queueSize, numWorkers 
 	return gen
 }
 
-// worker function runs in a goroutine, processing jobs from the queue
 func (tg *ThumbnailGenerator) worker(id int) {
 	defer tg.Wg.Done()
 	log.Printf("thumbnail worker %d started", id)
@@ -77,7 +75,6 @@ func (tg *ThumbnailGenerator) worker(id int) {
 	}
 }
 
-// processJob performs the actual thumbnail generation and DB update
 func (tg *ThumbnailGenerator) processJob(job ThumbnailJob) {
 	if _, err := os.Stat(job.OriginalImagePath); os.IsNotExist(err) {
 		log.Printf("original file %s not found, skipping thumbnail generation", job.OriginalImagePath)
@@ -102,15 +99,12 @@ func (tg *ThumbnailGenerator) processJob(job ThumbnailJob) {
 	err = database.SetThumbnailInfo(tg.DB, job.OriginalRelativePath, thumbSavePath, job.ModTimeUnix)
 	if err != nil {
 		log.Printf("ERROR updating thumbnail DB record for %s after generation: %v", job.OriginalRelativePath, err)
-		// potential inconsistency: thumbnail generated but DB not updated.
-		// os.Remove(thumbSavePath)
 		return
 	}
 
 	log.Printf("successfully generated thumbnail and updated DB for: %s", job.OriginalRelativePath)
 }
 
-// QueueJob adds a job to the queue if it's not already pending
 func (tg *ThumbnailGenerator) QueueJob(job ThumbnailJob) bool {
 	tg.Mutex.Lock()
 	if tg.Pending[job.OriginalRelativePath] {

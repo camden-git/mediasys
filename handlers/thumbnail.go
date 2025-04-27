@@ -5,14 +5,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
 
-// ThumbnailServer creates a handler to serve thumbnails from the specified directory.
+// ThumbnailServer creates a handler to serve thumbnails from the specified directory
 func ThumbnailServer(thumbnailDir string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// extract filename
 		requestedFilename := strings.TrimPrefix(r.URL.Path, thumbnailApiPrefix)
 		if requestedFilename == "" || strings.Contains(requestedFilename, "/") || strings.Contains(requestedFilename, "..") {
 			http.Error(w, "Invalid thumbnail path", http.StatusBadRequest)
@@ -41,7 +41,7 @@ func ThumbnailServer(thumbnailDir string) http.HandlerFunc {
 		}
 
 		cacheDuration := 24 * time.Hour
-		w.Header().Set("Cache-Control", "public, max-age="+string(int(cacheDuration.Seconds())))
+		w.Header().Set("Cache-Control", "public, max-age="+strconv.Itoa(int(cacheDuration.Seconds())))
 		w.Header().Set("Expires", time.Now().Add(cacheDuration).Format(http.TimeFormat))
 
 		http.ServeFile(w, r, cleanedPath)

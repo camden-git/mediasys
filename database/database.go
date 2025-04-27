@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"strings"
 
 	sq "github.com/Masterminds/squirrel"
 	_ "github.com/mattn/go-sqlite3"
@@ -11,82 +12,79 @@ import (
 
 var psql = sq.StatementBuilder.PlaceholderFormat(sq.Question)
 
-type ThumbnailInfo struct {
-	ThumbnailPath string
-	LastModified  int64
-}
-
 func InitDB(dataSourceName string) (*sql.DB, error) {
 	db, err := sql.Open("sqlite3", dataSourceName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	// enable write-ahead Logging for better concurrency
 	_, err = db.Exec("PRAGMA journal_mode=WAL;")
 	if err != nil {
-		log.Printf("warning: failed to set WAL mode: %v", err)
+		log.Printf("Warning: Failed to set WAL mode: %v", err) // Non-fatal
 	}
 
-	sqlStmt := `
-	CREATE TABLE IF NOT EXISTS thumbnails (
-		original_path TEXT PRIMARY KEY,
-		thumbnail_path TEXT NOT NULL,
-		last_modified INTEGER NOT NULL
-	);
-	`
-	_, err = db.Exec(sqlStmt)
+	_, err = db.Exec("PRAGMA foreign_keys = ON;")
 	if err != nil {
-		db.Close()
-		return nil, fmt.Errorf("failed to create thumbnails table: %w", err)
+		db.Close() // close on critical error
+		return nil, fmt.Errorf("failed to enable foreign keys: %w", err)
 	}
 
-	log.Println("database initialized successfully at", dataSourceName)
-	return db, nil
-}
-
-// GetThumbnailInfo retrieves thumbnail path and last modified time
-func GetThumbnailInfo(db *sql.DB, originalPath string) (ThumbnailInfo, error) {
-	var info ThumbnailInfo
-
-	queryBuilder := psql.Select("thumbnail_path", "last_modified").
-		From("thumbnails").
-		Where(sq.Eq{"original_path": originalPath}).
-		Limit(1)
-
-	sqlStr, args, err := queryBuilder.ToSql()
-	if err != nil {
-		return ThumbnailInfo{}, fmt.Errorf("failed to build SQL query for GetThumbnailInfo: %w", err)
+	tableCreationStmts := []string{
+		`CREATE TABLE IF NOT EXISTS thumbnails (
+			original_path TEXT PRIMARY KEY,
+			thumbnail_path TEXT NOT NULL,
+			last_modified INTEGER NOT NULL
+		);`,
+		`CREATE TABLE IF NOT EXISTS albums (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL UNIQUE,
+			slug TEXT NOT NULL UNIQUE,
+			description TEXT,
+			folder_path TEXT NOT NULL UNIQUE,
+			created_at INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL
+		);`,
+		`CREATE TABLE IF NOT EXISTS people (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			primary_name TEXT NOT NULL,
+			created_at INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL
+		);`,
+		`CREATE TABLE IF NOT EXISTS aliases (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			person_id INTEGER NOT NULL,
+			name TEXT NOT NULL,
+			FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE CASCADE,
+			UNIQUE(person_id, name)
+		);`,
+		`CREATE TABLE IF NOT EXISTS faces (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			person_id INTEGER NULL, -- TODO: will we allow untagged faces? for now yes
+			image_path TEXT NOT NULL,
+			x1 INTEGER NOT NULL,
+			y1 INTEGER NOT NULL,
+			x2 INTEGER NOT NULL,
+			y2 INTEGER NOT NULL,
+			created_at INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL,
+			FOREIGN KEY(person_id) REFERENCES people(id) ON DELETE SET NULL -- untag face if person deleted
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_aliases_person_id ON aliases(person_id);`,
+		`CREATE INDEX IF NOT EXISTS idx_aliases_name ON aliases(name);`,
+		`CREATE INDEX IF NOT EXISTS idx_faces_person_id ON faces(person_id);`,
+		`CREATE INDEX IF NOT EXISTS idx_faces_image_path ON faces(image_path);`,
 	}
 
-	err = db.QueryRow(sqlStr, args...).Scan(&info.ThumbnailPath, &info.LastModified)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return ThumbnailInfo{}, sql.ErrNoRows // Explicitly return ErrNoRows
+	for i, stmt := range tableCreationStmts {
+		if strings.Contains(stmt, "(...)") {
+			continue
 		}
-		return ThumbnailInfo{}, fmt.Errorf("failed to query or scan thumbnail info for %s: %w", originalPath, err)
-	}
-	return info, nil
-}
-
-// SetThumbnailInfo inserts or updates thumbnail information
-func SetThumbnailInfo(db *sql.DB, originalPath, thumbnailPath string, lastModified int64) error {
-
-	queryBuilder := psql.Insert("thumbnails").
-		Columns("original_path", "thumbnail_path", "last_modified").
-		Values(originalPath, thumbnailPath, lastModified).
-		Suffix("ON CONFLICT(original_path) DO UPDATE SET").
-		Suffix("thumbnail_path = excluded.thumbnail_path,").
-		Suffix("last_modified = excluded.last_modified")
-
-	sqlStr, args, err := queryBuilder.ToSql()
-	if err != nil {
-		return fmt.Errorf("failed to build SQL query for SetThumbnailInfo: %w", err)
+		if _, err = db.Exec(stmt); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("failed to execute table creation statement %d: %w\nStatement: %s", i, err, stmt)
+		}
 	}
 
-	_, err = db.Exec(sqlStr, args...)
-	if err != nil {
-		return fmt.Errorf("failed to execute set thumbnail info for %s: %w", originalPath, err)
-	}
-	return nil
+	log.Println("Database initialized successfully at", dataSourceName)
+	return db, nil
 }
