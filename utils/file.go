@@ -21,15 +21,12 @@ var supportedImageExtensions = map[string]bool{
 	".tiff": true,
 }
 
-// IsRasterImage checks if the filename has a common raster image extension
 func IsRasterImage(filename string) bool {
 	ext := strings.ToLower(filepath.Ext(filename))
 	return supportedImageExtensions[ext]
 }
 
-// GenerateThumbnail creates a thumbnail with a UUID filename
-// returns the full path where the thumbnail was saved
-func GenerateThumbnail(originalImagePath, thumbnailDir string, maxWidth, maxHeight int) (string, error) { // Now takes thumbnailDir, returns save path + error
+func GenerateThumbnail(originalImagePath, thumbnailDir string, maxWidth, maxHeight int) (string, error) {
 	if err := os.MkdirAll(thumbnailDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create thumbnail directory %s: %w", thumbnailDir, err)
 	}
@@ -45,10 +42,10 @@ func GenerateThumbnail(originalImagePath, thumbnailDir string, maxWidth, maxHeig
 	if err != nil {
 		return "", fmt.Errorf("failed to generate UUID for thumbnail: %w", err)
 	}
-	thumbFilename := thumbUUID.String() + ".jpg" // Save all as jpg with UUID name
+	thumbFilename := thumbUUID.String() + ".jpg"
 	thumbnailSavePath := filepath.Join(thumbnailDir, thumbFilename)
 
-	err = imaging.Save(thumb, thumbnailSavePath, imaging.JPEGQuality(80)) // Adjust quality as needed
+	err = imaging.Save(thumb, thumbnailSavePath, imaging.JPEGQuality(80))
 	if err != nil {
 		return "", fmt.Errorf("failed to save thumbnail to %s: %w", thumbnailSavePath, err)
 	}
