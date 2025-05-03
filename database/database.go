@@ -12,6 +12,19 @@ import (
 
 var psql = sq.StatementBuilder.PlaceholderFormat(sq.Question)
 
+type Querier interface {
+	Exec(query string, args ...any) (sql.Result, error)
+	QueryRow(query string, args ...any) *sql.Row
+	Query(query string, args ...any) (*sql.Rows, error)
+}
+
+const (
+	StatusPending    = "pending"
+	StatusProcessing = "processing"
+	StatusDone       = "done"
+	StatusError      = "error"
+)
+
 func InitDB(dataSourceName string) (*sql.DB, error) {
 	db, err := sql.Open("sqlite3", dataSourceName)
 	if err != nil {
@@ -30,10 +43,34 @@ func InitDB(dataSourceName string) (*sql.DB, error) {
 	}
 
 	tableCreationStmts := []string{
-		`CREATE TABLE IF NOT EXISTS thumbnails (
+		`CREATE TABLE IF NOT EXISTS images (
 			original_path TEXT PRIMARY KEY,
-			thumbnail_path TEXT NOT NULL,
-			last_modified INTEGER NOT NULL
+			thumbnail_path TEXT NULL,
+			last_modified INTEGER NOT NULL,
+			width INTEGER NULL,
+			height INTEGER NULL,
+			aperture REAL NULL,
+			shutter_speed TEXT NULL,
+			iso INTEGER NULL,
+			focal_length REAL NULL,
+			lens_make TEXT NULL,
+			lens_model TEXT NULL,
+			camera_make TEXT NULL,
+			camera_model TEXT NULL,
+            taken_at INTEGER NULL,
+			-- Task Statuses (Default handled by EnsureImageRecordExists logic)
+			-- TODO: at some point maybe this becomes a less hardcoded system?
+			thumbnail_status TEXT NOT NULL DEFAULT 'pending',
+			metadata_status TEXT NOT NULL DEFAULT 'pending',
+			detection_status TEXT NOT NULL DEFAULT 'pending',
+			-- Task Timestamps
+			thumbnail_processed_at INTEGER NULL,
+			metadata_processed_at INTEGER NULL,
+			detection_processed_at INTEGER NULL,
+			-- Task Errors
+			thumbnail_error TEXT NULL,
+			metadata_error TEXT NULL,
+			detection_error TEXT NULL
 		);`,
 		`CREATE TABLE IF NOT EXISTS albums (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,6 +78,7 @@ func InitDB(dataSourceName string) (*sql.DB, error) {
 			slug TEXT NOT NULL UNIQUE,
 			description TEXT,
 			folder_path TEXT NOT NULL UNIQUE,
+			banner_image_path TEXT NULL,
 			created_at INTEGER NOT NULL,
 			updated_at INTEGER NOT NULL
 		);`,
@@ -73,6 +111,7 @@ func InitDB(dataSourceName string) (*sql.DB, error) {
 		`CREATE INDEX IF NOT EXISTS idx_aliases_name ON aliases(name);`,
 		`CREATE INDEX IF NOT EXISTS idx_faces_person_id ON faces(person_id);`,
 		`CREATE INDEX IF NOT EXISTS idx_faces_image_path ON faces(image_path);`,
+		`CREATE INDEX IF NOT EXISTS idx_images_taken_at ON images(taken_at);`,
 	}
 
 	for i, stmt := range tableCreationStmts {

@@ -12,60 +12,74 @@ import (
 )
 
 type Album struct {
-	ID          int64  `json:"id"`
-	Name        string `json:"name"`
-	Slug        string `json:"slug"`
-	Description string `json:"description,omitempty"`
-	FolderPath  string `json:"folder_path"`
-	CreatedAt   int64  `json:"created_at"`
-	UpdatedAt   int64  `json:"updated_at"`
+	ID              int64   `json:"id"`
+	Name            string  `json:"name"`
+	Slug            string  `json:"slug"`
+	Description     string  `json:"description,omitempty"`
+	FolderPath      string  `json:"folder_path"`
+	BannerImagePath *string `json:"banner_image_path,omitempty"`
+	CreatedAt       int64   `json:"created_at"`
+	UpdatedAt       int64   `json:"updated_at"`
 }
 
 func CreateAlbum(db *sql.DB, name, slug, description, folderPath string) (int64, error) {
 	now := time.Now().Unix()
 	folderPath = filepath.ToSlash(folderPath)
+
 	queryBuilder := psql.Insert("albums").
 		Columns("name", "slug", "description", "folder_path", "created_at", "updated_at").
 		Values(name, slug, description, folderPath, now, now).
 		Suffix("RETURNING id")
+
 	sqlStr, args, err := queryBuilder.ToSql()
 	if err != nil {
 		return 0, fmt.Errorf("failed to build SQL for CreateAlbum: %w", err)
 	}
+
 	var albumID int64
 	err = db.QueryRow(sqlStr, args...).Scan(&albumID)
 	if err != nil {
 		return 0, fmt.Errorf("failed to execute CreateAlbum query for %s (slug %s): %w", name, slug, err)
 	}
+
 	return albumID, nil
 }
 
 func ListAlbums(db *sql.DB) ([]Album, error) {
-	queryBuilder := psql.Select("id", "name", "slug", "description", "folder_path", "created_at", "updated_at").
+	queryBuilder := psql.Select("id", "name", "slug", "description", "folder_path",
+		"banner_image_path",
+		"created_at", "updated_at").
 		From("albums").
 		OrderBy("name ASC")
 	sqlStr, args, err := queryBuilder.ToSql()
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to build SQL for ListAlbums: %w", err)
 	}
+
 	rows, err := db.Query(sqlStr, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute ListAlbums query: %w", err)
 	}
+
 	defer rows.Close()
 	albums := []Album{}
 	for rows.Next() {
 		var a Album
-		err := rows.Scan(&a.ID, &a.Name, &a.Slug, &a.Description, &a.FolderPath, &a.CreatedAt, &a.UpdatedAt)
+		err := rows.Scan(&a.ID, &a.Name, &a.Slug, &a.Description, &a.FolderPath,
+			&a.BannerImagePath,
+			&a.CreatedAt, &a.UpdatedAt)
 		if err != nil {
 			log.Printf("Error scanning album row: %v", err)
 			continue
 		}
 		albums = append(albums, a)
 	}
+
 	if err = rows.Err(); err != nil {
 		return albums, fmt.Errorf("error iterating album rows: %w", err)
 	}
+
 	return albums, nil
 }
 
@@ -74,7 +88,9 @@ func scanAlbumRow(scanner interface {
 	Scan(dest ...interface{}) error
 }) (Album, error) {
 	var a Album
-	err := scanner.Scan(&a.ID, &a.Name, &a.Slug, &a.Description, &a.FolderPath, &a.CreatedAt, &a.UpdatedAt)
+	err := scanner.Scan(&a.ID, &a.Name, &a.Slug, &a.Description, &a.FolderPath,
+		&a.BannerImagePath,
+		&a.CreatedAt, &a.UpdatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return Album{}, sql.ErrNoRows
@@ -85,7 +101,9 @@ func scanAlbumRow(scanner interface {
 }
 
 func GetAlbumByID(db *sql.DB, id int64) (Album, error) {
-	queryBuilder := psql.Select("id", "name", "slug", "description", "folder_path", "created_at", "updated_at").
+	queryBuilder := psql.Select("id", "name", "slug", "description", "folder_path",
+		"banner_image_path",
+		"created_at", "updated_at").
 		From("albums").
 		Where(sq.Eq{"id": id}).
 		Limit(1)
@@ -102,7 +120,9 @@ func GetAlbumByID(db *sql.DB, id int64) (Album, error) {
 }
 
 func GetAlbumBySlug(db *sql.DB, slug string) (Album, error) {
-	queryBuilder := psql.Select("id", "name", "slug", "description", "folder_path", "created_at", "updated_at").
+	queryBuilder := psql.Select("id", "name", "slug", "description", "folder_path",
+		"banner_image_path",
+		"created_at", "updated_at").
 		From("albums").
 		Where(sq.Eq{"slug": slug}).
 		Limit(1)
@@ -149,6 +169,34 @@ func UpdateAlbum(db *sql.DB, id int64, name, description string) error {
 	}
 	if err != nil {
 		log.Printf("Warning: Could not get RowsAffected for UpdateAlbum ID %d: %v", id, err)
+	}
+	return nil
+}
+
+func UpdateAlbumBannerPath(db Querier, albumID int64, bannerPath *string) error {
+	now := time.Now().Unix()
+
+	queryBuilder := psql.Update("albums").
+		Set("banner_image_path", bannerPath).
+		Set("updated_at", now).
+		Where(sq.Eq{"id": albumID})
+
+	sqlStr, args, err := queryBuilder.ToSql()
+	if err != nil {
+		return fmt.Errorf("failed to build SQL for UpdateAlbumBannerPath: %w", err)
+	}
+
+	result, err := db.Exec(sqlStr, args...)
+	if err != nil {
+		return fmt.Errorf("failed to execute UpdateAlbumBannerPath for ID %d: %w", albumID, err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err == nil && rowsAffected == 0 {
+		return sql.ErrNoRows
+	}
+	if err != nil {
+		log.Printf("Warning: Could not get RowsAffected for UpdateAlbumBannerPath ID %d: %v", albumID, err)
 	}
 	return nil
 }

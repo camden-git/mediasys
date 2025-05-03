@@ -14,16 +14,31 @@ import (
 	"github.com/camden-git/mediasysbackend/config"
 	"github.com/camden-git/mediasysbackend/database"
 	"github.com/camden-git/mediasysbackend/utils"
-	"github.com/camden-git/mediasysbackend/workers"
+	"github.com/camden-git/mediasysbackend/workers" // Use renamed package/struct if name changed
 )
 
+// FileInfo struct - Add status fields
 type FileInfo struct {
-	Name          string `json:"name"`
-	Path          string `json:"path"`
-	IsDir         bool   `json:"is_dir"`
-	Size          int64  `json:"size"`
-	ModTime       int64  `json:"mod_time"`
-	ThumbnailPath string `json:"thumbnail_path,omitempty"`
+	Name            string   `json:"name"`
+	Path            string   `json:"path"`
+	IsDir           bool     `json:"is_dir"`
+	Size            int64    `json:"size"`
+	ModTime         int64    `json:"mod_time"`
+	ThumbnailPath   *string  `json:"thumbnail_path,omitempty"`
+	Width           *int     `json:"width,omitempty"`
+	Height          *int     `json:"height,omitempty"`
+	Aperture        *float64 `json:"aperture,omitempty"`
+	ShutterSpeed    *string  `json:"shutter_speed,omitempty"`
+	ISO             *int     `json:"iso,omitempty"`
+	FocalLength     *float64 `json:"focal_length,omitempty"`
+	LensMake        *string  `json:"lens_make,omitempty"`
+	LensModel       *string  `json:"lens_model,omitempty"`
+	CameraMake      *string  `json:"camera_make,omitempty"`
+	CameraModel     *string  `json:"camera_model,omitempty"`
+	TakenAt         *int64   `json:"taken_at,omitempty"`
+	ThumbnailStatus string   `json:"thumbnail_status,omitempty"`
+	MetadataStatus  string   `json:"metadata_status,omitempty"`
+	DetectionStatus string   `json:"detection_status,omitempty"`
 }
 
 type DirectoryListing struct {
@@ -32,9 +47,9 @@ type DirectoryListing struct {
 	Parent string     `json:"parent,omitempty"`
 }
 
-const thumbnailApiPrefix = "/thumbnails/"
+const thumbnailApiPrefix = "/api/thumbnails/"
 
-func DirectoryHandler(cfg config.Config, db *sql.DB, thumbGen *workers.ThumbnailGenerator) http.HandlerFunc {
+func DirectoryHandler(cfg config.Config, db *sql.DB, imgProc *workers.ImageProcessor) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		requestedPath := r.URL.Path
 
@@ -44,7 +59,7 @@ func DirectoryHandler(cfg config.Config, db *sql.DB, thumbGen *workers.Thumbnail
 
 			if !strings.HasPrefix(potentialFullPath, cfg.RootDirectory) && potentialFullPath != cfg.RootDirectory {
 				http.Error(w, "Forbidden", http.StatusForbidden)
-				log.Printf("Attempted access outside root directory (pre-stat): Request='%s', Resolved='%s', Root='%s'", requestedPath, potentialFullPath, cfg.RootDirectory)
+				log.Printf("Attempted access outside roo	t directory (pre-stat): Request='%s', Resolved='%s', Root='%s'", requestedPath, potentialFullPath, cfg.RootDirectory)
 				return
 			}
 
@@ -52,9 +67,10 @@ func DirectoryHandler(cfg config.Config, db *sql.DB, thumbGen *workers.Thumbnail
 			isExistingFile := err == nil && !stat.IsDir()
 
 			if isExistingFile {
-				serveFileOrDirectory(w, r, cfg, db, thumbGen, requestedPath, potentialFullPath)
+				serveFileOrDirectory(w, r, cfg, db, imgProc, requestedPath, potentialFullPath) // Use potentialFullPath
 				return
-			} else if err != nil && !os.IsNotExist(err) {
+			}
+			if err != nil && !os.IsNotExist(err) {
 				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 				log.Printf("Error stating potential file %s: %v", potentialFullPath, err)
 				return
@@ -65,11 +81,11 @@ func DirectoryHandler(cfg config.Config, db *sql.DB, thumbGen *workers.Thumbnail
 
 		fullPath := filepath.Join(cfg.RootDirectory, requestedPath)
 		fullPath = filepath.Clean(fullPath)
-		serveFileOrDirectory(w, r, cfg, db, thumbGen, requestedPath, fullPath)
+		serveFileOrDirectory(w, r, cfg, db, imgProc, requestedPath, fullPath)
 	}
 }
 
-func serveFileOrDirectory(w http.ResponseWriter, r *http.Request, cfg config.Config, db *sql.DB, thumbGen *workers.ThumbnailGenerator, requestedPath, fullPath string) {
+func serveFileOrDirectory(w http.ResponseWriter, r *http.Request, cfg config.Config, db *sql.DB, imgProc *workers.ImageProcessor, requestedPath, fullPath string) {
 	cleanedFullPath := filepath.Clean(fullPath)
 	if !strings.HasPrefix(cleanedFullPath, cfg.RootDirectory) {
 		isRootItself := cleanedFullPath == filepath.Clean(cfg.RootDirectory)
@@ -85,6 +101,7 @@ func serveFileOrDirectory(w http.ResponseWriter, r *http.Request, cfg config.Con
 		http.NotFound(w, r)
 		return
 	}
+
 	if err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		log.Printf("Error stating file/dir %s: %v", cleanedFullPath, err)
@@ -96,7 +113,7 @@ func serveFileOrDirectory(w http.ResponseWriter, r *http.Request, cfg config.Con
 		return
 	}
 
-	fileInfos, err := listDirectoryContents(cleanedFullPath, requestedPath, cfg, db, thumbGen)
+	fileInfos, err := listDirectoryContents(cleanedFullPath, requestedPath, cfg, db, imgProc) // Pass db directly
 	if err != nil {
 		if os.IsPermission(err) {
 			http.Error(w, "Forbidden", http.StatusForbidden)
@@ -133,8 +150,7 @@ func serveFileOrDirectory(w http.ResponseWriter, r *http.Request, cfg config.Con
 	}
 }
 
-func listDirectoryContents(baseDirFullPath string, requestPathPrefix string, cfg config.Config, db *sql.DB, thumbGen *workers.ThumbnailGenerator) ([]FileInfo, error) {
-
+func listDirectoryContents(baseDirFullPath string, requestPathPrefix string, cfg config.Config, db database.Querier, imgProc *workers.ImageProcessor) ([]FileInfo, error) {
 	dirEntries, err := os.ReadDir(baseDirFullPath)
 	if err != nil {
 		return nil, fmt.Errorf("reading directory %s: %w", baseDirFullPath, err)
@@ -158,12 +174,10 @@ func listDirectoryContents(baseDirFullPath string, requestPathPrefix string, cfg
 		if prefix == "" {
 			prefix = "/"
 		}
-		entryRelativePath := prefix + "/" + name
-		entryRelativePath = "/" + strings.TrimPrefix(entryRelativePath, "/")
-
+		entryRelativePath := "/" + strings.TrimPrefix(prefix+"/"+name, "/")
 		entryStat, err := os.Stat(entryFullPath)
 		if err != nil {
-			log.Printf("Error stating directory entry %s: %v. Skipping.", entryFullPath, err)
+			log.Printf("Error stating entry %s: %v. Skipping.", entryFullPath, err)
 			continue
 		}
 
@@ -185,46 +199,132 @@ func listDirectoryContents(baseDirFullPath string, requestPathPrefix string, cfg
 		if !isDir && utils.IsRasterImage(name) {
 			relPathFromRoot, err := filepath.Rel(cfg.RootDirectory, entryFullPath)
 			if err != nil {
-				log.Printf("CRITICAL: Error creating relative path for DB key (%s relative to %s): %v. Skipping thumbnail.", entryFullPath, cfg.RootDirectory, err)
-			} else {
-				dbKeyPath := filepath.ToSlash(relPathFromRoot)
+				log.Printf("CRITICAL: Error creating relative path for DB key (%s relative to %s): %v. Skipping image processing.", entryFullPath, cfg.RootDirectory, err)
+				fileInfos = append(fileInfos, apiFileInfo)
+				continue
+			}
+			dbKeyPath := filepath.ToSlash(relPathFromRoot)
 
-				dbThumbInfo, err := database.GetThumbnailInfo(db, dbKeyPath)
+			var imageInfo database.Image
+			var recordExists bool = true
 
-				shouldQueueGeneration := false
-				thumbnailFileExists := false
-				var existingThumbPathOnDisk string
+			imageInfo, err = database.GetImageInfo(db, dbKeyPath)
 
-				if err == sql.ErrNoRows {
-					shouldQueueGeneration = true
-				} else if err != nil {
-					log.Printf("ERROR querying thumbnail DB for '%s': %v. Skipping thumbnail.", dbKeyPath, err)
+			if err == sql.ErrNoRows {
+				recordExists = false
+				// ensure record exists with pending statuses before queuing tasks
+				created, ensureErr := database.EnsureImageRecordExists(db, dbKeyPath, modTimeUnix)
+				if ensureErr != nil {
+					log.Printf("ERROR ensuring image record exists for %s: %v", dbKeyPath, ensureErr)
+
+					fileInfos = append(fileInfos, apiFileInfo)
+					continue
+				}
+				if created {
+					// fetch again to get the initialized record with pending statuses
+					imageInfo, err = database.GetImageInfo(db, dbKeyPath)
+					if err != nil {
+						log.Printf("ERROR fetching newly created image record for %s: %v", dbKeyPath, err)
+					}
 				} else {
-					existingThumbPathOnDisk = dbThumbInfo.ThumbnailPath
-					if modTimeUnix > dbThumbInfo.LastModified {
-						shouldQueueGeneration = true
-					} else {
-						if _, statErr := os.Stat(existingThumbPathOnDisk); statErr == nil {
-							thumbnailFileExists = true
-						} else {
-							log.Printf("Thumbnail file '%s' for '%s' not found on disk (error: %v), queuing regeneration.", existingThumbPathOnDisk, dbKeyPath, statErr)
-							shouldQueueGeneration = true
-						}
+					log.Printf("WARNING: EnsureImageRecordExists inconsistency for %s.", dbKeyPath)
+					imageInfo, err = database.GetImageInfo(db, dbKeyPath)
+					if err != nil {
+						log.Printf("ERROR fetching image record for %s after Ensure inconsistency: %v", dbKeyPath, err)
+						fileInfos = append(fileInfos, apiFileInfo)
+						continue
 					}
 				}
 
-				if thumbnailFileExists {
-					thumbFilename := filepath.Base(existingThumbPathOnDisk)
-					apiFileInfo.ThumbnailPath = thumbnailApiPrefix + thumbFilename
+				if err == nil {
+					recordExists = true
 				}
 
-				if shouldQueueGeneration {
-					job := workers.ThumbnailJob{
-						OriginalImagePath:    entryFullPath,
-						OriginalRelativePath: dbKeyPath,
-						ModTimeUnix:          modTimeUnix,
-					}
-					thumbGen.QueueJob(job)
+			} else if err != nil {
+				log.Printf("ERROR querying initial image DB for '%s': %v. Skipping further processing.", dbKeyPath, err)
+				fileInfos = append(fileInfos, apiFileInfo)
+				continue
+			}
+
+			if recordExists {
+				apiFileInfo.ThumbnailStatus = imageInfo.ThumbnailStatus
+				apiFileInfo.MetadataStatus = imageInfo.MetadataStatus
+				apiFileInfo.DetectionStatus = imageInfo.DetectionStatus
+				apiFileInfo.Width = imageInfo.Width
+				apiFileInfo.Height = imageInfo.Height
+				apiFileInfo.Aperture = imageInfo.Aperture
+				apiFileInfo.ShutterSpeed = imageInfo.ShutterSpeed
+				apiFileInfo.ISO = imageInfo.ISO
+				apiFileInfo.FocalLength = imageInfo.FocalLength
+				apiFileInfo.LensMake = imageInfo.LensMake
+				apiFileInfo.LensModel = imageInfo.LensModel
+				apiFileInfo.CameraMake = imageInfo.CameraMake
+				apiFileInfo.CameraModel = imageInfo.CameraModel
+				apiFileInfo.TakenAt = imageInfo.TakenAt
+
+				if imageInfo.ThumbnailPath != nil && imageInfo.ThumbnailStatus == database.StatusDone {
+					thumbFilename := filepath.Base(*imageInfo.ThumbnailPath)
+					fullThumbURL := thumbnailApiPrefix + thumbFilename
+					apiFileInfo.ThumbnailPath = &fullThumbURL
+				}
+			} else {
+				apiFileInfo.ThumbnailStatus = database.StatusPending
+				apiFileInfo.MetadataStatus = database.StatusPending
+				apiFileInfo.DetectionStatus = database.StatusPending
+			}
+
+			queueThumbnail := false
+			queueMetadata := false
+			queueDetection := false
+
+			if !recordExists {
+				queueThumbnail = true
+				queueMetadata = true
+				queueDetection = true
+				log.Printf("Queuing all tasks for new image record: %s", dbKeyPath)
+			} else if modTimeUnix > imageInfo.LastModified {
+				// file is newer than last DB update, re-queue everything
+				queueThumbnail = true
+				queueMetadata = true
+				queueDetection = true
+				log.Printf("Queuing all tasks for updated image file: %s (ModTime: %d > DB: %d)", dbKeyPath, modTimeUnix, imageInfo.LastModified)
+			} else {
+				// file not newer, check individual task statuses
+				if imageInfo.ThumbnailStatus != database.StatusDone && (imageInfo.ThumbnailStatus == database.StatusPending || imageInfo.ThumbnailStatus == database.StatusProcessing) {
+					queueThumbnail = true
+					log.Printf("Re-queuing thumbnail task for %s (status: %s)", dbKeyPath, imageInfo.ThumbnailStatus)
+				}
+				if imageInfo.MetadataStatus != database.StatusDone && (imageInfo.MetadataStatus == database.StatusPending || imageInfo.MetadataStatus == database.StatusProcessing) {
+					queueMetadata = true
+					log.Printf("Re-queuing metadata task for %s (status: %s)", dbKeyPath, imageInfo.MetadataStatus)
+				}
+				if imageInfo.DetectionStatus != database.StatusDone && (imageInfo.DetectionStatus == database.StatusPending || imageInfo.DetectionStatus == database.StatusProcessing) {
+					queueDetection = true
+					log.Printf("Re-queuing detection task for %s (status: %s)", dbKeyPath, imageInfo.DetectionStatus)
+				}
+			}
+
+			if queueThumbnail || queueMetadata || queueDetection {
+				baseJob := workers.ImageJob{
+					OriginalImagePath:    entryFullPath,
+					OriginalRelativePath: dbKeyPath,
+					ModTimeUnix:          modTimeUnix,
+				}
+
+				if queueThumbnail {
+					thumbJob := baseJob
+					thumbJob.TaskType = workers.TaskThumbnail
+					imgProc.QueueJob(thumbJob)
+				}
+				if queueMetadata {
+					metaJob := baseJob
+					metaJob.TaskType = workers.TaskMetadata
+					imgProc.QueueJob(metaJob)
+				}
+				if queueDetection {
+					detectJob := baseJob
+					detectJob.TaskType = workers.TaskDetection
+					imgProc.QueueJob(detectJob)
 				}
 			}
 		}

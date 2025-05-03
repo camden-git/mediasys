@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/camden-git/mediasysbackend/utils"
 	"log"
 	"net/http"
 	"os"
@@ -31,7 +32,7 @@ func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 type AlbumHandler struct {
 	DB       *sql.DB
 	Cfg      config.Config
-	ThumbGen *workers.ThumbnailGenerator
+	ThumbGen *workers.ImageProcessor
 }
 
 func (ah *AlbumHandler) getAlbumByIdentifier(identifier string) (database.Album, error) {
@@ -39,7 +40,7 @@ func (ah *AlbumHandler) getAlbumByIdentifier(identifier string) (database.Album,
 	if albumID, err := strconv.ParseInt(identifier, 10, 64); err == nil {
 		album, err := database.GetAlbumByID(ah.DB, albumID)
 		if err == nil {
-			return album, nil // Found by ID
+			return album, nil // found by ID
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
 			return database.Album{}, fmt.Errorf("error fetching album by ID %d: %w", albumID, err)
@@ -50,7 +51,7 @@ func (ah *AlbumHandler) getAlbumByIdentifier(identifier string) (database.Album,
 	album, err := database.GetAlbumBySlug(ah.DB, identifier)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return database.Album{}, sql.ErrNoRows // Not found by slug either
+			return database.Album{}, sql.ErrNoRows // not found by slug either
 		}
 		return database.Album{}, fmt.Errorf("error fetching album by slug '%s': %w", identifier, err)
 	}
@@ -256,6 +257,81 @@ func (ah *AlbumHandler) UpdateAlbum(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, updatedAlbum)
 }
 
+func (ah *AlbumHandler) UploadAlbumBanner(w http.ResponseWriter, r *http.Request) {
+	identifier := chi.URLParam(r, "album_identifier")
+
+	album, err := ah.getAlbumByIdentifier(identifier)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album not found"})
+		} else {
+			log.Printf("Error finding album '%s' for banner upload: %v", identifier, err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to find album"})
+		}
+		return
+	}
+
+	const maxUploadSize = 20 << 20 // 20 MB
+	if err := r.ParseMultipartForm(maxUploadSize); err != nil {
+		log.Printf("Error parsing multipart form for banner upload: %v", err)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid form data: " + err.Error()})
+		return
+	}
+
+	file, handler, err := r.FormFile("banner_image")
+	if err != nil {
+		if errors.Is(err, http.ErrMissingFile) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "No file uploaded in 'banner_image' field"})
+		} else {
+			log.Printf("Error retrieving uploaded file 'banner_image': %v", err)
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Could not retrieve uploaded file"})
+		}
+		return
+	}
+	defer file.Close()
+
+	log.Printf("Received banner upload for album %d/%s: %s (Size: %d)", album.ID, album.Slug, handler.Filename, handler.Size)
+
+	bannerDirName := "album_banners"
+	bannerSaveDir := filepath.Join(ah.Cfg.RootDirectory, bannerDirName)
+	dbRelativePathDir := bannerDirName
+
+	savedUUIDFilename, procErr := utils.ProcessAndSaveBanner(file, bannerSaveDir)
+	if procErr != nil {
+		log.Printf("Error processing/saving banner for album %d/%s: %v", album.ID, album.Slug, procErr)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to process banner image"})
+		return
+	}
+
+	oldBannerRelativePathPtr := album.BannerImagePath
+	newBannerRelativePath := filepath.ToSlash(filepath.Join(dbRelativePathDir, savedUUIDFilename))
+	if oldBannerRelativePathPtr != nil && (*oldBannerRelativePathPtr != newBannerRelativePath) {
+		oldBannerFullPath := filepath.Join(ah.Cfg.RootDirectory, *oldBannerRelativePathPtr)
+		if removeErr := os.Remove(oldBannerFullPath); removeErr != nil && !os.IsNotExist(removeErr) {
+			log.Printf("Warning: Failed to remove old banner file %s: %v", oldBannerFullPath, removeErr)
+		} else if removeErr == nil {
+			log.Printf("Removed old banner file: %s", oldBannerFullPath)
+		}
+	}
+
+	dbErr := database.UpdateAlbumBannerPath(ah.DB, album.ID, &newBannerRelativePath)
+	if dbErr != nil {
+		newBannerFullPath := filepath.Join(bannerSaveDir, savedUUIDFilename)
+		os.Remove(newBannerFullPath)
+		log.Printf("Error updating banner path in DB for album %d/%s: %v", album.ID, album.Slug, dbErr)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to save banner information"})
+		return
+	}
+
+	updatedAlbum, err := database.GetAlbumByID(ah.DB, album.ID)
+	if err != nil {
+		log.Printf("Error fetching updated album %d after banner upload: %v", album.ID, err)
+		writeJSON(w, http.StatusOK, map[string]string{"message": "Banner uploaded successfully", "banner_image_path": newBannerRelativePath})
+		return
+	}
+	writeJSON(w, http.StatusOK, updatedAlbum)
+}
+
 func (ah *AlbumHandler) DeleteAlbum(w http.ResponseWriter, r *http.Request) {
 	identifier := chi.URLParam(r, "album_identifier")
 
@@ -277,5 +353,6 @@ func (ah *AlbumHandler) DeleteAlbum(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// successful deletes return no content instead of a message
 	writeJSON(w, http.StatusNoContent, nil)
 }
