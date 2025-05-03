@@ -7,3 +7,4 @@ generated_thumbnails/*
 generated_thumbnails
 test
 test/*
+models/*

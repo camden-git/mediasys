@@ -23,7 +23,7 @@ type Face struct {
 	PersonName *string `json:"person_name,omitempty"`
 }
 
-func AddFace(db *sql.DB, personID *int64, imagePath string, x1, y1, x2, y2 int) (int64, error) {
+func AddFace(db Querier, personID *int64, imagePath string, x1, y1, x2, y2 int) (int64, error) {
 	now := time.Now().Unix()
 	imagePath = filepath.ToSlash(imagePath)
 	queryBuilder := psql.Insert("faces").
@@ -67,7 +67,7 @@ func scanFaceRow(scanner interface {
 	return f, nil
 }
 
-func GetFaceByID(db *sql.DB, faceID int64) (Face, error) {
+func GetFaceByID(db Querier, faceID int64) (Face, error) {
 	queryBuilder := psql.Select("f.id", "f.person_id", "f.image_path", "f.x1", "f.y1", "f.x2", "f.y2", "f.created_at", "f.updated_at", "p.primary_name").
 		From("faces f").
 		LeftJoin("people p ON f.person_id = p.id").
@@ -85,7 +85,7 @@ func GetFaceByID(db *sql.DB, faceID int64) (Face, error) {
 	return face, nil
 }
 
-func ListFacesByImagePath(db *sql.DB, imagePath string) ([]Face, error) {
+func ListFacesByImagePath(db Querier, imagePath string) ([]Face, error) {
 	imagePath = filepath.ToSlash(imagePath)
 	queryBuilder := psql.Select("f.id", "f.person_id", "f.image_path", "f.x1", "f.y1", "f.x2", "f.y2", "f.created_at", "f.updated_at", "p.primary_name").
 		From("faces f").
@@ -117,7 +117,7 @@ func ListFacesByImagePath(db *sql.DB, imagePath string) ([]Face, error) {
 }
 
 // UpdateFace allows updating coordinates and optionally setting/unsetting personID
-func UpdateFace(db *sql.DB, faceID int64, personID *int64, x1, y1, x2, y2 *int) error {
+func UpdateFace(db Querier, faceID int64, personID *int64, x1, y1, x2, y2 *int) error {
 	// deed explicit tracking if personID was meant to be updated (even to NULL) vs not provided
 	// the handler logic should decide this and pass personID pointer accordingly
 	now := time.Now().Unix()
@@ -169,7 +169,7 @@ func UpdateFace(db *sql.DB, faceID int64, personID *int64, x1, y1, x2, y2 *int) 
 	return nil
 }
 
-func DeleteFace(db *sql.DB, faceID int64) error {
+func DeleteFace(db Querier, faceID int64) error {
 	queryBuilder := psql.Delete("faces").Where(sq.Eq{"id": faceID})
 	sqlStr, args, err := queryBuilder.ToSql()
 	if err != nil {
@@ -187,4 +187,24 @@ func DeleteFace(db *sql.DB, faceID int64) error {
 		log.Printf("Warning: Could not get RowsAffected for DeleteFace ID %d: %v", faceID, err)
 	}
 	return nil
+}
+
+func DeleteUntaggedFacesByImagePath(db Querier, imagePath string) (int64, error) {
+	imagePath = filepath.ToSlash(imagePath)
+	queryBuilder := psql.Delete("faces").
+		Where(sq.Eq{"image_path": imagePath}).
+		Where(sq.Eq{"person_id": nil})
+
+	sqlStr, args, err := queryBuilder.ToSql()
+	if err != nil {
+		return 0, fmt.Errorf("failed to build SQL for DeleteUntaggedFacesByImagePath: %w", err)
+	}
+
+	result, err := db.Exec(sqlStr, args...)
+	if err != nil {
+		return 0, fmt.Errorf("failed to execute DeleteUntaggedFacesByImagePath for %s: %w", imagePath, err)
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	return rowsAffected, nil
 }

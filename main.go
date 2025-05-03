@@ -35,12 +35,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("FATAL: Failed to create thumbnail directory %s: %v", cfg.ThumbnailDir, err)
 	}
-	thumbGenerator := workers.NewThumbnailGenerator(cfg, db, cfg.ThumbnailQueueSize, cfg.NumThumbnailWorkers)
+
+	log.Printf("Initializing image processor worker pool (Workers: %d, Queue Size: %d)...", cfg.NumWorkers, cfg.ThumbnailQueueSize)
+
+	imageProcessor := workers.NewImageProcessor(cfg, db, cfg.ThumbnailQueueSize, cfg.NumWorkers)
 
 	log.Printf("Serving files from root: %s", cfg.RootDirectory)
 	log.Printf("Using database: %s", cfg.DatabasePath)
 	log.Printf("Storing thumbnails in: %s", cfg.ThumbnailDir)
-	log.Printf("Thumbnail dimensions (Max WxH): %dx%d", cfg.ThumbnailWidth, cfg.ThumbnailHeight)
+	log.Printf("Thumbnail max size (longest side): %dpx", cfg.ThumbnailMaxSize)
 
 	r := chi.NewRouter()
 
@@ -62,9 +65,10 @@ func main() {
 	r.Use(middleware.Timeout(60 * time.Second))
 	r.Use(corsHandler.Handler)
 
-	albumHandler := &handlers.AlbumHandler{DB: db, Cfg: cfg, ThumbGen: thumbGenerator}
+	albumHandler := &handlers.AlbumHandler{DB: db, Cfg: cfg, ThumbGen: imageProcessor}
 	personHandler := &handlers.PersonHandler{DB: db}
 	faceHandler := &handlers.FaceHandler{DB: db, Cfg: cfg}
+	imagePreviewHandler := &handlers.ImagePreviewHandler{DB: db, Cfg: cfg}
 
 	r.Route("/api", func(r chi.Router) {
 		r.Route("/albums", func(r chi.Router) {
@@ -75,8 +79,10 @@ func main() {
 				r.Put("/", albumHandler.UpdateAlbum)
 				r.Delete("/", albumHandler.DeleteAlbum)
 				r.Get("/contents", albumHandler.GetAlbumContents)
+				r.Put("/banner", albumHandler.UploadAlbumBanner)
 			})
 		})
+		r.Get("/thumbnails/*", handlers.ThumbnailServer(cfg.ThumbnailDir))
 
 		r.Route("/people", func(r chi.Router) {
 			r.Post("/", personHandler.CreatePerson)
@@ -110,8 +116,12 @@ func main() {
 		})
 	})
 
-	r.Get("/thumbnails/*", handlers.ThumbnailServer(cfg.ThumbnailDir))
-	r.Get("/*", handlers.DirectoryHandler(cfg, db, thumbGenerator))
+	r.Route("/debug", func(r chi.Router) {
+		// GET /debug/image_with_faces?path=relative/path/to/image.jpg
+		r.Get("/image_with_faces", imagePreviewHandler.ServeImageWithFaces)
+	})
+
+	r.Get("/*", handlers.DirectoryHandler(cfg, db, imageProcessor))
 
 	port := os.Getenv("PORT")
 	if port == "" {
