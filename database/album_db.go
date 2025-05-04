@@ -18,6 +18,7 @@ type Album struct {
 	Description     string  `json:"description,omitempty"`
 	FolderPath      string  `json:"folder_path"`
 	BannerImagePath *string `json:"banner_image_path,omitempty"`
+	SortOrder       string  `json:"sort_order"`
 	CreatedAt       int64   `json:"created_at"`
 	UpdatedAt       int64   `json:"updated_at"`
 }
@@ -47,7 +48,7 @@ func CreateAlbum(db *sql.DB, name, slug, description, folderPath string) (int64,
 
 func ListAlbums(db *sql.DB) ([]Album, error) {
 	queryBuilder := psql.Select("id", "name", "slug", "description", "folder_path",
-		"banner_image_path",
+		"banner_image_path", "sort_order",
 		"created_at", "updated_at").
 		From("albums").
 		OrderBy("name ASC")
@@ -67,7 +68,7 @@ func ListAlbums(db *sql.DB) ([]Album, error) {
 	for rows.Next() {
 		var a Album
 		err := rows.Scan(&a.ID, &a.Name, &a.Slug, &a.Description, &a.FolderPath,
-			&a.BannerImagePath,
+			&a.BannerImagePath, &a.SortOrder,
 			&a.CreatedAt, &a.UpdatedAt)
 		if err != nil {
 			log.Printf("Error scanning album row: %v", err)
@@ -89,7 +90,7 @@ func scanAlbumRow(scanner interface {
 }) (Album, error) {
 	var a Album
 	err := scanner.Scan(&a.ID, &a.Name, &a.Slug, &a.Description, &a.FolderPath,
-		&a.BannerImagePath,
+		&a.BannerImagePath, &a.SortOrder,
 		&a.CreatedAt, &a.UpdatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -102,7 +103,7 @@ func scanAlbumRow(scanner interface {
 
 func GetAlbumByID(db *sql.DB, id int64) (Album, error) {
 	queryBuilder := psql.Select("id", "name", "slug", "description", "folder_path",
-		"banner_image_path",
+		"banner_image_path", "sort_order",
 		"created_at", "updated_at").
 		From("albums").
 		Where(sq.Eq{"id": id}).
@@ -121,7 +122,7 @@ func GetAlbumByID(db *sql.DB, id int64) (Album, error) {
 
 func GetAlbumBySlug(db *sql.DB, slug string) (Album, error) {
 	queryBuilder := psql.Select("id", "name", "slug", "description", "folder_path",
-		"banner_image_path",
+		"banner_image_path", "sort_order",
 		"created_at", "updated_at").
 		From("albums").
 		Where(sq.Eq{"slug": slug}).
@@ -197,6 +198,37 @@ func UpdateAlbumBannerPath(db Querier, albumID int64, bannerPath *string) error 
 	}
 	if err != nil {
 		log.Printf("Warning: Could not get RowsAffected for UpdateAlbumBannerPath ID %d: %v", albumID, err)
+	}
+	return nil
+}
+
+func UpdateAlbumSortOrder(db Querier, albumID int64, sortOrder string) error {
+	if !IsValidSortOrder(sortOrder) {
+		return fmt.Errorf("invalid sort order value provided: %s", sortOrder)
+	}
+
+	now := time.Now().Unix()
+	queryBuilder := psql.Update("albums").
+		Set("sort_order", sortOrder).
+		Set("updated_at", now).
+		Where(sq.Eq{"id": albumID})
+
+	sqlStr, args, err := queryBuilder.ToSql()
+	if err != nil {
+		return fmt.Errorf("failed to build SQL for UpdateAlbumSortOrder: %w", err)
+	}
+
+	result, err := db.Exec(sqlStr, args...)
+	if err != nil {
+		return fmt.Errorf("failed to execute UpdateAlbumSortOrder for ID %d: %w", albumID, err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err == nil && rowsAffected == 0 {
+		return sql.ErrNoRows
+	}
+	if err != nil {
+		log.Printf("Warning: Could not get RowsAffected for UpdateAlbumSortOrder ID %d: %v", albumID, err)
 	}
 	return nil
 }

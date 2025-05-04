@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/facette/natsort"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -49,6 +51,12 @@ type DirectoryListing struct {
 
 const thumbnailApiPrefix = "/api/thumbnails/"
 
+type entryInfo struct {
+	entry fs.DirEntry
+	info  fs.FileInfo
+	err   error
+}
+
 func DirectoryHandler(cfg config.Config, db *sql.DB, imgProc *workers.ImageProcessor) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		requestedPath := r.URL.Path
@@ -67,7 +75,7 @@ func DirectoryHandler(cfg config.Config, db *sql.DB, imgProc *workers.ImageProce
 			isExistingFile := err == nil && !stat.IsDir()
 
 			if isExistingFile {
-				serveFileOrDirectory(w, r, cfg, db, imgProc, requestedPath, potentialFullPath) // Use potentialFullPath
+				serveFileOrDirectory(w, r, cfg, db, imgProc, requestedPath, potentialFullPath)
 				return
 			}
 			if err != nil && !os.IsNotExist(err) {
@@ -113,7 +121,7 @@ func serveFileOrDirectory(w http.ResponseWriter, r *http.Request, cfg config.Con
 		return
 	}
 
-	fileInfos, err := listDirectoryContents(cleanedFullPath, requestedPath, cfg, db, imgProc) // Pass db directly
+	fileInfos, err := listDirectoryContents(cleanedFullPath, requestedPath, cfg, db, imgProc, database.DefaultSortOrder)
 	if err != nil {
 		if os.IsPermission(err) {
 			http.Error(w, "Forbidden", http.StatusForbidden)
@@ -150,40 +158,77 @@ func serveFileOrDirectory(w http.ResponseWriter, r *http.Request, cfg config.Con
 	}
 }
 
-func listDirectoryContents(baseDirFullPath string, requestPathPrefix string, cfg config.Config, db database.Querier, imgProc *workers.ImageProcessor) ([]FileInfo, error) {
+func listDirectoryContents(baseDirFullPath string, requestPathPrefix string, cfg config.Config, db database.Querier, imgProc *workers.ImageProcessor, sortOrder string) ([]FileInfo, error) {
 	dirEntries, err := os.ReadDir(baseDirFullPath)
 	if err != nil {
 		return nil, fmt.Errorf("reading directory %s: %w", baseDirFullPath, err)
 	}
 
-	sort.Slice(dirEntries, func(i, j int) bool {
-		iIsDir := dirEntries[i].IsDir()
-		jIsDir := dirEntries[j].IsDir()
-		if iIsDir != jIsDir {
-			return iIsDir
+	entriesWithInfo := make([]entryInfo, 0, len(dirEntries))
+	for _, entry := range dirEntries {
+		entryFullPath := filepath.Join(baseDirFullPath, entry.Name())
+		info, statErr := os.Stat(entryFullPath)
+		entriesWithInfo = append(entriesWithInfo, entryInfo{
+			entry: entry,
+			info:  info, // can be nil on error
+			err:   statErr,
+		})
+	}
+
+	sort.SliceStable(entriesWithInfo, func(i, j int) bool {
+		ei := entriesWithInfo[i]
+		ej := entriesWithInfo[j]
+
+		if ei.err != nil {
+			return false
+		} // put errored i after valid j
+		if ej.err != nil {
+			return true
+		} // put valid i before errored j
+
+		isDirI := ei.entry.IsDir()
+		isDirJ := ej.entry.IsDir()
+		if isDirI != isDirJ {
+			return isDirI
 		}
-		return strings.ToLower(dirEntries[i].Name()) < strings.ToLower(dirEntries[j].Name())
+
+		switch sortOrder {
+		case database.SortDateDesc:
+			// sort by ModTime descending (newest first)
+			return ei.info.ModTime().After(ej.info.ModTime())
+		case database.SortDateAsc:
+			// sort by ModTime ascending (oldest first)
+			return ei.info.ModTime().Before(ej.info.ModTime())
+		case database.SortFilenameNat:
+			return natsort.Compare(ei.entry.Name(), ej.entry.Name())
+		case database.SortFilenameAsc:
+			fallthrough
+		default:
+			// sort by Name ascending (case-insensitive)
+			return strings.ToLower(ei.entry.Name()) < strings.ToLower(ej.entry.Name())
+		}
 	})
 
-	fileInfos := make([]FileInfo, 0, len(dirEntries))
-	for _, entry := range dirEntries {
+	fileInfos := make([]FileInfo, 0, len(entriesWithInfo))
+	for _, ei := range entriesWithInfo {
+		// skip entries that had stat errors
+		if ei.err != nil {
+			log.Printf("Error stating directory entry %s: %v. Skipping.", filepath.Join(baseDirFullPath, ei.entry.Name()), ei.err)
+			continue
+		}
+
+		entry := ei.entry
+		info := ei.info
 		name := entry.Name()
 		entryFullPath := filepath.Join(baseDirFullPath, name)
+		isDir := info.IsDir()
+		modTimeUnix := info.ModTime().Unix()
 
 		prefix := strings.TrimSuffix(requestPathPrefix, "/")
 		if prefix == "" {
 			prefix = "/"
 		}
 		entryRelativePath := "/" + strings.TrimPrefix(prefix+"/"+name, "/")
-		entryStat, err := os.Stat(entryFullPath)
-		if err != nil {
-			log.Printf("Error stating entry %s: %v. Skipping.", entryFullPath, err)
-			continue
-		}
-
-		isDir := entryStat.IsDir()
-		modTimeUnix := entryStat.ModTime().Unix()
-
 		if isDir && !strings.HasSuffix(entryRelativePath, "/") {
 			entryRelativePath += "/"
 		}
@@ -192,7 +237,7 @@ func listDirectoryContents(baseDirFullPath string, requestPathPrefix string, cfg
 			Name:    name,
 			Path:    entryRelativePath,
 			IsDir:   isDir,
-			Size:    entryStat.Size(),
+			Size:    info.Size(),
 			ModTime: modTimeUnix,
 		}
 
