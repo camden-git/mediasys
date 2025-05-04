@@ -8,3 +8,5 @@ generated_thumbnails
 test
 test/*
 models/*
+
+.idea/
