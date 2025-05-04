@@ -80,6 +80,7 @@ func main() {
 				r.Delete("/", albumHandler.DeleteAlbum)
 				r.Get("/contents", albumHandler.GetAlbumContents)
 				r.Put("/banner", albumHandler.UploadAlbumBanner)
+				r.Put("/sort_order", albumHandler.UpdateAlbumSortOrder)
 			})
 		})
 		r.Get("/thumbnails/*", handlers.ThumbnailServer(cfg.ThumbnailDir))

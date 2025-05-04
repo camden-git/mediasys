@@ -174,7 +174,7 @@ func (ah *AlbumHandler) GetAlbumContents(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	fileInfos, err := listDirectoryContents(albumFullPath, "/"+album.FolderPath, ah.Cfg, ah.DB, ah.ThumbGen)
+	fileInfos, err := listDirectoryContents(albumFullPath, "/"+album.FolderPath, ah.Cfg, ah.DB, ah.ThumbGen, album.SortOrder)
 	if err != nil {
 		if os.IsNotExist(err) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album folder not found on disk: " + album.FolderPath})
@@ -193,6 +193,53 @@ func (ah *AlbumHandler) GetAlbumContents(w http.ResponseWriter, r *http.Request)
 		// Parent: "/api/albums",
 	}
 	writeJSON(w, http.StatusOK, listing)
+}
+
+func (ah *AlbumHandler) UpdateAlbumSortOrder(w http.ResponseWriter, r *http.Request) {
+	identifier := chi.URLParam(r, "album_identifier")
+
+	album, err := ah.getAlbumByIdentifier(identifier)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album not found"})
+		} else {
+			log.Printf("Error finding album '%s' for sort update: %v", identifier, err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to find album"})
+		}
+		return
+	}
+
+	var req struct {
+		SortOrder string `json:"sort_order"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body: " + err.Error()})
+		return
+	}
+
+	if !database.IsValidSortOrder(req.SortOrder) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid sort_order value provided"})
+		return
+	}
+
+	err = database.UpdateAlbumSortOrder(ah.DB, album.ID, req.SortOrder)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album not found during update"})
+		} else {
+			log.Printf("Error updating sort order for album %d: %v", album.ID, err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to update sort order"})
+		}
+		return
+	}
+
+	updatedAlbum, err := database.GetAlbumByID(ah.DB, album.ID)
+	if err != nil {
+		log.Printf("Error fetching updated album %d after sort update: %v", album.ID, err)
+		writeJSON(w, http.StatusOK, map[string]string{"message": "Sort order updated successfully"})
+		return
+	}
+	writeJSON(w, http.StatusOK, updatedAlbum)
 }
 
 func (ah *AlbumHandler) UpdateAlbum(w http.ResponseWriter, r *http.Request) {

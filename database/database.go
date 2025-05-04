@@ -79,6 +79,7 @@ func InitDB(dataSourceName string) (*sql.DB, error) {
 			description TEXT,
 			folder_path TEXT NOT NULL UNIQUE,
 			banner_image_path TEXT NULL,
+			sort_order TEXT NOT NULL DEFAULT '` + DefaultSortOrder + `',
 			created_at INTEGER NOT NULL,
 			updated_at INTEGER NOT NULL
 		);`,
