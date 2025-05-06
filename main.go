@@ -81,6 +81,8 @@ func main() {
 				r.Get("/contents", albumHandler.GetAlbumContents)
 				r.Put("/banner", albumHandler.UploadAlbumBanner)
 				r.Put("/sort_order", albumHandler.UpdateAlbumSortOrder)
+				r.Post("/zip", albumHandler.RequestAlbumZipGeneration)
+				r.Get("/zip", albumHandler.DownloadAlbumZip)
 			})
 		})
 		r.Get("/thumbnails/*", handlers.ThumbnailServer(cfg.ThumbnailDir))

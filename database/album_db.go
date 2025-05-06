@@ -12,15 +12,22 @@ import (
 )
 
 type Album struct {
-	ID              int64   `json:"id"`
-	Name            string  `json:"name"`
-	Slug            string  `json:"slug"`
-	Description     string  `json:"description,omitempty"`
-	FolderPath      string  `json:"folder_path"`
-	BannerImagePath *string `json:"banner_image_path,omitempty"`
-	SortOrder       string  `json:"sort_order"`
-	CreatedAt       int64   `json:"created_at"`
-	UpdatedAt       int64   `json:"updated_at"`
+	ID                 int64   `json:"id"`
+	Name               string  `json:"name"`
+	Slug               string  `json:"slug"`
+	Description        string  `json:"description,omitempty"`
+	FolderPath         string  `json:"folder_path"`
+	BannerImagePath    *string `json:"banner_image_path,omitempty"`
+	SortOrder          string  `json:"sort_order"`
+	ZipPath            *string `json:"zip_path,omitempty"`
+	ZipSize            *int64  `json:"zip_size,omitempty"`
+	ZipStatus          string  `json:"zip_status"`
+	ZipError           *string `json:"zip_error,omitempty"`
+	ZipLastGeneratedAt *int64  `json:"zip_last_generated_at,omitempty"`
+	ZipLastRequestedAt *int64  `json:"zip_last_requested_at,omitempty"`
+
+	CreatedAt int64 `json:"created_at"`
+	UpdatedAt int64 `json:"updated_at"`
 }
 
 func CreateAlbum(db *sql.DB, name, slug, description, folderPath string) (int64, error) {
@@ -49,6 +56,7 @@ func CreateAlbum(db *sql.DB, name, slug, description, folderPath string) (int64,
 func ListAlbums(db *sql.DB) ([]Album, error) {
 	queryBuilder := psql.Select("id", "name", "slug", "description", "folder_path",
 		"banner_image_path", "sort_order",
+		"zip_path", "zip_size", "zip_status", "zip_error", "zip_last_generated_at", "zip_last_requested_at",
 		"created_at", "updated_at").
 		From("albums").
 		OrderBy("name ASC")
@@ -69,6 +77,7 @@ func ListAlbums(db *sql.DB) ([]Album, error) {
 		var a Album
 		err := rows.Scan(&a.ID, &a.Name, &a.Slug, &a.Description, &a.FolderPath,
 			&a.BannerImagePath, &a.SortOrder,
+			&a.ZipPath, &a.ZipSize, &a.ZipStatus, &a.ZipError, &a.ZipLastGeneratedAt, &a.ZipLastRequestedAt,
 			&a.CreatedAt, &a.UpdatedAt)
 		if err != nil {
 			log.Printf("Error scanning album row: %v", err)
@@ -91,6 +100,7 @@ func scanAlbumRow(scanner interface {
 	var a Album
 	err := scanner.Scan(&a.ID, &a.Name, &a.Slug, &a.Description, &a.FolderPath,
 		&a.BannerImagePath, &a.SortOrder,
+		&a.ZipPath, &a.ZipSize, &a.ZipStatus, &a.ZipError, &a.ZipLastGeneratedAt, &a.ZipLastRequestedAt,
 		&a.CreatedAt, &a.UpdatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -104,6 +114,7 @@ func scanAlbumRow(scanner interface {
 func GetAlbumByID(db *sql.DB, id int64) (Album, error) {
 	queryBuilder := psql.Select("id", "name", "slug", "description", "folder_path",
 		"banner_image_path", "sort_order",
+		"zip_path", "zip_size", "zip_status", "zip_error", "zip_last_generated_at", "zip_last_requested_at",
 		"created_at", "updated_at").
 		From("albums").
 		Where(sq.Eq{"id": id}).
@@ -123,6 +134,7 @@ func GetAlbumByID(db *sql.DB, id int64) (Album, error) {
 func GetAlbumBySlug(db *sql.DB, slug string) (Album, error) {
 	queryBuilder := psql.Select("id", "name", "slug", "description", "folder_path",
 		"banner_image_path", "sort_order",
+		"zip_path", "zip_size", "zip_status", "zip_error", "zip_last_generated_at", "zip_last_requested_at",
 		"created_at", "updated_at").
 		From("albums").
 		Where(sq.Eq{"slug": slug}).
@@ -170,6 +182,91 @@ func UpdateAlbum(db *sql.DB, id int64, name, description string) error {
 	}
 	if err != nil {
 		log.Printf("Warning: Could not get RowsAffected for UpdateAlbum ID %d: %v", id, err)
+	}
+	return nil
+}
+
+func RequestAlbumZip(db Querier, albumID int64) error {
+	now := time.Now().Unix()
+	queryBuilder := psql.Update("albums").
+		Set("zip_status", StatusPending).
+		Set("zip_last_requested_at", now).
+		Set("zip_error", nil).
+		Set("updated_at", now).
+		Where(sq.Eq{"id": albumID})
+
+	sqlStr, args, err := queryBuilder.ToSql()
+	if err != nil {
+		return fmt.Errorf("failed to build SQL for RequestAlbumZip: %w", err)
+	}
+
+	res, err := db.Exec(sqlStr, args...)
+	if err != nil {
+		return fmt.Errorf("failed to request album zip for ID %d: %w", albumID, err)
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func MarkAlbumZipProcessing(db Querier, albumID int64) error {
+	now := time.Now().Unix()
+	queryBuilder := psql.Update("albums").
+		Set("zip_status", StatusProcessing).
+		Set("updated_at", now).
+		Where(sq.Eq{"id": albumID})
+
+	sqlStr, args, err := queryBuilder.ToSql()
+	if err != nil {
+		return fmt.Errorf("failed to build SQL for MarkAlbumZipProcessing: %w", err)
+	}
+
+	res, err := db.Exec(sqlStr, args...)
+	if err != nil {
+		return fmt.Errorf("failed to mark album zip processing for ID %d: %w", albumID, err)
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func SetAlbumZipResult(db Querier, albumID int64, zipPath *string, zipSize *int64, taskErr error) error {
+	now := time.Now().Unix()
+	status := StatusDone
+	var errStr *string
+	if taskErr != nil {
+		status = StatusError
+		s := taskErr.Error()
+		errStr = &s
+	}
+
+	updateMap := map[string]interface{}{
+		"zip_status": status,
+		"zip_error":  errStr,
+		"updated_at": now,
+	}
+	if status == StatusDone {
+		updateMap["zip_path"] = zipPath
+		updateMap["zip_size"] = zipSize
+		updateMap["zip_last_generated_at"] = now
+	}
+
+	queryBuilder := psql.Update("albums").
+		SetMap(updateMap).
+		Where(sq.Eq{"id": albumID})
+
+	sqlStr, args, err := queryBuilder.ToSql()
+	if err != nil {
+		return fmt.Errorf("failed to build SQL for SetAlbumZipResult: %w", err)
+	}
+
+	_, err = db.Exec(sqlStr, args...)
+	if err != nil {
+		return fmt.Errorf("failed to update album zip result for ID %d: %w", albumID, err)
 	}
 	return nil
 }

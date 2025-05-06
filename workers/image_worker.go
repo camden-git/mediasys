@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/camden-git/mediasysbackend/config"
 	"github.com/camden-git/mediasysbackend/database"
@@ -17,6 +19,7 @@ const (
 	TaskThumbnail = "thumbnail"
 	TaskMetadata  = "metadata"
 	TaskDetection = "detection"
+	TaskAlbumZip  = "album_zip"
 )
 
 type ImageJob struct {
@@ -24,6 +27,7 @@ type ImageJob struct {
 	OriginalRelativePath string
 	ModTimeUnix          int64
 	TaskType             string
+	AlbumID              int64
 }
 
 type ImageProcessor struct {
@@ -83,13 +87,31 @@ func (ip *ImageProcessor) worker(id int, cfg config.Config) {
 				return
 			}
 
-			pendingKey := fmt.Sprintf("%s:%s", job.OriginalRelativePath, job.TaskType)
-			log.Printf("Worker %d: Received job type '%s' for: %s", id, job.TaskType, job.OriginalRelativePath)
+			var pendingKey string
+			var statusColumn string
+			var entityPath string
 
-			statusColumn := job.TaskType + "_status"
-			err := database.MarkImageTaskProcessing(ip.DB, job.OriginalRelativePath, statusColumn)
-			if err != nil {
-				log.Printf("Worker %d: ERROR marking %s processing for %s: %v. Skipping job.", id, job.TaskType, job.OriginalRelativePath, err)
+			if job.TaskType == TaskAlbumZip {
+				pendingKey = fmt.Sprintf("album_%d:%s", job.AlbumID, job.TaskType)
+				statusColumn = "zip_status"
+				entityPath = fmt.Sprintf("album ID %d", job.AlbumID)
+			} else {
+				pendingKey = fmt.Sprintf("%s:%s", job.OriginalRelativePath, job.TaskType)
+				statusColumn = job.TaskType + "_status"
+				entityPath = job.OriginalRelativePath
+			}
+
+			log.Printf("Worker %d: Received job type '%s' for: %s", id, job.TaskType, entityPath)
+
+			var markErr error
+			if job.TaskType == TaskAlbumZip {
+				markErr = database.MarkAlbumZipProcessing(ip.DB, job.AlbumID)
+			} else {
+				markErr = database.MarkImageTaskProcessing(ip.DB, job.OriginalRelativePath, statusColumn)
+			}
+
+			if markErr != nil {
+				log.Printf("Worker %d: ERROR marking %s processing for %s: %v. Skipping job.", id, job.TaskType, entityPath, markErr)
 				ip.Mutex.Lock()
 				delete(ip.Pending, pendingKey)
 				ip.Mutex.Unlock()
@@ -103,6 +125,8 @@ func (ip *ImageProcessor) worker(id int, cfg config.Config) {
 				ip.processMetadataTask(job)
 			case TaskDetection:
 				ip.processDetectionTask(job, faceDetector)
+			case TaskAlbumZip:
+				ip.processAlbumZipTask(job)
 			default:
 				log.Printf("Worker %d: ERROR unknown task type '%s' for %s", id, job.TaskType, job.OriginalRelativePath)
 			}
@@ -206,10 +230,54 @@ func (ip *ImageProcessor) processDetectionTask(job ImageJob, faceDetector *utils
 	}
 }
 
+func (ip *ImageProcessor) processAlbumZipTask(job ImageJob) {
+	log.Printf("Worker: Starting ZIP task for Album ID: %d", job.AlbumID)
+	var taskErr error
+	var finalZipPath *string
+	var finalZipSize *int64
+
+	album, err := database.GetAlbumByID(ip.DB, job.AlbumID)
+	if err != nil {
+		taskErr = fmt.Errorf("failed to fetch album details for ID %d: %w", job.AlbumID, err)
+		log.Printf("Worker: ERROR %v", taskErr)
+	} else {
+		zipSaveDirName := "album_archives"
+		zipSaveDir := filepath.Join(ip.Config.RootDirectory, zipSaveDirName)
+		zipFilenameBase := fmt.Sprintf("album_%d_archive_%d", album.ID, time.Now().Unix()) // Add timestamp for uniqueness
+
+		zipFullPath, zipSize, zipErr := utils.CreateAlbumZip(
+			ip.Config.RootDirectory,
+			album.FolderPath,
+			zipSaveDir,
+			zipFilenameBase,
+		)
+		if zipErr != nil {
+			taskErr = fmt.Errorf("failed to create album zip: %w", zipErr)
+			log.Printf("Worker: ERROR %v", taskErr)
+		} else {
+			relativePath := filepath.ToSlash(filepath.Join(zipSaveDirName, filepath.Base(zipFullPath)))
+			finalZipPath = &relativePath
+			finalZipSize = &zipSize
+			log.Printf("Worker: Successfully created ZIP for Album ID %d: %s", job.AlbumID, relativePath)
+		}
+	}
+
+	// for simplicity, we are not re-passing the album's updated_at. SetAlbumZipResult handles timestamps
+	dbErr := database.SetAlbumZipResult(ip.DB, job.AlbumID, finalZipPath, finalZipSize, taskErr)
+	if dbErr != nil {
+		log.Printf("Worker: ERROR updating album ZIP DB result for Album ID %d: %v", job.AlbumID, dbErr)
+	}
+}
+
 // QueueJob queues a specific task if not already pending
 func (ip *ImageProcessor) QueueJob(job ImageJob) bool {
 	// use composite key: "relativePath:taskType"
-	pendingKey := fmt.Sprintf("%s:%s", job.OriginalRelativePath, job.TaskType)
+	var pendingKey string
+	if job.TaskType == TaskAlbumZip {
+		pendingKey = fmt.Sprintf("album_%d:%s", job.AlbumID, job.TaskType)
+	} else {
+		pendingKey = fmt.Sprintf("%s:%s", job.OriginalRelativePath, job.TaskType)
+	}
 
 	ip.Mutex.Lock()
 	if ip.Pending[pendingKey] {
