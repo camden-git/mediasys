@@ -1,0 +1,25 @@
+after:2020
+before:2021
+orientation:portrait
+orientation:landscape
+max-rating:1
+max-rating:5
+min-resolution:1
+max-resolution:10
+min-faces:1
+max-faces:10
+keyword:"house"
+caption:"caption"
+directory:"dir name/another dir"
+file_name:"img.jpg",
+person:"John",
+position:"USA" # use city, state, country names
+5-km-from:(New York) # photos 5 km from the center of New York
+any_text:"apple", # searches for apple everywhere, "any_text:" can be omitted
+last-4-days:every-week
+last-4-days:every-month
+last-4-days:every-year
+last-4-days:2-days-ago
+last-4-days:2-weeks-ago
+last-4-days:2-months-ago
+last-4-days:2-years-ago
