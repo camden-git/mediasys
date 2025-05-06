@@ -19,10 +19,11 @@ type Querier interface {
 }
 
 const (
-	StatusPending    = "pending"
-	StatusProcessing = "processing"
-	StatusDone       = "done"
-	StatusError      = "error"
+	StatusNotRequired = "notRequired"
+	StatusPending     = "pending"
+	StatusProcessing  = "processing"
+	StatusDone        = "done"
+	StatusError       = "error"
 )
 
 func InitDB(dataSourceName string) (*sql.DB, error) {
@@ -80,6 +81,15 @@ func InitDB(dataSourceName string) (*sql.DB, error) {
 			folder_path TEXT NOT NULL UNIQUE,
 			banner_image_path TEXT NULL,
 			sort_order TEXT NOT NULL DEFAULT '` + DefaultSortOrder + `',
+            zip_path TEXT NULL,
+			zip_size INTEGER NULL,
+
+			zip_status TEXT NOT NULL DEFAULT 'notRequired',
+			zip_last_generated_at INTEGER NULL,
+			zip_last_requested_at INTEGER NULL,   
+
+			zip_error TEXT NULL,
+
 			created_at INTEGER NOT NULL,
 			updated_at INTEGER NOT NULL
 		);`,
