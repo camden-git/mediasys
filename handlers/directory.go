@@ -49,7 +49,7 @@ type DirectoryListing struct {
 	Parent string     `json:"parent,omitempty"`
 }
 
-const thumbnailApiPrefix = "/api/thumbnails/"
+const thumbnailApiPrefix = "/thumbnails/"
 
 type entryInfo struct {
 	entry fs.DirEntry

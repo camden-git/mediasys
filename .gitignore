@@ -7,6 +7,8 @@ generated_thumbnails/*
 generated_thumbnails
 test
 test/*
+data
+data/*
 models/*
 
 .idea/

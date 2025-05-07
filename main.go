@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/camden-git/mediasysbackend/config"
@@ -26,23 +27,28 @@ func main() {
 	if err != nil {
 		log.Fatalf("FATAL: Failed to load configuration: %v", err)
 	}
+
+	storagePaths := []string{cfg.ThumbnailsPath, cfg.BannersPath, cfg.ArchivesPath, filepath.Dir(cfg.DatabasePath)}
+	for _, p := range storagePaths {
+		log.Printf("Ensuring storage directory exists: %s", p)
+		if err := os.MkdirAll(p, 0755); err != nil {
+			log.Fatalf("FATAL: Failed to create storage directory %s: %v", p, err)
+		}
+	}
+
 	db, err := database.InitDB(cfg.DatabasePath)
 	if err != nil {
 		log.Fatalf("FATAL: Failed to initialize database: %v", err)
 	}
 	defer db.Close()
-	err = os.MkdirAll(cfg.ThumbnailDir, 0755)
-	if err != nil {
-		log.Fatalf("FATAL: Failed to create thumbnail directory %s: %v", cfg.ThumbnailDir, err)
-	}
 
-	log.Printf("Initializing image processor worker pool (Workers: %d, Queue Size: %d)...", cfg.NumWorkers, cfg.ThumbnailQueueSize)
+	log.Printf("Initializing image processor worker pool (Workers: %d, Queue Size: %d)...", cfg.NumThumbnailWorkers, cfg.ThumbnailQueueSize)
 
-	imageProcessor := workers.NewImageProcessor(cfg, db, cfg.ThumbnailQueueSize, cfg.NumWorkers)
+	imageProcessor := workers.NewImageProcessor(cfg, db, cfg.ThumbnailQueueSize, cfg.NumThumbnailWorkers)
 
 	log.Printf("Serving files from root: %s", cfg.RootDirectory)
 	log.Printf("Using database: %s", cfg.DatabasePath)
-	log.Printf("Storing thumbnails in: %s", cfg.ThumbnailDir)
+	log.Printf("Storing thumbnails in: %s", cfg.ThumbnailsPath)
 	log.Printf("Thumbnail max size (longest side): %dpx", cfg.ThumbnailMaxSize)
 
 	r := chi.NewRouter()
@@ -85,7 +91,6 @@ func main() {
 				r.Get("/zip", albumHandler.DownloadAlbumZip)
 			})
 		})
-		r.Get("/thumbnails/*", handlers.ThumbnailServer(cfg.ThumbnailDir))
 
 		r.Route("/people", func(r chi.Router) {
 			r.Post("/", personHandler.CreatePerson)
@@ -123,6 +128,18 @@ func main() {
 		// GET /debug/image_with_faces?path=relative/path/to/image.jpg
 		r.Get("/image_with_faces", imagePreviewHandler.ServeImageWithFaces)
 	})
+
+	thumbnailSubDir := filepath.Base(cfg.ThumbnailsPath)
+	r.Get(fmt.Sprintf("/%s/*", thumbnailSubDir), handlers.AssetServer(cfg.MediaStoragePath, thumbnailSubDir))
+	log.Printf("Registered thumbnail server at /%s/*", thumbnailSubDir)
+
+	bannerSubDir := filepath.Base(cfg.BannersPath)
+	r.Get(fmt.Sprintf("/%s/*", bannerSubDir), handlers.AssetServer(cfg.MediaStoragePath, bannerSubDir))
+	log.Printf("Registered banner server at /%s/*", bannerSubDir)
+
+	archiveSubDir := filepath.Base(cfg.ArchivesPath)
+	r.Get(fmt.Sprintf("/%s/*", archiveSubDir), handlers.AssetServer(cfg.MediaStoragePath, archiveSubDir))
+	log.Printf("Registered archive server at /%s/*", archiveSubDir)
 
 	r.Get("/*", handlers.DirectoryHandler(cfg, db, imageProcessor))
 

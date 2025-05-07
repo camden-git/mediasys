@@ -3,15 +3,13 @@ package workers
 import (
 	"database/sql"
 	"fmt"
+	"github.com/camden-git/mediasysbackend/config"
+	"github.com/camden-git/mediasysbackend/database"
+	"github.com/camden-git/mediasysbackend/utils"
 	"log"
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
-
-	"github.com/camden-git/mediasysbackend/config"
-	"github.com/camden-git/mediasysbackend/database"
-	"github.com/camden-git/mediasysbackend/utils"
 )
 
 // TaskType constants
@@ -156,7 +154,7 @@ func (ip *ImageProcessor) processThumbnailTask(job ImageJob) {
 	} else {
 		thumbSavePath, genErr := utils.GenerateThumbnail(
 			job.OriginalImagePath,
-			ip.Config.ThumbnailDir,
+			ip.Config.ThumbnailsPath,
 			ip.Config.ThumbnailMaxSize,
 		)
 		if genErr != nil {
@@ -233,7 +231,7 @@ func (ip *ImageProcessor) processDetectionTask(job ImageJob, faceDetector *utils
 func (ip *ImageProcessor) processAlbumZipTask(job ImageJob) {
 	log.Printf("Worker: Starting ZIP task for Album ID: %d", job.AlbumID)
 	var taskErr error
-	var finalZipPath *string
+	var finalZipRelativePath *string
 	var finalZipSize *int64
 
 	album, err := database.GetAlbumByID(ip.DB, job.AlbumID)
@@ -241,31 +239,45 @@ func (ip *ImageProcessor) processAlbumZipTask(job ImageJob) {
 		taskErr = fmt.Errorf("failed to fetch album details for ID %d: %w", job.AlbumID, err)
 		log.Printf("Worker: ERROR %v", taskErr)
 	} else {
-		zipSaveDirName := "album_archives"
-		zipSaveDir := filepath.Join(ip.Config.RootDirectory, zipSaveDirName)
-		zipFilenameBase := fmt.Sprintf("album_%d_archive_%d", album.ID, time.Now().Unix()) // Add timestamp for uniqueness
-
-		zipFullPath, zipSize, zipErr := utils.CreateAlbumZip(
+		zipFilename, zipSize, zipErr := utils.CreateAlbumZip(
 			ip.Config.RootDirectory,
 			album.FolderPath,
-			zipSaveDir,
-			zipFilenameBase,
+			ip.Config.ArchivesPath,
 		)
+
 		if zipErr != nil {
 			taskErr = fmt.Errorf("failed to create album zip: %w", zipErr)
 			log.Printf("Worker: ERROR %v", taskErr)
 		} else {
-			relativePath := filepath.ToSlash(filepath.Join(zipSaveDirName, filepath.Base(zipFullPath)))
-			finalZipPath = &relativePath
+			archiveSubDir := filepath.Base(ip.Config.ArchivesPath)
+			relativePath := filepath.ToSlash(filepath.Join(archiveSubDir, zipFilename))
+
+			finalZipRelativePath = &relativePath
 			finalZipSize = &zipSize
 			log.Printf("Worker: Successfully created ZIP for Album ID %d: %s", job.AlbumID, relativePath)
+
+			oldZipRelativePathPtr := album.ZipPath
+			if oldZipRelativePathPtr != nil && *oldZipRelativePathPtr != relativePath {
+				oldZipFullPath := filepath.Join(ip.Config.MediaStoragePath, *oldZipRelativePathPtr)
+				if removeErr := os.Remove(oldZipFullPath); removeErr != nil && !os.IsNotExist(removeErr) {
+					log.Printf("Worker: Warning - Failed to remove old zip file %s: %v", oldZipFullPath, removeErr)
+				} else if removeErr == nil {
+					log.Printf("Worker: Removed old zip file: %s", oldZipFullPath)
+				}
+			}
+
 		}
+
 	}
 
-	// for simplicity, we are not re-passing the album's updated_at. SetAlbumZipResult handles timestamps
-	dbErr := database.SetAlbumZipResult(ip.DB, job.AlbumID, finalZipPath, finalZipSize, taskErr)
+	dbErr := database.SetAlbumZipResult(ip.DB, job.AlbumID, finalZipRelativePath, finalZipSize, taskErr)
 	if dbErr != nil {
 		log.Printf("Worker: ERROR updating album ZIP DB result for Album ID %d: %v", job.AlbumID, dbErr)
+		// if DB fails after zip was created, cleanup the newly created ZIP file
+		if taskErr == nil && finalZipRelativePath != nil {
+			newZipFullPath := filepath.Join(ip.Config.MediaStoragePath, *finalZipRelativePath)
+			os.Remove(newZipFullPath)
+		}
 	}
 }
 

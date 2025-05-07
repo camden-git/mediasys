@@ -3,20 +3,21 @@ package utils
 import (
 	"archive/zip"
 	"fmt"
+	"github.com/google/uuid"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 )
 
-// CreateAlbumZip creates a ZIP archive of all files (not sub-folders) in a given album folder
-// rootDir: The application's root directory
-// albumRelativeFolderPath: The path of the album's folder, relative to rootDir
-// zipSaveDir: The directory where the final ZIP file should be saved
-// zipFilenameBase: The base name for the zip file (e.g., "album_123_archive"). Extension will be added
-// Returns: full path to the created zip, size in bytes, error
-func CreateAlbumZip(rootDir, albumRelativeFolderPath, zipSaveDir, zipFilenameBase string) (string, int64, error) {
-	albumFullPath := filepath.Join(rootDir, albumRelativeFolderPath)
+// CreateAlbumZip creates a ZIP archive of files in an album folder.
+// sourceRootDir: The application's root directory for *source* images.
+// albumRelativeFolderPath: Path of the album folder relative to sourceRootDir.
+// archiveSaveDir: The *full, absolute* path where the ZIP file should be saved (e.g., cfg.ArchivesPath).
+// Returns: filename relative to archiveSaveDir, size in bytes, error.
+func CreateAlbumZip(sourceRootDir, albumRelativeFolderPath, archiveSaveDir string) (string, int64, error) {
+	albumFullPath := filepath.Join(sourceRootDir, albumRelativeFolderPath)
 	albumFullPath = filepath.Clean(albumFullPath)
 
 	if _, err := os.Stat(albumFullPath); os.IsNotExist(err) {
@@ -25,11 +26,14 @@ func CreateAlbumZip(rootDir, albumRelativeFolderPath, zipSaveDir, zipFilenameBas
 		return "", 0, fmt.Errorf("error stating album folder %s: %w", albumFullPath, err)
 	}
 
-	if err := os.MkdirAll(zipSaveDir, 0755); err != nil {
-		return "", 0, fmt.Errorf("failed to create zip save directory %s: %w", zipSaveDir, err)
+	if err := os.MkdirAll(archiveSaveDir, 0755); err != nil {
+		return "", 0, fmt.Errorf("failed to create zip save directory %s: %w", archiveSaveDir, err)
 	}
 
-	zipFilePath := filepath.Join(zipSaveDir, zipFilenameBase+".zip")
+	timestamp := time.Now().Unix()
+	archiveUUID, _ := uuid.NewRandom()
+	zipFilename := fmt.Sprintf("archive_%d_%s.zip", timestamp, archiveUUID.String()[:8])
+	zipFilePath := filepath.Join(archiveSaveDir, zipFilename)
 
 	zipFile, err := os.Create(zipFilePath)
 	if err != nil {
@@ -40,6 +44,7 @@ func CreateAlbumZip(rootDir, albumRelativeFolderPath, zipSaveDir, zipFilenameBas
 	zipWriter := zip.NewWriter(zipFile)
 	defer zipWriter.Close()
 
+	log.Printf("zipper: Archiving files from %s", albumFullPath)
 	entries, err := os.ReadDir(albumFullPath)
 	if err != nil {
 		return "", 0, fmt.Errorf("failed to read album directory %s: %w", albumFullPath, err)
@@ -65,14 +70,14 @@ func CreateAlbumZip(rootDir, albumRelativeFolderPath, zipSaveDir, zipFilenameBas
 			continue
 		}
 
-		if _, err := io.Copy(writer, fileToZip); err != nil {
-			fileToZip.Close()
+		_, err = io.Copy(writer, fileToZip)
+		fileToZip.Close()
+		if err != nil {
 			log.Printf("zipper: Failed to write file %s to zip: %v. Skipping.", entry.Name(), err)
 			continue
 		}
-		fileToZip.Close()
 		foundFiles = true
-		log.Printf("zipper: Added %s to archive %s", entry.Name(), zipFilePath)
+		// log.Printf("zipper: Added %s to archive %s", entry.Name(), zipFilePath)
 	}
 
 	if !foundFiles {
@@ -85,7 +90,7 @@ func CreateAlbumZip(rootDir, albumRelativeFolderPath, zipSaveDir, zipFilenameBas
 	if err := zipWriter.Close(); err != nil {
 		return "", 0, fmt.Errorf("failed to finalize zip writer for %s: %w", zipFilePath, err)
 	}
-	zipFile.Close()
+	// file handle closed by defer
 
 	zipInfo, err := os.Stat(zipFilePath)
 	if err != nil {

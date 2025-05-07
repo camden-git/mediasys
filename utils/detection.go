@@ -35,7 +35,16 @@ func NewDNNFaceDetector(configPath, modelPath string) *DNNFaceDetector {
 		return &DNNFaceDetector{Enabled: false}
 	}
 
+	log.Printf("detection(dnn): Attempting to load config: %s", configPath)
+	log.Printf("detection(dnn): Attempting to load model:  %s", modelPath)
+
 	net := gocv.ReadNet(modelPath, configPath)
+
+	if net.Empty() {
+		log.Printf("detection(dnn): ERROR - ReadNet returned an empty network. Check file paths, integrity, and OpenCV DNN module.")
+		return &DNNFaceDetector{Enabled: false}
+	}
+
 	if net.Empty() {
 		log.Printf("detection(dnn): ERROR loading network model: config=%s, model=%s", configPath, modelPath)
 		return &DNNFaceDetector{Enabled: false}
