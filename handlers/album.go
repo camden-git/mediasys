@@ -345,7 +345,7 @@ func (ah *AlbumHandler) UploadAlbumBanner(w http.ResponseWriter, r *http.Request
 	bannerSaveDir := filepath.Join(ah.Cfg.RootDirectory, bannerDirName)
 	dbRelativePathDir := bannerDirName
 
-	savedUUIDFilename, procErr := utils.ProcessAndSaveBanner(file, bannerSaveDir)
+	savedUUIDFilename, procErr := utils.ProcessAndSaveBanner(file, ah.Cfg.BannersPath)
 	if procErr != nil {
 		log.Printf("Error processing/saving banner for album %d/%s: %v", album.ID, album.Slug, procErr)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to process banner image"})
@@ -355,13 +355,24 @@ func (ah *AlbumHandler) UploadAlbumBanner(w http.ResponseWriter, r *http.Request
 	oldBannerRelativePathPtr := album.BannerImagePath
 	newBannerRelativePath := filepath.ToSlash(filepath.Join(dbRelativePathDir, savedUUIDFilename))
 	if oldBannerRelativePathPtr != nil && (*oldBannerRelativePathPtr != newBannerRelativePath) {
-		oldBannerFullPath := filepath.Join(ah.Cfg.RootDirectory, *oldBannerRelativePathPtr)
+		oldBannerFullPath := filepath.Join(ah.Cfg.MediaStoragePath, *oldBannerRelativePathPtr)
 		if removeErr := os.Remove(oldBannerFullPath); removeErr != nil && !os.IsNotExist(removeErr) {
 			log.Printf("Warning: Failed to remove old banner file %s: %v", oldBannerFullPath, removeErr)
 		} else if removeErr == nil {
 			log.Printf("Removed old banner file: %s", oldBannerFullPath)
 		}
 	}
+
+	bannerSubDir, err := filepath.Rel(ah.Cfg.MediaStoragePath, ah.Cfg.BannersPath)
+	if err != nil {
+		log.Printf("CRITICAL: Cannot determine relative banner path from config (%s vs %s): %v", ah.Cfg.BannersPath, ah.Cfg.MediaStoragePath, err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Server configuration error saving banner path"})
+
+		os.Remove(filepath.Join(bannerSaveDir, savedUUIDFilename))
+		return
+	}
+
+	newBannerRelativePath = filepath.ToSlash(filepath.Join(bannerSubDir, savedUUIDFilename))
 
 	dbErr := database.UpdateAlbumBannerPath(ah.DB, album.ID, &newBannerRelativePath)
 	if dbErr != nil {
@@ -450,11 +461,11 @@ func (ah *AlbumHandler) DownloadAlbumZip(w http.ResponseWriter, r *http.Request)
 	}
 
 	// construct full path to the zip file
-	fullZipPath := filepath.Join(ah.Cfg.RootDirectory, *album.ZipPath)
+	fullZipPath := filepath.Join(ah.Cfg.MediaStoragePath, *album.ZipPath)
 	fullZipPath = filepath.Clean(fullZipPath)
 
-	if !strings.HasPrefix(fullZipPath, ah.Cfg.RootDirectory) {
-		log.Printf("SECURITY: Attempt to download ZIP outside root: %s (resolved from %s)", fullZipPath, *album.ZipPath)
+	if !strings.HasPrefix(fullZipPath, ah.Cfg.MediaStoragePath) {
+		log.Printf("SECURITY: Attempt to download ZIP outside media storage: %s (resolved from %s)", fullZipPath, *album.ZipPath)
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}

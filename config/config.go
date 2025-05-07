@@ -9,20 +9,48 @@ import (
 )
 
 const (
+	DefaultThumbnailsSubDir = "thumbnails"
+	DefaultBannersSubDir    = "album_banners"
+	DefaultArchivesSubDir   = "album_archives"
+)
+
+const (
 	defaultThumbnailQueueSize  = 200
 	defaultNumThumbnailWorkers = 4
 	defaultThumbnailMaxSize    = 300
 )
 
 type Config struct {
-	RootDirectory        string
-	DatabasePath         string
-	ThumbnailDir         string
-	ThumbnailMaxSize     int
-	ThumbnailQueueSize   int
-	NumWorkers           int
+	// source directory (where original user files are scanned)
+	RootDirectory string
+
+	// database path
+	DatabasePath string
+
+	// media storage configuration
+	MediaStoragePath string // primary root for generated assets (thumbs, banners, zips)
+	ThumbnailsPath   string // full calculated path for thumbnails
+	BannersPath      string // full calculated path for banners
+	ArchivesPath     string // full calculated path for archives
+
+	// thumbnail generation settings
+	ThumbnailMaxSize int
+
+	// worker settings
+	ThumbnailQueueSize  int
+	NumThumbnailWorkers int
+
+	// face detection model paths (DNN)
 	FaceDNNNetConfigPath string
 	FaceDNNNetModelPath  string
+}
+
+func getEnvOrDefault(key, defaultValue string) string {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+	return value
 }
 
 func getEnvIntOrDefault(envVar string, defaultVal int) int {
@@ -39,51 +67,50 @@ func getEnvIntOrDefault(envVar string, defaultVal int) int {
 }
 
 func LoadConfig() (Config, error) {
-	root := os.Getenv("ROOT_DIRECTORY")
-	if root == "" {
-		root = "."
-	}
+	root := getEnvOrDefault("ROOT_DIRECTORY", ".")
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
 		return Config{}, fmt.Errorf("failed to get absolute path for root directory '%s': %w", root, err)
 	}
 
-	dbPath := os.Getenv("DATABASE_PATH")
-	if dbPath == "" {
-		dbPath = "thumbnails.db"
+	dbPath := getEnvOrDefault("DATABASE_PATH", "images.db")
+
+	mediaStorage := getEnvOrDefault("MEDIA_STORAGE_PATH", filepath.Join(".", "media_storage"))
+	absMediaStorage, err := filepath.Abs(mediaStorage)
+	if err != nil {
+		return Config{}, fmt.Errorf("failed to get absolute path for media storage '%s': %w", mediaStorage, err)
 	}
 
-	thumbDir := os.Getenv("THUMBNAIL_DIR")
-	if thumbDir == "" {
-		thumbDir = filepath.Join(".", "generated_thumbnails")
-	}
-	absThumbDir, err := filepath.Abs(thumbDir)
-	if err != nil {
-		return Config{}, fmt.Errorf("failed to get absolute path for thumbnail directory '%s': %w", thumbDir, err)
-	}
+	thumbSubDir := getEnvOrDefault("THUMBNAILS_SUBDIR", DefaultThumbnailsSubDir)
+	absThumbnailsPath := filepath.Join(absMediaStorage, thumbSubDir)
+
+	bannerSubDir := getEnvOrDefault("BANNERS_SUBDIR", DefaultBannersSubDir)
+	absBannersPath := filepath.Join(absMediaStorage, bannerSubDir)
+
+	archiveSubDir := getEnvOrDefault("ARCHIVES_SUBDIR", DefaultArchivesSubDir)
+	absArchivesPath := filepath.Join(absMediaStorage, archiveSubDir)
 
 	thumbMaxSize := getEnvIntOrDefault("THUMBNAIL_MAX_SIZE", defaultThumbnailMaxSize)
+
 	queueSize := getEnvIntOrDefault("THUMBNAIL_QUEUE_SIZE", defaultThumbnailQueueSize)
-	numWorkers := getEnvIntOrDefault("NUM_WORKERS", defaultNumThumbnailWorkers)
+	numWorkers := getEnvIntOrDefault("NUM_THUMBNAIL_WORKERS", defaultNumThumbnailWorkers)
 
-	faceDNNConfig := os.Getenv("FACE_DNN_CONFIG_PATH")
-	faceDNNModel := os.Getenv("FACE_DNN_MODEL_PATH")
+	faceDNNConfig := getEnvOrDefault("FACE_DNN_CONFIG_PATH", "./models/deploy.prototxt.txt")
+	faceDNNModel := getEnvOrDefault("FACE_DNN_MODEL_PATH", "./models/res10_300x300_ssd_iter_140000_fp16.caffemodel")
 
-	if _, err := os.Stat(faceDNNConfig); os.IsNotExist(err) {
-		log.Printf("Warning: Face DNN config file not found at '%s'. Face detection will fail.", faceDNNConfig)
-	}
-	if _, err := os.Stat(faceDNNModel); os.IsNotExist(err) {
-		log.Printf("Warning: Face DNN model file not found at '%s'. Face detection will fail.", faceDNNModel)
-	}
-
-	return Config{
+	cfg := Config{
 		RootDirectory:        absRoot,
 		DatabasePath:         dbPath,
-		ThumbnailDir:         absThumbDir,
+		MediaStoragePath:     absMediaStorage,
+		ThumbnailsPath:       absThumbnailsPath,
+		BannersPath:          absBannersPath,
+		ArchivesPath:         absArchivesPath,
 		ThumbnailMaxSize:     thumbMaxSize,
 		ThumbnailQueueSize:   queueSize,
-		NumWorkers:           numWorkers,
+		NumThumbnailWorkers:  numWorkers,
 		FaceDNNNetConfigPath: faceDNNConfig,
 		FaceDNNNetModelPath:  faceDNNModel,
-	}, nil
+	}
+
+	return cfg, nil
 }
