@@ -45,32 +45,34 @@ func InitDB(dataSourceName string) (*sql.DB, error) {
 
 	tableCreationStmts := []string{
 		`CREATE TABLE IF NOT EXISTS images (
-			original_path TEXT PRIMARY KEY,
-			thumbnail_path TEXT NULL,
+			original_path TEXT PRIMARY KEY, -- path relative to ROOT_DIRECTORY
 			last_modified INTEGER NOT NULL,
+
 			width INTEGER NULL,
 			height INTEGER NULL,
-			aperture REAL NULL,
-			shutter_speed TEXT NULL,
-			iso INTEGER NULL,
-			focal_length REAL NULL,
-			lens_make TEXT NULL,
-			lens_model TEXT NULL,
+			taken_at INTEGER NULL,
 			camera_make TEXT NULL,
 			camera_model TEXT NULL,
-            taken_at INTEGER NULL,
-			-- Task Statuses (Default handled by EnsureImageRecordExists logic)
-			-- TODO: at some point maybe this becomes a less hardcoded system?
-			thumbnail_status TEXT NOT NULL DEFAULT 'pending',
-			metadata_status TEXT NOT NULL DEFAULT 'pending',
-			detection_status TEXT NOT NULL DEFAULT 'pending',
-			-- Task Timestamps
-			thumbnail_processed_at INTEGER NULL,
+			lens_make TEXT NULL,
+			lens_model TEXT NULL,
+			focal_length REAL NULL,      -- mm
+			aperture REAL NULL,          -- F-number
+			shutter_speed TEXT NULL,     -- e.g., "1/125s"
+			iso INTEGER NULL,
+
+			thumbnail_path TEXT NULL,
+
+			-- default to pending, will be updated by workers or EnsureImageRecordExists
+			metadata_status TEXT NOT NULL DEFAULT '` + StatusPending + `',
+			thumbnail_status TEXT NOT NULL DEFAULT '` + StatusPending + `',
+			detection_status TEXT NOT NULL DEFAULT '` + StatusPending + `',
+
 			metadata_processed_at INTEGER NULL,
+			thumbnail_processed_at INTEGER NULL,
 			detection_processed_at INTEGER NULL,
-			-- Task Errors
-			thumbnail_error TEXT NULL,
+
 			metadata_error TEXT NULL,
+			thumbnail_error TEXT NULL,
 			detection_error TEXT NULL
 		);`,
 		`CREATE TABLE IF NOT EXISTS albums (
