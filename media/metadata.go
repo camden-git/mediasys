@@ -1,4 +1,4 @@
-package utils
+package media
 
 import (
 	"fmt"
@@ -9,20 +9,6 @@ import (
 
 	"github.com/rwcarlsen/goexif/exif"
 )
-
-type Metadata struct {
-	Width        *int     `json:"width,omitempty"` // get from DecodeConfig usually
-	Height       *int     `json:"height,omitempty"`
-	Aperture     *float64 `json:"aperture,omitempty"`
-	ShutterSpeed *string  `json:"shutter_speed,omitempty"`
-	ISO          *int     `json:"iso,omitempty"`
-	FocalLength  *float64 `json:"focal_length,omitempty"`
-	LensMake     *string  `json:"lens_make,omitempty"`
-	LensModel    *string  `json:"lens_model,omitempty"`
-	CameraMake   *string  `json:"camera_make,omitempty"`
-	CameraModel  *string  `json:"camera_model,omitempty"`
-	TakenAt      *int64   `json:"taken_at,omitempty"`
-}
 
 // helper to safely get and convert a rational tag (like Aperture, FocalLength)
 func getRational(exifData *exif.Exif, tagName exif.FieldName) *float64 {

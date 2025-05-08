@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/camden-git/mediasysbackend/utils"
+	"github.com/camden-git/mediasysbackend/media"
 	"io"
 	"log"
 	"net/http"
@@ -32,9 +32,10 @@ func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 }
 
 type AlbumHandler struct {
-	DB       *sql.DB
-	Cfg      config.Config
-	ThumbGen *workers.ImageProcessor
+	DB             *sql.DB
+	Cfg            config.Config
+	ThumbGen       *workers.ImageProcessor
+	MediaProcessor *media.Processor
 }
 
 func (ah *AlbumHandler) getAlbumByIdentifier(identifier string) (database.Album, error) {
@@ -341,11 +342,14 @@ func (ah *AlbumHandler) UploadAlbumBanner(w http.ResponseWriter, r *http.Request
 
 	log.Printf("Received banner upload for album %d/%s: %s (Size: %d)", album.ID, album.Slug, handler.Filename, handler.Size)
 
-	bannerDirName := "album_banners"
-	bannerSaveDir := filepath.Join(ah.Cfg.RootDirectory, bannerDirName)
-	dbRelativePathDir := bannerDirName
+	if ah.MediaProcessor == nil {
+		log.Printf("CRITICAL ERROR: MediaProcessor not configured in AlbumHandler for banner upload.")
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Server configuration error"})
+		return
+	}
 
-	savedUUIDFilename, procErr := utils.ProcessAndSaveBanner(file, ah.Cfg.BannersPath)
+	savedRelPath, procErr := ah.MediaProcessor.ProcessBanner(file)
+
 	if procErr != nil {
 		log.Printf("Error processing/saving banner for album %d/%s: %v", album.ID, album.Slug, procErr)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to process banner image"})
@@ -353,31 +357,31 @@ func (ah *AlbumHandler) UploadAlbumBanner(w http.ResponseWriter, r *http.Request
 	}
 
 	oldBannerRelativePathPtr := album.BannerImagePath
-	newBannerRelativePath := filepath.ToSlash(filepath.Join(dbRelativePathDir, savedUUIDFilename))
+	newBannerRelativePath := savedRelPath
 	if oldBannerRelativePathPtr != nil && (*oldBannerRelativePathPtr != newBannerRelativePath) {
-		oldBannerFullPath := filepath.Join(ah.Cfg.MediaStoragePath, *oldBannerRelativePathPtr)
-		if removeErr := os.Remove(oldBannerFullPath); removeErr != nil && !os.IsNotExist(removeErr) {
-			log.Printf("Warning: Failed to remove old banner file %s: %v", oldBannerFullPath, removeErr)
-		} else if removeErr == nil {
-			log.Printf("Removed old banner file: %s", oldBannerFullPath)
+		mediaStore, storeErr := media.NewLocalStorage(ah.Cfg.MediaStoragePath, map[media.AssetType]string{})
+		if storeErr == nil { // only attempt delete if store initialized
+			oldBannerFullPath, pathErr := mediaStore.GetFullPath(*oldBannerRelativePathPtr)
+			if pathErr == nil {
+				if removeErr := os.Remove(oldBannerFullPath); removeErr != nil && !os.IsNotExist(removeErr) {
+					log.Printf("Warning: Failed to remove old banner file %s: %v", oldBannerFullPath, removeErr)
+				} else if removeErr == nil {
+					log.Printf("Removed old banner file: %s", oldBannerFullPath)
+				}
+			} else {
+				log.Printf("Warning: Could not resolve full path for old banner %s: %v", *oldBannerRelativePathPtr, pathErr)
+			}
+		} else {
+			log.Printf("Warning: Could not initialize media store to delete old banner: %v", storeErr)
 		}
 	}
 
-	bannerSubDir, err := filepath.Rel(ah.Cfg.MediaStoragePath, ah.Cfg.BannersPath)
-	if err != nil {
-		log.Printf("CRITICAL: Cannot determine relative banner path from config (%s vs %s): %v", ah.Cfg.BannersPath, ah.Cfg.MediaStoragePath, err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Server configuration error saving banner path"})
-
-		os.Remove(filepath.Join(bannerSaveDir, savedUUIDFilename))
-		return
-	}
-
-	newBannerRelativePath = filepath.ToSlash(filepath.Join(bannerSubDir, savedUUIDFilename))
-
 	dbErr := database.UpdateAlbumBannerPath(ah.DB, album.ID, &newBannerRelativePath)
 	if dbErr != nil {
-		newBannerFullPath := filepath.Join(bannerSaveDir, savedUUIDFilename)
-		os.Remove(newBannerFullPath)
+		mediaStore, storeErr := media.NewLocalStorage(ah.Cfg.MediaStoragePath, map[media.AssetType]string{})
+		if storeErr == nil {
+			_ = mediaStore.Delete(newBannerRelativePath)
+		}
 		log.Printf("Error updating banner path in DB for album %d/%s: %v", album.ID, album.Slug, dbErr)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to save banner information"})
 		return

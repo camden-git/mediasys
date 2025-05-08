@@ -1,4 +1,4 @@
-package utils
+package media
 
 import (
 	"fmt"
@@ -7,14 +7,6 @@ import (
 
 	"gocv.io/x/gocv"
 )
-
-type DetectionResult struct {
-	X          int
-	Y          int
-	W          int
-	H          int
-	Confidence float32
-}
 
 type DNNFaceDetector struct {
 	Net     gocv.Net
