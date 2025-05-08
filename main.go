@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/camden-git/mediasysbackend/media"
 	"log"
 	"net/http"
 	"os"
@@ -42,6 +43,17 @@ func main() {
 	}
 	defer db.Close()
 
+	mediaSubDirs := map[media.AssetType]string{
+		media.AssetTypeThumbnail: filepath.Base(cfg.ThumbnailsPath),
+		media.AssetTypeBanner:    filepath.Base(cfg.BannersPath),
+		media.AssetTypeArchive:   filepath.Base(cfg.ArchivesPath),
+	}
+	mediaStore, err := media.NewLocalStorage(cfg.MediaStoragePath, mediaSubDirs)
+	if err != nil {
+		log.Fatalf("FATAL: Failed to initialize media store: %v", err)
+	}
+	mediaProcessor := media.NewProcessor(mediaStore)
+
 	log.Printf("Initializing image processor worker pool (Workers: %d, Queue Size: %d)...", cfg.NumThumbnailWorkers, cfg.ThumbnailQueueSize)
 
 	imageProcessor := workers.NewImageProcessor(cfg, db, cfg.ThumbnailQueueSize, cfg.NumThumbnailWorkers)
@@ -71,7 +83,7 @@ func main() {
 	r.Use(middleware.Timeout(60 * time.Second))
 	r.Use(corsHandler.Handler)
 
-	albumHandler := &handlers.AlbumHandler{DB: db, Cfg: cfg, ThumbGen: imageProcessor}
+	albumHandler := &handlers.AlbumHandler{DB: db, Cfg: cfg, ThumbGen: imageProcessor, MediaProcessor: mediaProcessor}
 	personHandler := &handlers.PersonHandler{DB: db}
 	faceHandler := &handlers.FaceHandler{DB: db, Cfg: cfg}
 	imagePreviewHandler := &handlers.ImagePreviewHandler{DB: db, Cfg: cfg}

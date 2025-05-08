@@ -3,13 +3,13 @@ package database
 import (
 	"database/sql"
 	"fmt"
+	"github.com/camden-git/mediasysbackend/media"
 	"log"
 	"path/filepath"
 	"strings"
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
-	"github.com/camden-git/mediasysbackend/utils"
 )
 
 type Image struct {
@@ -167,7 +167,7 @@ func UpdateImageThumbnailResult(db Querier, originalPath string, thumbPath *stri
 }
 
 // UpdateImageMetadataResult updates metadata task outcome
-func UpdateImageMetadataResult(db Querier, originalPath string, meta *utils.Metadata, modTime int64, taskErr error) error {
+func UpdateImageMetadataResult(db Querier, originalPath string, meta *media.Metadata, modTime int64, taskErr error) error {
 	originalPath = filepath.ToSlash(originalPath)
 	now := time.Now().Unix()
 	status := StatusDone
@@ -218,7 +218,7 @@ func UpdateImageMetadataResult(db Querier, originalPath string, meta *utils.Meta
 }
 
 // UpdateImageDetectionResult updates detection task outcome
-func UpdateImageDetectionResult(db *sql.DB, originalPath string, detections []utils.DetectionResult, modTime int64, taskErr error) error {
+func UpdateImageDetectionResult(db *sql.DB, originalPath string, detections []media.DetectionResult, modTime int64, taskErr error) error {
 	originalPath = filepath.ToSlash(originalPath)
 	now := time.Now().Unix()
 	status := StatusDone

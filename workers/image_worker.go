@@ -5,11 +5,14 @@ import (
 	"fmt"
 	"github.com/camden-git/mediasysbackend/config"
 	"github.com/camden-git/mediasysbackend/database"
+	"github.com/camden-git/mediasysbackend/media"
 	"github.com/camden-git/mediasysbackend/utils"
+	"image"
 	"log"
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 )
 
 // TaskType constants
@@ -64,16 +67,26 @@ func NewImageProcessor(cfg config.Config, db *sql.DB, queueSize, numWorkers int)
 func (ip *ImageProcessor) worker(id int, cfg config.Config) {
 	defer ip.Wg.Done()
 
+	mediaStore, err := media.NewLocalStorage(cfg.MediaStoragePath, map[media.AssetType]string{
+		media.AssetTypeThumbnail: filepath.Base(cfg.ThumbnailsPath),
+		media.AssetTypeBanner:    filepath.Base(cfg.BannersPath),
+		media.AssetTypeArchive:   filepath.Base(cfg.ArchivesPath),
+	})
+	if err != nil {
+		log.Printf("Worker %d: FATAL - Failed to initialize media store: %v. Worker exiting.", id, err)
+		return
+	}
+	mediaProcessor := media.NewProcessor(mediaStore)
+
 	log.Printf("Worker %d: Loading DNN face detector...", id)
-	faceDetector := utils.NewDNNFaceDetector(cfg.FaceDNNNetConfigPath, cfg.FaceDNNNetModelPath)
+	faceDetector := media.NewDNNFaceDetector(cfg.FaceDNNNetConfigPath, cfg.FaceDNNNetModelPath)
 	defer func() {
 		if faceDetector != nil {
 			faceDetector.Close()
 		}
-		log.Printf("Worker %d: DNN Detector closed", id)
 	}()
 	if faceDetector == nil || !faceDetector.Enabled {
-		log.Printf("Worker %d: DNN Face Detector failed to load or is disabled", id)
+		log.Printf("Worker %d: DNN Face Detector disabled.", id)
 	}
 
 	log.Printf("Image worker %d started", id)
@@ -85,31 +98,22 @@ func (ip *ImageProcessor) worker(id int, cfg config.Config) {
 				return
 			}
 
+			var err error
+
 			var pendingKey string
 			var statusColumn string
 			var entityPath string
 
-			if job.TaskType == TaskAlbumZip {
-				pendingKey = fmt.Sprintf("album_%d:%s", job.AlbumID, job.TaskType)
-				statusColumn = "zip_status"
-				entityPath = fmt.Sprintf("album ID %d", job.AlbumID)
-			} else {
-				pendingKey = fmt.Sprintf("%s:%s", job.OriginalRelativePath, job.TaskType)
-				statusColumn = job.TaskType + "_status"
-				entityPath = job.OriginalRelativePath
-			}
-
 			log.Printf("Worker %d: Received job type '%s' for: %s", id, job.TaskType, entityPath)
 
-			var markErr error
 			if job.TaskType == TaskAlbumZip {
-				markErr = database.MarkAlbumZipProcessing(ip.DB, job.AlbumID)
+				err = database.MarkAlbumZipProcessing(ip.DB, job.AlbumID)
 			} else {
-				markErr = database.MarkImageTaskProcessing(ip.DB, job.OriginalRelativePath, statusColumn)
+				err = database.MarkImageTaskProcessing(ip.DB, job.OriginalRelativePath, statusColumn)
 			}
 
-			if markErr != nil {
-				log.Printf("Worker %d: ERROR marking %s processing for %s: %v. Skipping job.", id, job.TaskType, entityPath, markErr)
+			if err != nil {
+				log.Printf("Worker %d: ERROR marking %s processing for %s: %v. Skipping job.", id, job.TaskType, entityPath, err)
 				ip.Mutex.Lock()
 				delete(ip.Pending, pendingKey)
 				ip.Mutex.Unlock()
@@ -118,15 +122,15 @@ func (ip *ImageProcessor) worker(id int, cfg config.Config) {
 
 			switch job.TaskType {
 			case TaskThumbnail:
-				ip.processThumbnailTask(job)
+				ip.processThumbnailTask(job, mediaProcessor)
 			case TaskMetadata:
 				ip.processMetadataTask(job)
 			case TaskDetection:
 				ip.processDetectionTask(job, faceDetector)
 			case TaskAlbumZip:
-				ip.processAlbumZipTask(job)
+				ip.processAlbumZipTask(job, mediaStore)
 			default:
-				log.Printf("Worker %d: ERROR unknown task type '%s' for %s", id, job.TaskType, job.OriginalRelativePath)
+				log.Printf("Worker %d: ERROR unknown task type '%s'", id, job.TaskType)
 			}
 
 			ip.Mutex.Lock()
@@ -141,32 +145,35 @@ func (ip *ImageProcessor) worker(id int, cfg config.Config) {
 }
 
 // processThumbnailTask generates thumbnail and updates DB
-func (ip *ImageProcessor) processThumbnailTask(job ImageJob) {
+func (ip *ImageProcessor) processThumbnailTask(job ImageJob, processor *media.Processor) {
 	var taskErr error
-	var thumbPathPtr *string
+	var thumbRelPath *string
 
-	if _, statErr := os.Stat(job.OriginalImagePath); os.IsNotExist(statErr) {
-		taskErr = fmt.Errorf("original file not found: %w", statErr)
+	file, openErr := os.Open(job.OriginalImagePath)
+	if openErr != nil {
+		taskErr = fmt.Errorf("failed to open original file: %w", openErr)
 		log.Printf("Worker: Skipping thumbnail task for %s: %v", job.OriginalRelativePath, taskErr)
-	} else if statErr != nil {
-		taskErr = fmt.Errorf("failed to stat original file: %w", statErr)
-		log.Printf("Worker: ERROR stating file for thumbnail task %s: %v", job.OriginalRelativePath, taskErr)
 	} else {
-		thumbSavePath, genErr := utils.GenerateThumbnail(
-			job.OriginalImagePath,
-			ip.Config.ThumbnailsPath,
-			ip.Config.ThumbnailMaxSize,
-		)
-		if genErr != nil {
-			taskErr = fmt.Errorf("thumbnail generation failed: %w", genErr)
-			log.Printf("Worker: ERROR %v", taskErr)
+		img, format, decodeErr := image.Decode(file)
+		file.Close()
+
+		if decodeErr != nil {
+			taskErr = fmt.Errorf("failed to decode image for thumbnail: %w", decodeErr)
+			log.Printf("Worker: ERROR %v for %s", taskErr, job.OriginalRelativePath)
 		} else {
-			thumbPathPtr = &thumbSavePath
-			log.Printf("Worker: Generated thumbnail for %s", job.OriginalRelativePath)
+			log.Printf("Worker: Decoded image %s (format: %s) for thumbnail", job.OriginalRelativePath, format)
+			relPath, genErr := processor.GenerateThumbnail(img, job.OriginalRelativePath, ip.Config.ThumbnailMaxSize)
+			if genErr != nil {
+				taskErr = fmt.Errorf("thumbnail generation/save failed: %w", genErr)
+				log.Printf("Worker: ERROR %v for %s", taskErr, job.OriginalRelativePath)
+			} else {
+				thumbRelPath = &relPath
+				log.Printf("Worker: Generated thumbnail for %s", job.OriginalRelativePath)
+			}
 		}
 	}
 
-	dbErr := database.UpdateImageThumbnailResult(ip.DB, job.OriginalRelativePath, thumbPathPtr, job.ModTimeUnix, taskErr)
+	dbErr := database.UpdateImageThumbnailResult(ip.DB, job.OriginalRelativePath, thumbRelPath, job.ModTimeUnix, taskErr)
 	if dbErr != nil {
 		log.Printf("Worker: ERROR updating thumbnail DB result for %s: %v", job.OriginalRelativePath, dbErr)
 	}
@@ -174,7 +181,7 @@ func (ip *ImageProcessor) processThumbnailTask(job ImageJob) {
 
 func (ip *ImageProcessor) processMetadataTask(job ImageJob) {
 	var taskErr error
-	var metadata *utils.Metadata
+	var metadata *media.Metadata
 
 	if _, statErr := os.Stat(job.OriginalImagePath); os.IsNotExist(statErr) {
 		taskErr = fmt.Errorf("original file not found: %w", statErr)
@@ -183,7 +190,7 @@ func (ip *ImageProcessor) processMetadataTask(job ImageJob) {
 		taskErr = fmt.Errorf("failed to stat original file: %w", statErr)
 		log.Printf("Worker: ERROR stating file for metadata task %s: %v", job.OriginalRelativePath, taskErr)
 	} else {
-		metadata, taskErr = utils.GetImageMetadata(job.OriginalImagePath)
+		metadata, taskErr = media.GetImageMetadata(job.OriginalImagePath)
 		if taskErr != nil {
 			log.Printf("Worker: ERROR extracting metadata for %s: %v", job.OriginalRelativePath, taskErr)
 		} else {
@@ -198,9 +205,9 @@ func (ip *ImageProcessor) processMetadataTask(job ImageJob) {
 }
 
 // processDetectionTask performs detection and updates DB
-func (ip *ImageProcessor) processDetectionTask(job ImageJob, faceDetector *utils.DNNFaceDetector) {
+func (ip *ImageProcessor) processDetectionTask(job ImageJob, faceDetector *media.DNNFaceDetector) {
 	var taskErr error
-	var detections []utils.DetectionResult
+	var detections []media.DetectionResult
 
 	if _, statErr := os.Stat(job.OriginalImagePath); os.IsNotExist(statErr) {
 		taskErr = fmt.Errorf("original file not found: %w", statErr)
@@ -210,7 +217,7 @@ func (ip *ImageProcessor) processDetectionTask(job ImageJob, faceDetector *utils
 		log.Printf("Worker: ERROR stating file for detection task %s: %v", job.OriginalRelativePath, taskErr)
 	} else {
 		if faceDetector != nil && faceDetector.Enabled {
-			detections, taskErr = utils.DetectFacesAndAnimals(job.OriginalImagePath, faceDetector)
+			detections, taskErr = media.DetectFacesAndAnimals(job.OriginalImagePath, faceDetector)
 			if taskErr != nil {
 				log.Printf("Worker: ERROR during detection for %s: %v", job.OriginalRelativePath, taskErr)
 			} else {
@@ -228,10 +235,10 @@ func (ip *ImageProcessor) processDetectionTask(job ImageJob, faceDetector *utils
 	}
 }
 
-func (ip *ImageProcessor) processAlbumZipTask(job ImageJob) {
+func (ip *ImageProcessor) processAlbumZipTask(job ImageJob, store media.Store) {
 	log.Printf("Worker: Starting ZIP task for Album ID: %d", job.AlbumID)
 	var taskErr error
-	var finalZipRelativePath *string
+	var finalZipRelPath *string
 	var finalZipSize *int64
 
 	album, err := database.GetAlbumByID(ip.DB, job.AlbumID)
@@ -239,44 +246,39 @@ func (ip *ImageProcessor) processAlbumZipTask(job ImageJob) {
 		taskErr = fmt.Errorf("failed to fetch album details for ID %d: %w", job.AlbumID, err)
 		log.Printf("Worker: ERROR %v", taskErr)
 	} else {
-		zipFilename, zipSize, zipErr := utils.CreateAlbumZip(
+		zipSaveDirName := filepath.Base(ip.Config.ArchivesPath)
+		zipSaveDirAbs := ip.Config.ArchivesPath
+		zipFilenameBase := fmt.Sprintf("album_%d_archive_%d", album.ID, time.Now().Unix())
+
+		savedZipFilename, zipSizeBytes, zipErr := utils.CreateAlbumZip(
 			ip.Config.RootDirectory,
 			album.FolderPath,
-			ip.Config.ArchivesPath,
+			zipSaveDirAbs,
+			zipFilenameBase,
 		)
 
 		if zipErr != nil {
 			taskErr = fmt.Errorf("failed to create album zip: %w", zipErr)
 			log.Printf("Worker: ERROR %v", taskErr)
 		} else {
-			archiveSubDir := filepath.Base(ip.Config.ArchivesPath)
-			relativePath := filepath.ToSlash(filepath.Join(archiveSubDir, zipFilename))
+			// construct the path relative to MediaStoragePath for the database.
+			// since zipSaveDirAbs is ip.Config.ArchivesPath, and that's under MediaStoragePath, we need the path relative to MediaStoragePath.
+			relativePathToStore := filepath.ToSlash(filepath.Join(zipSaveDirName, savedZipFilename))
 
-			finalZipRelativePath = &relativePath
-			finalZipSize = &zipSize
-			log.Printf("Worker: Successfully created ZIP for Album ID %d: %s", job.AlbumID, relativePath)
-
-			oldZipRelativePathPtr := album.ZipPath
-			if oldZipRelativePathPtr != nil && *oldZipRelativePathPtr != relativePath {
-				oldZipFullPath := filepath.Join(ip.Config.MediaStoragePath, *oldZipRelativePathPtr)
-				if removeErr := os.Remove(oldZipFullPath); removeErr != nil && !os.IsNotExist(removeErr) {
-					log.Printf("Worker: Warning - Failed to remove old zip file %s: %v", oldZipFullPath, removeErr)
-				} else if removeErr == nil {
-					log.Printf("Worker: Removed old zip file: %s", oldZipFullPath)
-				}
-			}
-
+			finalZipRelPath = &relativePathToStore
+			finalZipSize = &zipSizeBytes
+			log.Printf("Worker: Successfully created ZIP for Album ID %d: %s", job.AlbumID, relativePathToStore)
 		}
-
 	}
 
-	dbErr := database.SetAlbumZipResult(ip.DB, job.AlbumID, finalZipRelativePath, finalZipSize, taskErr)
+	dbErr := database.SetAlbumZipResult(ip.DB, job.AlbumID, finalZipRelPath, finalZipSize, taskErr)
 	if dbErr != nil {
 		log.Printf("Worker: ERROR updating album ZIP DB result for Album ID %d: %v", job.AlbumID, dbErr)
-		// if DB fails after zip was created, cleanup the newly created ZIP file
-		if taskErr == nil && finalZipRelativePath != nil {
-			newZipFullPath := filepath.Join(ip.Config.MediaStoragePath, *finalZipRelativePath)
-			os.Remove(newZipFullPath)
+		if finalZipRelPath != nil {
+			fullPathToClean, _ := store.GetFullPath(*finalZipRelPath)
+			if fullPathToClean != "" {
+				os.Remove(fullPathToClean)
+			}
 		}
 	}
 }
