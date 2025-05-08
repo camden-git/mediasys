@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/camden-git/mediasysbackend/media"
 	"github.com/facette/natsort"
 	"io/fs"
 	"log"
@@ -15,7 +16,6 @@ import (
 
 	"github.com/camden-git/mediasysbackend/config"
 	"github.com/camden-git/mediasysbackend/database"
-	"github.com/camden-git/mediasysbackend/utils"
 	"github.com/camden-git/mediasysbackend/workers" // Use renamed package/struct if name changed
 )
 
@@ -241,7 +241,7 @@ func listDirectoryContents(baseDirFullPath string, requestPathPrefix string, cfg
 			ModTime: modTimeUnix,
 		}
 
-		if !isDir && utils.IsRasterImage(name) {
+		if !isDir && media.IsRasterImage(name) {
 			relPathFromRoot, err := filepath.Rel(cfg.RootDirectory, entryFullPath)
 			if err != nil {
 				log.Printf("CRITICAL: Error creating relative path for DB key (%s relative to %s): %v. Skipping image processing.", entryFullPath, cfg.RootDirectory, err)
