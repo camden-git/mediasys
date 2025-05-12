@@ -16,10 +16,10 @@ import (
 
 	"github.com/camden-git/mediasysbackend/config"
 	"github.com/camden-git/mediasysbackend/database"
-	"github.com/camden-git/mediasysbackend/workers" // Use renamed package/struct if name changed
+	"github.com/camden-git/mediasysbackend/workers"
 )
 
-// FileInfo struct - Add status fields
+// FileInfo struct
 type FileInfo struct {
 	Name            string   `json:"name"`
 	Path            string   `json:"path"`
