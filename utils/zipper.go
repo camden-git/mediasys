@@ -1,4 +1,3 @@
-// utils/zipper.go
 package utils
 
 import (
@@ -8,7 +7,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	// "strings" // Not needed here currently
 )
 
 // CreateAlbumZip creates a ZIP archive of files in an album folder.

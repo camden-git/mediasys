@@ -1,4 +1,3 @@
-// handlers/asset_server.go
 package handlers
 
 import (

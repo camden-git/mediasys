@@ -2,6 +2,7 @@ package database
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"path/filepath"
 
@@ -38,7 +39,7 @@ func GetThumbnailInfo(db *sql.DB, originalPath string) (ThumbnailInfo, error) {
 		&info.OriginalHeight,
 	)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return ThumbnailInfo{}, sql.ErrNoRows
 		}
 		return ThumbnailInfo{}, fmt.Errorf("failed to query or scan thumbnail info for %s: %w", originalPath, err)

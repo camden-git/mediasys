@@ -5,7 +5,7 @@ interface Size {
     height: number;
 }
 
-function useResizeObserver<T extends HTMLElement>(): [RefObject<T>, Size] {
+function useResizeObserver<T extends HTMLElement>(): [RefObject<T | null>, Size] {
     const ref = useRef<T>(null);
     const [size, setSize] = useState<Size>({ width: 0, height: 0 });
 
@@ -14,7 +14,6 @@ function useResizeObserver<T extends HTMLElement>(): [RefObject<T>, Size] {
         if (!element) return;
 
         const observer = new ResizeObserver((entries) => {
-            // we only observe one element
             if (entries[0]) {
                 const { width, height } = entries[0].contentRect;
                 setSize({ width, height });
