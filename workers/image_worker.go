@@ -108,8 +108,13 @@ func (ip *ImageProcessor) worker(id int, cfg config.Config) {
 
 			if job.TaskType == TaskAlbumZip {
 				err = database.MarkAlbumZipProcessing(ip.DB, job.AlbumID)
+				statusColumn = "zip_status"
+				entityPath = fmt.Sprintf("album ID %d", job.AlbumID)
 			} else {
+				statusColumn = job.TaskType + "_status"
 				err = database.MarkImageTaskProcessing(ip.DB, job.OriginalRelativePath, statusColumn)
+				log.Printf("Status column: %s", statusColumn)
+				entityPath = job.OriginalRelativePath
 			}
 
 			if err != nil {
