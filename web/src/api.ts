@@ -33,11 +33,11 @@ export const getAlbumContents = async (identifier: string): Promise<DirectoryLis
 };
 
 export const getThumbnailUrl = (thumbnailPath: string): string => {
-    return `${import.meta.env.VITE_BACKEND_URL}/api${thumbnailPath}`;
+    return `${import.meta.env.VITE_BACKEND_URL}${thumbnailPath}`;
 };
 
 export const getBannerUrl = (bannerPath: string): string => {
-    return `${import.meta.env.VITE_BACKEND_URL}/api/${bannerPath}`;
+    return `${import.meta.env.VITE_BACKEND_URL}/${bannerPath}`;
 };
 
 export const getOriginalImageUrl = (imagePath: string): string => {
