@@ -59,15 +59,25 @@ type entryInfo struct {
 
 func DirectoryHandler(cfg config.Config, db *sql.DB, imgProc *workers.ImageProcessor) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		requestedPath := r.URL.Path
+		rawRequestedPath := r.URL.Path
 
-		if requestedPath != "/" && !strings.HasSuffix(requestedPath, "/") {
-			potentialFullPath := filepath.Join(cfg.RootDirectory, requestedPath)
+		var actualContentPath string
+		if strings.HasPrefix(rawRequestedPath, "/api/") {
+			actualContentPath = strings.TrimPrefix(rawRequestedPath, "/api")
+			log.Printf("[DirectoryHandler] Debug: Stripped /api prefix. Raw: '%s', Effective Content Path: '%s'", rawRequestedPath, actualContentPath)
+		} else {
+			actualContentPath = rawRequestedPath
+		}
+
+		if actualContentPath != "/" && !strings.HasSuffix(actualContentPath, "/") {
+			potentialFullPath := filepath.Join(cfg.RootDirectory, actualContentPath)
 			potentialFullPath = filepath.Clean(potentialFullPath)
+
+			log.Printf("[DirectoryHandler] Debug: RootDirectory='%s', RequestedPath (from Nginx)='%s', PotentialFullPath='%s'", cfg.RootDirectory, actualContentPath, potentialFullPath)
 
 			if !strings.HasPrefix(potentialFullPath, cfg.RootDirectory) && potentialFullPath != cfg.RootDirectory {
 				http.Error(w, "Forbidden", http.StatusForbidden)
-				log.Printf("Attempted access outside roo	t directory (pre-stat): Request='%s', Resolved='%s', Root='%s'", requestedPath, potentialFullPath, cfg.RootDirectory)
+				log.Printf("Attempted access outside roo	t directory (pre-stat): Request='%s', Resolved='%s', Root='%s'", actualContentPath, potentialFullPath, cfg.RootDirectory)
 				return
 			}
 
@@ -75,7 +85,7 @@ func DirectoryHandler(cfg config.Config, db *sql.DB, imgProc *workers.ImageProce
 			isExistingFile := err == nil && !stat.IsDir()
 
 			if isExistingFile {
-				serveFileOrDirectory(w, r, cfg, db, imgProc, requestedPath, potentialFullPath)
+				serveFileOrDirectory(w, r, cfg, db, imgProc, actualContentPath, potentialFullPath)
 				return
 			}
 			if err != nil && !os.IsNotExist(err) {
@@ -83,13 +93,13 @@ func DirectoryHandler(cfg config.Config, db *sql.DB, imgProc *workers.ImageProce
 				log.Printf("Error stating potential file %s: %v", potentialFullPath, err)
 				return
 			}
-			http.Redirect(w, r, requestedPath+"/", http.StatusMovedPermanently)
+			http.Redirect(w, r, actualContentPath+"/", http.StatusMovedPermanently)
 			return
 		}
 
-		fullPath := filepath.Join(cfg.RootDirectory, requestedPath)
+		fullPath := filepath.Join(cfg.RootDirectory, actualContentPath)
 		fullPath = filepath.Clean(fullPath)
-		serveFileOrDirectory(w, r, cfg, db, imgProc, requestedPath, fullPath)
+		serveFileOrDirectory(w, r, cfg, db, imgProc, actualContentPath, fullPath)
 	}
 }
 
