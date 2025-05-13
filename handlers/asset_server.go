@@ -29,7 +29,7 @@ func AssetServer(baseStoragePath, subDir string) http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		// e.g., for route /banners/* and request /banners/image.jpg, extract "image.jpg"
-		routePrefix := "/" + subDir + "/"
+		routePrefix := "/api/" + subDir + "/"
 		relativePath := strings.TrimPrefix(r.URL.Path, routePrefix)
 
 		if relativePath == "" || strings.Contains(relativePath, "..") {
