@@ -146,14 +146,14 @@ func main() {
 		archiveSubDir := filepath.Base(cfg.ArchivesPath)
 		r.Get(fmt.Sprintf("/%s/*", archiveSubDir), handlers.AssetServer(cfg.MediaStoragePath, archiveSubDir))
 		log.Printf("Registered archive server at /%s/*", archiveSubDir)
-	})
 
-	r.Route("/debug", func(r chi.Router) {
-		// GET /debug/image_with_faces?path=relative/path/to/image.jpg
-		r.Get("/image_with_faces", imagePreviewHandler.ServeImageWithFaces)
-	})
+		r.Route("/debug", func(r chi.Router) {
+			// GET /debug/image_with_faces?path=relative/path/to/image.jpg
+			r.Get("/image_with_faces", imagePreviewHandler.ServeImageWithFaces)
+		})
 
-	r.Get("/*", handlers.DirectoryHandler(cfg, db, imageProcessor))
+		r.Get("/*", handlers.DirectoryHandler(cfg, db, imageProcessor))
+	})
 
 	port := os.Getenv("PORT")
 	if port == "" {

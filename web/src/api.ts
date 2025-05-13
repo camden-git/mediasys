@@ -46,5 +46,5 @@ export const getOriginalImageUrl = (imagePath: string): string => {
 };
 
 export const getAlbumDownloadUrl = (id: string): string => {
-    return `${import.meta.env.VITE_BACKEND_URL}/api/albums/${id}/zip`;
+    return `${import.meta.env.VITE_BACKEND_URL}/albums/${id}/zip`;
 };
