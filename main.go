@@ -134,24 +134,24 @@ func main() {
 		r.Route("/search/faces", func(r chi.Router) {
 			r.Get("/", faceHandler.SearchFacesByPerson)
 		})
+
+		thumbnailSubDir := filepath.Base(cfg.ThumbnailsPath)
+		r.Get(fmt.Sprintf("/%s/*", thumbnailSubDir), handlers.AssetServer(cfg.MediaStoragePath, thumbnailSubDir))
+		log.Printf("Registered thumbnail server at /%s/*", thumbnailSubDir)
+
+		bannerSubDir := filepath.Base(cfg.BannersPath)
+		r.Get(fmt.Sprintf("/%s/*", bannerSubDir), handlers.AssetServer(cfg.MediaStoragePath, bannerSubDir))
+		log.Printf("Registered banner server at /%s/*", bannerSubDir)
+
+		archiveSubDir := filepath.Base(cfg.ArchivesPath)
+		r.Get(fmt.Sprintf("/%s/*", archiveSubDir), handlers.AssetServer(cfg.MediaStoragePath, archiveSubDir))
+		log.Printf("Registered archive server at /%s/*", archiveSubDir)
 	})
 
 	r.Route("/debug", func(r chi.Router) {
 		// GET /debug/image_with_faces?path=relative/path/to/image.jpg
 		r.Get("/image_with_faces", imagePreviewHandler.ServeImageWithFaces)
 	})
-
-	thumbnailSubDir := filepath.Base(cfg.ThumbnailsPath)
-	r.Get(fmt.Sprintf("/%s/*", thumbnailSubDir), handlers.AssetServer(cfg.MediaStoragePath, thumbnailSubDir))
-	log.Printf("Registered thumbnail server at /%s/*", thumbnailSubDir)
-
-	bannerSubDir := filepath.Base(cfg.BannersPath)
-	r.Get(fmt.Sprintf("/%s/*", bannerSubDir), handlers.AssetServer(cfg.MediaStoragePath, bannerSubDir))
-	log.Printf("Registered banner server at /%s/*", bannerSubDir)
-
-	archiveSubDir := filepath.Base(cfg.ArchivesPath)
-	r.Get(fmt.Sprintf("/%s/*", archiveSubDir), handlers.AssetServer(cfg.MediaStoragePath, archiveSubDir))
-	log.Printf("Registered archive server at /%s/*", archiveSubDir)
 
 	r.Get("/*", handlers.DirectoryHandler(cfg, db, imageProcessor))
 
