@@ -8,10 +8,7 @@ import { Navbar, NavbarItem, NavbarSection, NavbarSpacer } from '../components/e
 import { InboxIcon, MagnifyingGlassIcon } from '@heroicons/react/20/solid';
 import { Sidebar, SidebarBody, SidebarItem, SidebarSection } from '../components/elements/Sidebar.tsx';
 
-const navItems = [
-    { label: 'Index', url: '/' },
-    { label: 'Events', url: 'events' },
-];
+const navItems = [{ label: 'Index', url: '/' }];
 
 const AlbumRouter: React.FC = () => {
     const params = useParams<{ identifier: string }>();

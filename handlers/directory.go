@@ -64,7 +64,6 @@ func DirectoryHandler(cfg config.Config, db *sql.DB, imgProc *workers.ImageProce
 		var actualContentPath string
 		if strings.HasPrefix(rawRequestedPath, "/api/") {
 			actualContentPath = strings.TrimPrefix(rawRequestedPath, "/api")
-			log.Printf("[DirectoryHandler] Debug: Stripped /api prefix. Raw: '%s', Effective Content Path: '%s'", rawRequestedPath, actualContentPath)
 		} else {
 			actualContentPath = rawRequestedPath
 		}
@@ -72,8 +71,6 @@ func DirectoryHandler(cfg config.Config, db *sql.DB, imgProc *workers.ImageProce
 		if actualContentPath != "/" && !strings.HasSuffix(actualContentPath, "/") {
 			potentialFullPath := filepath.Join(cfg.RootDirectory, actualContentPath)
 			potentialFullPath = filepath.Clean(potentialFullPath)
-
-			log.Printf("[DirectoryHandler] Debug: RootDirectory='%s', RequestedPath (from Nginx)='%s', PotentialFullPath='%s'", cfg.RootDirectory, actualContentPath, potentialFullPath)
 
 			if !strings.HasPrefix(potentialFullPath, cfg.RootDirectory) && potentialFullPath != cfg.RootDirectory {
 				http.Error(w, "Forbidden", http.StatusForbidden)

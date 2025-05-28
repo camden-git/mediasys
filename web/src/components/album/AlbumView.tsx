@@ -4,15 +4,14 @@ import { StoreModel } from '../../store';
 import LoadingSpinner from '../elements/LoadingSpinner.tsx';
 import ErrorMessage from '../elements/ErrorMessage.tsx';
 import { Heading } from '../elements/Heading.tsx';
-import { Text } from '../elements/Text.tsx';
 import { Button } from '../elements/Button.tsx';
-import { FolderArrowDownIcon } from '@heroicons/react/24/outline';
 import AdvancedImageGrid from './AdvancedImageGrid.tsx';
 import { getAlbumDownloadUrl, getBannerUrl } from '../../api.ts';
 import { FileInfo } from '../../types.ts';
 import ImageLightbox from './ImageLightbox.tsx';
 import { Dialog, DialogActions, DialogBody, DialogDescription, DialogTitle } from '../elements/Dialog.tsx';
 import { bytesToString } from '../../lib/formatters.ts';
+import { ArrowDownIcon, CameraIcon, MapPinIcon, PhotoIcon } from '@heroicons/react/16/solid';
 
 const AlbumView: React.FC = () => {
     const { currentAlbum, directoryListing, isLoading, error } = useStoreState(
@@ -53,34 +52,54 @@ const AlbumView: React.FC = () => {
 
     return (
         <>
-            <div>
-                <div className={'bg-gray-200'}>
+            <div className='relative mx-auto'>
+                <div className='absolute inset-x-0 top-0 -z-10 h-80 overflow-hidden rounded-t-2xl mask-b-from-60% sm:h-88 md:h-112 lg:h-128'>
                     {currentAlbum?.banner_image_path && (
                         <img
-                            className='h-32 w-full rounded-t-lg object-cover lg:h-80'
+                            alt=''
                             src={getBannerUrl(currentAlbum?.banner_image_path)}
-                            alt={`${currentAlbum?.name} banner image`}
+                            className='absolute inset-0 h-full w-full mask-l-from-60% object-cover object-center opacity-40'
                         />
                     )}
+                    <div className='absolute inset-0 rounded-t-2xl outline-1 -outline-offset-1 outline-gray-950/10 dark:outline-white/10' />
                 </div>
-                <div className='mb-8 px-4 sm:px-6 lg:px-8'>
-                    <div className='-mt-30 sm:flex sm:items-end sm:space-x-5'>
-                        <div className='mt-6 sm:flex sm:min-w-0 sm:flex-1 sm:items-center sm:justify-end sm:space-x-6 sm:pb-1'>
-                            <div className='mt-6 min-w-0 flex-1 sm:hidden md:block'>
-                                <Heading className={'truncate font-bold !text-gray-100'} huge>
-                                    {currentAlbum?.name}
-                                </Heading>
-                                <Text className={'truncate !text-zinc-200'}>{currentAlbum?.description}</Text>
+                <div className='mx-auto'>
+                    <div className='relative'>
+                        <div className='px-8 pt-48 pb-12 lg:py-24'>
+                            {/*<Logo className="h-8 fill-gray-950 dark:fill-white" />*/}
+                            <h1 className='sr-only'>{currentAlbum?.name} overview</h1>
+                            <Heading className={'truncate font-bold'} huge>
+                                {currentAlbum?.name}
+                            </Heading>
+                            <p className='mt-7 max-w-lg text-base/7 text-pretty text-gray-600 dark:text-gray-400'>
+                                {currentAlbum?.description}
+                            </p>
+                            <div className='mt-6 flex flex-wrap items-center gap-x-4 gap-y-3 text-sm/7 font-semibold text-gray-950 sm:gap-3'>
+                                <div className='flex items-center gap-1.5'>
+                                    <PhotoIcon className='size-4 text-gray-950/40' />
+                                    {directoryListing?.files.length} photos
+                                </div>
+                                <span className='hidden text-gray-950/25 sm:inline dark:text-white/25'>&middot;</span>
+                                <div className='flex items-center gap-1.5'>
+                                    <CameraIcon className='size-4 text-gray-950/40' />
+                                    Camden Rush
+                                </div>
+                                <span className='hidden text-gray-950/25 sm:inline dark:text-white/25'>&middot;</span>
+                                <div className='flex items-center gap-1.5'>
+                                    <MapPinIcon className='size-4 text-gray-950/40' />
+                                    Lane Tech
+                                </div>
                             </div>
-                            <div className='mt-6 flex flex-col justify-stretch space-y-3 sm:flex-row sm:space-y-0 sm:space-x-4'>
-                                {/*<Button color={'white'}>*/}
-                                {/*    Share <ArrowTopRightOnSquareIcon />*/}
-                                {/*</Button>*/}
+                            <div className='mt-10'>
                                 {currentAlbum?.zip_size && (
                                     <>
-                                        <Button color={'white'} onClick={() => setDownloadModalOpen(true)}>
-                                            Download <FolderArrowDownIcon />
-                                        </Button>
+                                        <button
+                                            onClick={() => setDownloadModalOpen(true)}
+                                            className='inline-flex items-center gap-x-2 rounded-full bg-gray-950 px-3 py-0.5 text-sm/7 font-semibold text-white hover:bg-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600'
+                                        >
+                                            <ArrowDownIcon className='size-2 fill-white' />
+                                            Download
+                                        </button>
                                         <Dialog open={downloadModalOpen} onClose={setDownloadModalOpen}>
                                             <DialogTitle>Download {currentAlbum?.name}</DialogTitle>
                                             <DialogDescription>
@@ -102,28 +121,24 @@ const AlbumView: React.FC = () => {
                                 )}
                             </div>
                         </div>
-                    </div>
-                    <div className='-mt-6 hidden min-w-0 flex-1 sm:block md:hidden'>
-                        <Heading className={'truncate font-bold !text-gray-100'} huge>
-                            {currentAlbum?.name}
-                        </Heading>
+
+                        <div className='mt-4'>
+                            <ErrorMessage message={error} />
+
+                            {isLoading && <LoadingSpinner />}
+
+                            {!isLoading && !error && directoryListing && (
+                                <AdvancedImageGrid
+                                    images={imageFiles}
+                                    targetRowHeight={260}
+                                    boxSpacing={4}
+                                    onImageClick={handleImageClick}
+                                />
+                            )}
+                            <ImageLightbox image={selectedImage} onClose={handleCloseLightbox} />
+                        </div>
                     </div>
                 </div>
-            </div>
-            <div className='p-4'>
-                <ErrorMessage message={error} />
-
-                {isLoading && <LoadingSpinner />}
-
-                {!isLoading && !error && directoryListing && (
-                    <AdvancedImageGrid
-                        images={imageFiles}
-                        targetRowHeight={260}
-                        boxSpacing={4}
-                        onImageClick={handleImageClick}
-                    />
-                )}
-                <ImageLightbox image={selectedImage} onClose={handleCloseLightbox} />
             </div>
         </>
     );
