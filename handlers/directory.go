@@ -1,11 +1,8 @@
 package handlers
 
 import (
-	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/camden-git/mediasysbackend/media"
-	"github.com/facette/natsort"
 	"io/fs"
 	"log"
 	"net/http"
@@ -16,7 +13,12 @@ import (
 
 	"github.com/camden-git/mediasysbackend/config"
 	"github.com/camden-git/mediasysbackend/database"
+	"github.com/camden-git/mediasysbackend/media"
+	"github.com/camden-git/mediasysbackend/models"
+	"github.com/camden-git/mediasysbackend/repository"
 	"github.com/camden-git/mediasysbackend/workers"
+	"github.com/facette/natsort"
+	"gorm.io/gorm"
 )
 
 // FileInfo struct
@@ -57,7 +59,8 @@ type entryInfo struct {
 	err   error
 }
 
-func DirectoryHandler(cfg config.Config, db *sql.DB, imgProc *workers.ImageProcessor) http.HandlerFunc {
+// DirectoryHandler now accepts repositories
+func DirectoryHandler(cfg config.Config, imgRepo repository.ImageRepositoryInterface, imgProc *workers.ImageProcessor) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		rawRequestedPath := r.URL.Path
 
@@ -74,7 +77,7 @@ func DirectoryHandler(cfg config.Config, db *sql.DB, imgProc *workers.ImageProce
 
 			if !strings.HasPrefix(potentialFullPath, cfg.RootDirectory) && potentialFullPath != cfg.RootDirectory {
 				http.Error(w, "Forbidden", http.StatusForbidden)
-				log.Printf("Attempted access outside roo	t directory (pre-stat): Request='%s', Resolved='%s', Root='%s'", actualContentPath, potentialFullPath, cfg.RootDirectory)
+				log.Printf("Attempted access outside root directory (pre-stat): Request='%s', Resolved='%s', Root='%s'", actualContentPath, potentialFullPath, cfg.RootDirectory)
 				return
 			}
 
@@ -82,7 +85,7 @@ func DirectoryHandler(cfg config.Config, db *sql.DB, imgProc *workers.ImageProce
 			isExistingFile := err == nil && !stat.IsDir()
 
 			if isExistingFile {
-				serveFileOrDirectory(w, r, cfg, db, imgProc, actualContentPath, potentialFullPath)
+				serveFileOrDirectory(w, r, cfg, imgRepo, imgProc, actualContentPath, potentialFullPath)
 				return
 			}
 			if err != nil && !os.IsNotExist(err) {
@@ -96,11 +99,11 @@ func DirectoryHandler(cfg config.Config, db *sql.DB, imgProc *workers.ImageProce
 
 		fullPath := filepath.Join(cfg.RootDirectory, actualContentPath)
 		fullPath = filepath.Clean(fullPath)
-		serveFileOrDirectory(w, r, cfg, db, imgProc, actualContentPath, fullPath)
+		serveFileOrDirectory(w, r, cfg, imgRepo, imgProc, actualContentPath, fullPath)
 	}
 }
 
-func serveFileOrDirectory(w http.ResponseWriter, r *http.Request, cfg config.Config, db *sql.DB, imgProc *workers.ImageProcessor, requestedPath, fullPath string) {
+func serveFileOrDirectory(w http.ResponseWriter, r *http.Request, cfg config.Config, imgRepo repository.ImageRepositoryInterface, imgProc *workers.ImageProcessor, requestedPath, fullPath string) {
 	cleanedFullPath := filepath.Clean(fullPath)
 	if !strings.HasPrefix(cleanedFullPath, cfg.RootDirectory) {
 		isRootItself := cleanedFullPath == filepath.Clean(cfg.RootDirectory)
@@ -128,7 +131,7 @@ func serveFileOrDirectory(w http.ResponseWriter, r *http.Request, cfg config.Con
 		return
 	}
 
-	fileInfos, err := listDirectoryContents(cleanedFullPath, requestedPath, cfg, db, imgProc, database.DefaultSortOrder)
+	fileInfos, err := listDirectoryContents(cleanedFullPath, requestedPath, cfg, imgRepo, imgProc, database.DefaultSortOrder)
 	if err != nil {
 		if os.IsPermission(err) {
 			http.Error(w, "Forbidden", http.StatusForbidden)
@@ -165,7 +168,7 @@ func serveFileOrDirectory(w http.ResponseWriter, r *http.Request, cfg config.Con
 	}
 }
 
-func listDirectoryContents(baseDirFullPath string, requestPathPrefix string, cfg config.Config, db database.Querier, imgProc *workers.ImageProcessor, sortOrder string) ([]FileInfo, error) {
+func listDirectoryContents(baseDirFullPath string, requestPathPrefix string, cfg config.Config, imgRepo repository.ImageRepositoryInterface, imgProc *workers.ImageProcessor, sortOrder string) ([]FileInfo, error) {
 	dirEntries, err := os.ReadDir(baseDirFullPath)
 	if err != nil {
 		return nil, fmt.Errorf("reading directory %s: %w", baseDirFullPath, err)
@@ -257,39 +260,48 @@ func listDirectoryContents(baseDirFullPath string, requestPathPrefix string, cfg
 			}
 			dbKeyPath := filepath.ToSlash(relPathFromRoot)
 
-			var imageInfo database.Image
+			var imageInfo *models.Image
 			var recordExists bool = true
 
-			imageInfo, err = database.GetImageInfo(db, dbKeyPath)
+			imageInfo, err = imgRepo.GetByPath(dbKeyPath)
 
-			if err == sql.ErrNoRows {
+			if err == gorm.ErrRecordNotFound {
 				recordExists = false
 				// ensure record exists with pending statuses before queuing tasks
-				created, ensureErr := database.EnsureImageRecordExists(db, dbKeyPath, modTimeUnix)
+				created, ensureErr := imgRepo.EnsureExists(dbKeyPath, modTimeUnix)
 				if ensureErr != nil {
 					log.Printf("ERROR ensuring image record exists for %s: %v", dbKeyPath, ensureErr)
-
 					fileInfos = append(fileInfos, apiFileInfo)
 					continue
 				}
 				if created {
 					// fetch again to get the initialized record with pending statuses
-					imageInfo, err = database.GetImageInfo(db, dbKeyPath)
+					imageInfo, err = imgRepo.GetByPath(dbKeyPath)
 					if err != nil {
 						log.Printf("ERROR fetching newly created image record for %s: %v", dbKeyPath, err)
+						// continue with default pending statuses if fetch fails
 					}
 				} else {
-					log.Printf("WARNING: EnsureImageRecordExists inconsistency for %s.", dbKeyPath)
-					imageInfo, err = database.GetImageInfo(db, dbKeyPath)
-					if err != nil {
-						log.Printf("ERROR fetching image record for %s after Ensure inconsistency: %v", dbKeyPath, err)
+					// this case should ideally not happen if EnsureExists works correctly with FirstOrCreate logic
+					log.Printf("WARNING: EnsureImageRecordExists reported not created, but record might exist or error occurred. Path: %s", dbKeyPath)
+					// attempt to fetch anyway, or rely on the initial imageInfo being nil
+					imageInfo, err = imgRepo.GetByPath(dbKeyPath)
+					if err != nil && err != gorm.ErrRecordNotFound {
+						log.Printf("ERROR fetching image record for %s after Ensure reported not created: %v", dbKeyPath, err)
 						fileInfos = append(fileInfos, apiFileInfo)
 						continue
 					}
 				}
-
-				if err == nil {
+				// if imageInfo is still nil after all attempts (e.g. EnsureExists failed silently or GetByPath failed after creation)
+				// then recordExists will remain false
+				if imageInfo != nil && err == nil { // auccessfully fetched or created and fetched
 					recordExists = true
+				} else { // could not get/create a record
+					recordExists = false
+					// set statuses to pending for UI if no record could be established
+					apiFileInfo.ThumbnailStatus = database.StatusPending
+					apiFileInfo.MetadataStatus = database.StatusPending
+					apiFileInfo.DetectionStatus = database.StatusPending
 				}
 
 			} else if err != nil {
@@ -298,7 +310,7 @@ func listDirectoryContents(baseDirFullPath string, requestPathPrefix string, cfg
 				continue
 			}
 
-			if recordExists {
+			if recordExists && imageInfo != nil {
 				apiFileInfo.ThumbnailStatus = imageInfo.ThumbnailStatus
 				apiFileInfo.MetadataStatus = imageInfo.MetadataStatus
 				apiFileInfo.DetectionStatus = imageInfo.DetectionStatus
@@ -316,7 +328,7 @@ func listDirectoryContents(baseDirFullPath string, requestPathPrefix string, cfg
 
 				if imageInfo.ThumbnailPath != nil && imageInfo.ThumbnailStatus == database.StatusDone {
 					thumbFilename := filepath.Base(*imageInfo.ThumbnailPath)
-					fullThumbURL := thumbnailApiPrefix + thumbFilename
+					fullThumbURL := "/api" + thumbnailApiPrefix + thumbFilename
 					apiFileInfo.ThumbnailPath = &fullThumbURL
 				}
 			} else {
@@ -329,11 +341,11 @@ func listDirectoryContents(baseDirFullPath string, requestPathPrefix string, cfg
 			queueMetadata := false
 			queueDetection := false
 
-			if !recordExists {
+			if !recordExists || imageInfo == nil {
 				queueThumbnail = true
 				queueMetadata = true
 				queueDetection = true
-				log.Printf("Queuing all tasks for new image record: %s", dbKeyPath)
+				log.Printf("Queuing all tasks for new or unreadable image record: %s", dbKeyPath)
 			} else if modTimeUnix > imageInfo.LastModified {
 				// file is newer than last DB update, re-queue everything
 				queueThumbnail = true
@@ -342,15 +354,15 @@ func listDirectoryContents(baseDirFullPath string, requestPathPrefix string, cfg
 				log.Printf("Queuing all tasks for updated image file: %s (ModTime: %d > DB: %d)", dbKeyPath, modTimeUnix, imageInfo.LastModified)
 			} else {
 				// file not newer, check individual task statuses
-				if imageInfo.ThumbnailStatus != database.StatusDone && (imageInfo.ThumbnailStatus == database.StatusPending || imageInfo.ThumbnailStatus == database.StatusProcessing) {
+				if imageInfo.ThumbnailStatus != database.StatusDone && imageInfo.ThumbnailStatus != database.StatusNotRequired {
 					queueThumbnail = true
 					log.Printf("Re-queuing thumbnail task for %s (status: %s)", dbKeyPath, imageInfo.ThumbnailStatus)
 				}
-				if imageInfo.MetadataStatus != database.StatusDone && (imageInfo.MetadataStatus == database.StatusPending || imageInfo.MetadataStatus == database.StatusProcessing) {
+				if imageInfo.MetadataStatus != database.StatusDone && imageInfo.MetadataStatus != database.StatusNotRequired {
 					queueMetadata = true
 					log.Printf("Re-queuing metadata task for %s (status: %s)", dbKeyPath, imageInfo.MetadataStatus)
 				}
-				if imageInfo.DetectionStatus != database.StatusDone && (imageInfo.DetectionStatus == database.StatusPending || imageInfo.DetectionStatus == database.StatusProcessing) {
+				if imageInfo.DetectionStatus != database.StatusDone && imageInfo.DetectionStatus != database.StatusNotRequired {
 					queueDetection = true
 					log.Printf("Re-queuing detection task for %s (status: %s)", dbKeyPath, imageInfo.DetectionStatus)
 				}
