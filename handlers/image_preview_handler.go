@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"database/sql"
 	"errors"
 	"fmt"
 	"image"
@@ -14,13 +13,15 @@ import (
 	"strings"
 
 	"github.com/camden-git/mediasysbackend/config"
-	"github.com/camden-git/mediasysbackend/database"
+	"github.com/camden-git/mediasysbackend/repository"
 	"gocv.io/x/gocv"
+	"gorm.io/gorm"
 )
 
 type ImagePreviewHandler struct {
-	DB  database.Querier
-	Cfg config.Config
+	FaceRepo repository.FaceRepositoryInterface
+	Cfg      config.Config
+	// GormDB *gorm.DB
 }
 
 func (iph *ImagePreviewHandler) ServeImageWithFaces(w http.ResponseWriter, r *http.Request) {
@@ -60,9 +61,10 @@ func (iph *ImagePreviewHandler) ServeImageWithFaces(w http.ResponseWriter, r *ht
 	}
 	defer img.Close()
 
-	faces, err := database.ListFacesByImagePath(iph.DB, dbPath)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) { // ignore ErrNoRows, just means no faces to draw
+	faces, err := iph.FaceRepo.ListByImagePath(dbPath)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) { // ignore ErrNoRows, just means no faces to draw
 		log.Printf("Error fetching faces for image %s: %v", dbPath, err)
+		// do not return, proceed to show image without boxes if DB error occurs
 	}
 
 	blue := color.RGBA{0, 0, 255, 0}

@@ -1,11 +1,9 @@
 package handlers
 
 import (
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/camden-git/mediasysbackend/media"
 	"io"
 	"log"
 	"net/http"
@@ -17,8 +15,12 @@ import (
 
 	"github.com/camden-git/mediasysbackend/config"
 	"github.com/camden-git/mediasysbackend/database"
+	"github.com/camden-git/mediasysbackend/media"
+	"github.com/camden-git/mediasysbackend/models"
+	"github.com/camden-git/mediasysbackend/repository"
 	"github.com/camden-git/mediasysbackend/workers"
 	"github.com/go-chi/chi/v5"
+	"gorm.io/gorm"
 )
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
@@ -32,31 +34,33 @@ func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 }
 
 type AlbumHandler struct {
-	DB             *sql.DB
+	AlbumRepo      repository.AlbumRepositoryInterface
+	ImageRepo      repository.ImageRepositoryInterface
 	Cfg            config.Config
 	ThumbGen       *workers.ImageProcessor
 	MediaProcessor *media.Processor
 }
 
-func (ah *AlbumHandler) getAlbumByIdentifier(identifier string) (database.Album, error) {
+func (ah *AlbumHandler) getAlbumByIdentifier(identifier string) (*models.Album, error) {
 	// try parsing as ID
-	if albumID, err := strconv.ParseInt(identifier, 10, 64); err == nil {
-		album, err := database.GetAlbumByID(ah.DB, albumID)
+	if albumID, err := strconv.ParseUint(identifier, 10, 64); err == nil {
+		album, err := ah.AlbumRepo.GetByID(uint(albumID))
 		if err == nil {
 			return album, nil // found by ID
 		}
-		if !errors.Is(err, sql.ErrNoRows) {
-			return database.Album{}, fmt.Errorf("error fetching album by ID %d: %w", albumID, err)
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("error fetching album by ID %d: %w", albumID, err)
 		}
+		// If not found by ID, continue to try by slug
 	}
 
 	// not a valid ID or not found by ID, try fetching by slug
-	album, err := database.GetAlbumBySlug(ah.DB, identifier)
+	album, err := ah.AlbumRepo.GetBySlug(identifier)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return database.Album{}, sql.ErrNoRows // not found by slug either
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, gorm.ErrRecordNotFound // not found by slug either
 		}
-		return database.Album{}, fmt.Errorf("error fetching album by slug '%s': %w", identifier, err)
+		return nil, fmt.Errorf("error fetching album by slug '%s': %w", identifier, err)
 	}
 	return album, nil
 }
@@ -106,9 +110,16 @@ func (ah *AlbumHandler) CreateAlbum(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	albumID, err := database.CreateAlbum(ah.DB, req.Name, req.Slug, req.Description, folderPathForDB)
+	newAlbumGorm := models.Album{
+		Name:        req.Name,
+		Slug:        req.Slug,
+		Description: &req.Description,
+		FolderPath:  folderPathForDB,
+	}
+
+	err = ah.AlbumRepo.Create(&newAlbumGorm)
 	if err != nil {
-		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+		if strings.Contains(strings.ToLower(err.Error()), "unique") {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "Album name, slug, or folder path already exists"})
 		} else {
 			log.Printf("Error creating album '%s' (slug '%s'): %v", req.Name, req.Slug, err)
@@ -117,24 +128,18 @@ func (ah *AlbumHandler) CreateAlbum(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newAlbum, err := database.GetAlbumByID(ah.DB, albumID)
-	if err != nil {
-		log.Printf("Error fetching newly created album %d: %v", albumID, err)
-		writeJSON(w, http.StatusCreated, map[string]interface{}{"message": "Album created successfully", "id": albumID})
-		return
-	}
-	writeJSON(w, http.StatusCreated, newAlbum)
+	writeJSON(w, http.StatusCreated, newAlbumGorm)
 }
 
 func (ah *AlbumHandler) ListAlbums(w http.ResponseWriter, r *http.Request) {
-	albums, err := database.ListAlbums(ah.DB)
+	albums, err := ah.AlbumRepo.ListAll()
 	if err != nil {
 		log.Printf("Error listing albums: %v", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve albums"})
 		return
 	}
 	if albums == nil {
-		albums = []database.Album{}
+		albums = []models.Album{} // ensure empty array instead of null for JSON
 	}
 	writeJSON(w, http.StatusOK, albums)
 }
@@ -144,7 +149,7 @@ func (ah *AlbumHandler) GetAlbum(w http.ResponseWriter, r *http.Request) {
 
 	album, err := ah.getAlbumByIdentifier(identifier)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album not found"})
 		} else {
 			log.Printf("Error getting album by identifier '%s': %v", identifier, err)
@@ -160,7 +165,7 @@ func (ah *AlbumHandler) GetAlbumContents(w http.ResponseWriter, r *http.Request)
 
 	album, err := ah.getAlbumByIdentifier(identifier)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album not found"})
 		} else {
 			log.Printf("Error getting album '%s' for contents: %v", identifier, err)
@@ -177,7 +182,8 @@ func (ah *AlbumHandler) GetAlbumContents(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	fileInfos, err := listDirectoryContents(albumFullPath, "/"+album.FolderPath, ah.Cfg, ah.DB, ah.ThumbGen, album.SortOrder)
+	// Pass ah.ImageRepo to listDirectoryContents, as it expects an ImageRepositoryInterface
+	fileInfos, err := listDirectoryContents(albumFullPath, "/"+album.FolderPath, ah.Cfg, ah.ImageRepo, ah.ThumbGen, album.SortOrder)
 	if err != nil {
 		if os.IsNotExist(err) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album folder not found on disk: " + album.FolderPath})
@@ -203,7 +209,7 @@ func (ah *AlbumHandler) UpdateAlbumSortOrder(w http.ResponseWriter, r *http.Requ
 
 	album, err := ah.getAlbumByIdentifier(identifier)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album not found"})
 		} else {
 			log.Printf("Error finding album '%s' for sort update: %v", identifier, err)
@@ -225,9 +231,9 @@ func (ah *AlbumHandler) UpdateAlbumSortOrder(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	err = database.UpdateAlbumSortOrder(ah.DB, album.ID, req.SortOrder)
+	err = ah.AlbumRepo.UpdateSortOrder(album.ID, req.SortOrder)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album not found during update"})
 		} else {
 			log.Printf("Error updating sort order for album %d: %v", album.ID, err)
@@ -236,7 +242,7 @@ func (ah *AlbumHandler) UpdateAlbumSortOrder(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	updatedAlbum, err := database.GetAlbumByID(ah.DB, album.ID)
+	updatedAlbum, err := ah.AlbumRepo.GetByID(album.ID)
 	if err != nil {
 		log.Printf("Error fetching updated album %d after sort update: %v", album.ID, err)
 		writeJSON(w, http.StatusOK, map[string]string{"message": "Sort order updated successfully"})
@@ -250,7 +256,7 @@ func (ah *AlbumHandler) UpdateAlbum(w http.ResponseWriter, r *http.Request) {
 
 	album, err := ah.getAlbumByIdentifier(identifier)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album not found"})
 		} else {
 			log.Printf("Error finding album '%s' for update: %v", identifier, err)
@@ -260,7 +266,7 @@ func (ah *AlbumHandler) UpdateAlbum(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Name        *string `json:"name"`
+		Name        *string `json:"name"` // pointers to distinguish between empty string and not provided
 		Description *string `json:"description"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -268,28 +274,34 @@ func (ah *AlbumHandler) UpdateAlbum(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	nameUpdate := album.Name
-	descUpdate := album.Description
+	var nameUpdate string
+	var descUpdate *string // keep as pointer for repository
 	updateRequested := false
+
 	if req.Name != nil {
 		nameUpdate = *req.Name
 		updateRequested = true
+	} else {
+		nameUpdate = album.Name
 	}
+
 	if req.Description != nil {
-		descUpdate = *req.Description
+		descUpdate = req.Description
 		updateRequested = true
+	} else {
+		descUpdate = album.Description
 	}
-	if !updateRequested {
+
+	if !updateRequested && req.Name == nil && req.Description == nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "No fields provided for update"})
 		return
 	}
 
-	err = database.UpdateAlbum(ah.DB, album.ID, nameUpdate, descUpdate)
+	err = ah.AlbumRepo.Update(album.ID, nameUpdate, descUpdate)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			// should not happen if we found it above, but handle defensively
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album not found during update"})
-		} else if strings.Contains(err.Error(), "album name conflict") {
+		} else if strings.Contains(strings.ToLower(err.Error()), "unique") {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "Album name already exists"})
 		} else {
 			log.Printf("Error updating album %d/%s: %v", album.ID, album.Slug, err)
@@ -298,7 +310,7 @@ func (ah *AlbumHandler) UpdateAlbum(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updatedAlbum, err := database.GetAlbumByID(ah.DB, album.ID)
+	updatedAlbum, err := ah.AlbumRepo.GetByID(album.ID)
 	if err != nil {
 		log.Printf("Error fetching updated album %d/%s: %v", album.ID, album.Slug, err)
 		writeJSON(w, http.StatusOK, map[string]string{"message": "Album updated successfully"})
@@ -312,7 +324,7 @@ func (ah *AlbumHandler) UploadAlbumBanner(w http.ResponseWriter, r *http.Request
 
 	album, err := ah.getAlbumByIdentifier(identifier)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album not found"})
 		} else {
 			log.Printf("Error finding album '%s' for banner upload: %v", identifier, err)
@@ -376,21 +388,25 @@ func (ah *AlbumHandler) UploadAlbumBanner(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	dbErr := database.UpdateAlbumBannerPath(ah.DB, album.ID, &newBannerRelativePath)
+	dbErr := ah.AlbumRepo.UpdateBannerPath(album.ID, &newBannerRelativePath)
 	if dbErr != nil {
 		mediaStore, storeErr := media.NewLocalStorage(ah.Cfg.MediaStoragePath, map[media.AssetType]string{})
 		if storeErr == nil {
-			_ = mediaStore.Delete(newBannerRelativePath)
+			// attempt to delete the newly saved banner if DB update fails
+			if delErr := mediaStore.Delete(newBannerRelativePath); delErr != nil {
+				log.Printf("Warning: Failed to delete banner %s after DB update failure: %v", newBannerRelativePath, delErr)
+			}
 		}
 		log.Printf("Error updating banner path in DB for album %d/%s: %v", album.ID, album.Slug, dbErr)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to save banner information"})
 		return
 	}
 
-	updatedAlbum, err := database.GetAlbumByID(ah.DB, album.ID)
+	updatedAlbum, err := ah.AlbumRepo.GetByID(album.ID)
 	if err != nil {
 		log.Printf("Error fetching updated album %d after banner upload: %v", album.ID, err)
-		writeJSON(w, http.StatusOK, map[string]string{"message": "Banner uploaded successfully", "banner_image_path": newBannerRelativePath})
+		// banner was uploaded and DB updated, so this is a partial success
+		writeJSON(w, http.StatusOK, map[string]interface{}{"message": "Banner uploaded successfully", "banner_image_path": newBannerRelativePath})
 		return
 	}
 	writeJSON(w, http.StatusOK, updatedAlbum)
@@ -401,7 +417,7 @@ func (ah *AlbumHandler) RequestAlbumZipGeneration(w http.ResponseWriter, r *http
 
 	album, err := ah.getAlbumByIdentifier(identifier)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album not found"})
 		} else {
 			log.Printf("Error finding album '%s' for zip request: %v", identifier, err)
@@ -415,7 +431,7 @@ func (ah *AlbumHandler) RequestAlbumZipGeneration(w http.ResponseWriter, r *http
 		return
 	}
 
-	err = database.RequestAlbumZip(ah.DB, album.ID)
+	err = ah.AlbumRepo.RequestZip(album.ID)
 	if err != nil {
 		log.Printf("Error marking album zip pending for ID %d: %v", album.ID, err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to request ZIP generation"})
@@ -423,14 +439,13 @@ func (ah *AlbumHandler) RequestAlbumZipGeneration(w http.ResponseWriter, r *http
 	}
 
 	zipJob := workers.ImageJob{
-		AlbumID:     album.ID,
+		AlbumID:     int64(album.ID),
 		TaskType:    workers.TaskAlbumZip,
 		ModTimeUnix: time.Now().Unix(),
 	}
-	queued := ah.ThumbGen.QueueJob(zipJob) // ThumbGen is ImageProcessor
+	queued := ah.ThumbGen.QueueJob(zipJob)
 	if !queued {
 		log.Printf("Failed to queue album ZIP job for Album ID %d (queue full or already pending).", album.ID)
-		// TODO: for now, just inform client
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Failed to queue ZIP generation: processing queue is full."})
 		return
 	}
@@ -444,7 +459,7 @@ func (ah *AlbumHandler) DownloadAlbumZip(w http.ResponseWriter, r *http.Request)
 
 	album, err := ah.getAlbumByIdentifier(identifier)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			http.NotFound(w, r)
 		} else {
 			log.Printf("Error finding album '%s' for zip download: %v", identifier, err)
@@ -455,9 +470,9 @@ func (ah *AlbumHandler) DownloadAlbumZip(w http.ResponseWriter, r *http.Request)
 
 	if album.ZipStatus != database.StatusDone || album.ZipPath == nil || *album.ZipPath == "" {
 		if album.ZipStatus == database.StatusPending || album.ZipStatus == database.StatusProcessing {
-			http.Error(w, "ZIP archive is currently being generated. Please try again later.", http.StatusAccepted) // 202 Accepted
+			http.Error(w, "ZIP archive is currently being generated. Please try again later.", http.StatusAccepted)
 		} else if album.ZipStatus == database.StatusError && album.ZipError != nil {
-			http.Error(w, fmt.Sprintf("ZIP generation failed: %s", *album.ZipError), http.StatusConflict) // 409 Conflict
+			http.Error(w, fmt.Sprintf("ZIP generation failed: %s", *album.ZipError), http.StatusConflict)
 		} else {
 			http.Error(w, "ZIP archive not available for this album or not yet generated.", http.StatusNotFound)
 		}
@@ -513,7 +528,7 @@ func (ah *AlbumHandler) DeleteAlbum(w http.ResponseWriter, r *http.Request) {
 
 	album, err := ah.getAlbumByIdentifier(identifier)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album not found"})
 		} else {
 			log.Printf("Error finding album '%s' for delete: %v", identifier, err)
@@ -522,13 +537,16 @@ func (ah *AlbumHandler) DeleteAlbum(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = database.DeleteAlbum(ah.DB, album.ID)
+	err = ah.AlbumRepo.Delete(album.ID)
 	if err != nil {
-		log.Printf("Error deleting album %d/%s: %v", album.ID, album.Slug, err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to delete album"})
+		if errors.Is(err, gorm.ErrRecordNotFound) { // if trying to delete already deleted (by another request)
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album not found or already deleted"})
+		} else {
+			log.Printf("Error deleting album %d/%s: %v", album.ID, album.Slug, err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to delete album"})
+		}
 		return
 	}
 
-	// successful deletes return no content instead of a message
 	writeJSON(w, http.StatusNoContent, nil)
 }

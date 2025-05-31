@@ -1,18 +1,19 @@
 package workers
 
 import (
-	"database/sql"
 	"fmt"
-	"github.com/camden-git/mediasysbackend/config"
-	"github.com/camden-git/mediasysbackend/database"
-	"github.com/camden-git/mediasysbackend/media"
-	"github.com/camden-git/mediasysbackend/utils"
 	"image"
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/camden-git/mediasysbackend/config"
+	"github.com/camden-git/mediasysbackend/media"
+	"github.com/camden-git/mediasysbackend/repository"
+	"github.com/camden-git/mediasysbackend/utils"
 )
 
 // TaskType constants
@@ -32,16 +33,24 @@ type ImageJob struct {
 }
 
 type ImageProcessor struct {
-	JobQueue chan ImageJob
-	Config   config.Config
-	DB       *sql.DB
-	Wg       sync.WaitGroup
-	StopChan chan struct{}
-	Pending  map[string]bool
-	Mutex    sync.Mutex
+	JobQueue  chan ImageJob
+	Config    config.Config
+	ImageRepo repository.ImageRepositoryInterface
+	AlbumRepo repository.AlbumRepositoryInterface
+	FaceRepo  repository.FaceRepositoryInterface
+	Wg        sync.WaitGroup
+	StopChan  chan struct{}
+	Pending   map[string]bool
+	Mutex     sync.Mutex
 }
 
-func NewImageProcessor(cfg config.Config, db *sql.DB, queueSize, numWorkers int) *ImageProcessor {
+func NewImageProcessor(
+	cfg config.Config,
+	imgRepo repository.ImageRepositoryInterface,
+	albumRepo repository.AlbumRepositoryInterface,
+	faceRepo repository.FaceRepositoryInterface,
+	queueSize, numWorkers int,
+) *ImageProcessor {
 	if numWorkers <= 0 {
 		numWorkers = 1
 	}
@@ -49,11 +58,13 @@ func NewImageProcessor(cfg config.Config, db *sql.DB, queueSize, numWorkers int)
 		queueSize = 100
 	}
 	proc := &ImageProcessor{
-		JobQueue: make(chan ImageJob, queueSize),
-		Config:   cfg,
-		DB:       db,
-		StopChan: make(chan struct{}),
-		Pending:  make(map[string]bool),
+		JobQueue:  make(chan ImageJob, queueSize),
+		Config:    cfg,
+		ImageRepo: imgRepo,
+		AlbumRepo: albumRepo,
+		FaceRepo:  faceRepo,
+		StopChan:  make(chan struct{}),
+		Pending:   make(map[string]bool),
 	}
 	proc.Wg.Add(numWorkers)
 	for i := 0; i < numWorkers; i++ {
@@ -107,14 +118,16 @@ func (ip *ImageProcessor) worker(id int, cfg config.Config) {
 			log.Printf("Worker %d: Received job type '%s' for: %s", id, job.TaskType, entityPath)
 
 			if job.TaskType == TaskAlbumZip {
-				err = database.MarkAlbumZipProcessing(ip.DB, job.AlbumID)
-				statusColumn = "zip_status"
+				err = ip.AlbumRepo.MarkZipProcessing(uint(job.AlbumID))
+				statusColumn = "zip_status" // for logging key
 				entityPath = fmt.Sprintf("album ID %d", job.AlbumID)
+				pendingKey = fmt.Sprintf("album_%d:%s", job.AlbumID, job.TaskType)
 			} else {
 				statusColumn = job.TaskType + "_status"
-				err = database.MarkImageTaskProcessing(ip.DB, job.OriginalRelativePath, statusColumn)
+				err = ip.ImageRepo.MarkTaskProcessing(job.OriginalRelativePath, statusColumn)
 				log.Printf("Status column: %s", statusColumn)
 				entityPath = job.OriginalRelativePath
+				pendingKey = fmt.Sprintf("%s:%s", job.OriginalRelativePath, job.TaskType)
 			}
 
 			if err != nil {
@@ -178,7 +191,7 @@ func (ip *ImageProcessor) processThumbnailTask(job ImageJob, processor *media.Pr
 		}
 	}
 
-	dbErr := database.UpdateImageThumbnailResult(ip.DB, job.OriginalRelativePath, thumbRelPath, job.ModTimeUnix, taskErr)
+	dbErr := ip.ImageRepo.UpdateThumbnailResult(job.OriginalRelativePath, thumbRelPath, job.ModTimeUnix, taskErr)
 	if dbErr != nil {
 		log.Printf("Worker: ERROR updating thumbnail DB result for %s: %v", job.OriginalRelativePath, dbErr)
 	}
@@ -203,7 +216,7 @@ func (ip *ImageProcessor) processMetadataTask(job ImageJob) {
 		}
 	}
 
-	dbErr := database.UpdateImageMetadataResult(ip.DB, job.OriginalRelativePath, metadata, job.ModTimeUnix, taskErr)
+	dbErr := ip.ImageRepo.UpdateMetadataResult(job.OriginalRelativePath, metadata, job.ModTimeUnix, taskErr)
 	if dbErr != nil {
 		log.Printf("Worker: ERROR updating metadata DB result for %s: %v", job.OriginalRelativePath, dbErr)
 	}
@@ -234,7 +247,7 @@ func (ip *ImageProcessor) processDetectionTask(job ImageJob, faceDetector *media
 		}
 	}
 
-	dbErr := database.UpdateImageDetectionResult(ip.DB, job.OriginalRelativePath, detections, job.ModTimeUnix, taskErr)
+	dbErr := ip.ImageRepo.UpdateDetectionResult(job.OriginalRelativePath, detections, job.ModTimeUnix, taskErr)
 	if dbErr != nil {
 		log.Printf("Worker: ERROR updating detection DB result for %s: %v", job.OriginalRelativePath, dbErr)
 	}
@@ -246,43 +259,56 @@ func (ip *ImageProcessor) processAlbumZipTask(job ImageJob, store media.Store) {
 	var finalZipRelPath *string
 	var finalZipSize *int64
 
-	album, err := database.GetAlbumByID(ip.DB, job.AlbumID)
+	album, err := ip.AlbumRepo.GetByID(uint(job.AlbumID))
 	if err != nil {
 		taskErr = fmt.Errorf("failed to fetch album details for ID %d: %w", job.AlbumID, err)
 		log.Printf("Worker: ERROR %v", taskErr)
 	} else {
-		zipSaveDirName := filepath.Base(ip.Config.ArchivesPath)
-		zipSaveDirAbs := ip.Config.ArchivesPath
-		zipFilenameBase := fmt.Sprintf("album_%d_archive_%d", album.ID, time.Now().Unix())
+		//zipSaveDirName := filepath.Base(ip.Config.ArchivesPath)
+		zipSaveDirAbs := ip.Config.ArchivesPath // full path to archives directory
+
+		// ensure album.Slug is safe for filenames
+		safeSlug := strings.ReplaceAll(album.Slug, "/", "_")
+		safeSlug = strings.ReplaceAll(safeSlug, "\\", "_")
+
+		zipFilenameBase := fmt.Sprintf("album_%s_%d_archive_%d", safeSlug, album.ID, time.Now().Unix())
 
 		savedZipFilename, zipSizeBytes, zipErr := utils.CreateAlbumZip(
-			ip.Config.RootDirectory,
-			album.FolderPath,
-			zipSaveDirAbs,
-			zipFilenameBase,
+			ip.Config.RootDirectory, // root of all media folders
+			album.FolderPath,        // path relative to RootDirectory
+			zipSaveDirAbs,           // absolute path to save the zip
+			zipFilenameBase,         // filename base for the zip
 		)
 
 		if zipErr != nil {
-			taskErr = fmt.Errorf("failed to create album zip: %w", zipErr)
+			taskErr = fmt.Errorf("failed to create album zip for %s: %w", album.FolderPath, zipErr)
 			log.Printf("Worker: ERROR %v", taskErr)
 		} else {
-			// construct the path relative to MediaStoragePath for the database.
-			// since zipSaveDirAbs is ip.Config.ArchivesPath, and that's under MediaStoragePath, we need the path relative to MediaStoragePath.
-			relativePathToStore := filepath.ToSlash(filepath.Join(zipSaveDirName, savedZipFilename))
-
-			finalZipRelPath = &relativePathToStore
-			finalZipSize = &zipSizeBytes
-			log.Printf("Worker: Successfully created ZIP for Album ID %d: %s", job.AlbumID, relativePathToStore)
+			// relativePathToStore should be relative to the MediaStoragePath root
+			// example: if MediaStoragePath is /srv/media and zipSaveDirAbs is /srv/media/archives,
+			// then relativePathToStore should be "archives/the_zip_file.zip"
+			relativePathToStore, relErr := filepath.Rel(ip.Config.MediaStoragePath, filepath.Join(zipSaveDirAbs, savedZipFilename))
+			if relErr != nil {
+				taskErr = fmt.Errorf("failed to calculate relative path for zip: %w", relErr)
+				log.Printf("Worker: ERROR %v", taskErr)
+			} else {
+				slashPath := filepath.ToSlash(relativePathToStore)
+				finalZipRelPath = &slashPath
+				finalZipSize = &zipSizeBytes
+				log.Printf("Worker: Successfully created ZIP for Album ID %d: %s", job.AlbumID, slashPath)
+			}
 		}
 	}
 
-	dbErr := database.SetAlbumZipResult(ip.DB, job.AlbumID, finalZipRelPath, finalZipSize, taskErr)
+	dbErr := ip.AlbumRepo.SetZipResult(uint(job.AlbumID), finalZipRelPath, finalZipSize, taskErr) // Use AlbumRepo
 	if dbErr != nil {
 		log.Printf("Worker: ERROR updating album ZIP DB result for Album ID %d: %v", job.AlbumID, dbErr)
-		if finalZipRelPath != nil {
+		if finalZipRelPath != nil && store != nil { // Ensure store is not nil
 			fullPathToClean, _ := store.GetFullPath(*finalZipRelPath)
 			if fullPathToClean != "" {
-				os.Remove(fullPathToClean)
+				if err := os.Remove(fullPathToClean); err != nil {
+					log.Printf("Worker: Failed to remove zip file %s after DB error: %v", fullPathToClean, err)
+				}
 			}
 		}
 	}

@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"log"
@@ -13,13 +12,16 @@ import (
 	"strings"
 
 	"github.com/camden-git/mediasysbackend/config"
-	"github.com/camden-git/mediasysbackend/database"
+	"github.com/camden-git/mediasysbackend/models"
+	"github.com/camden-git/mediasysbackend/repository"
 	"github.com/go-chi/chi/v5"
+	"gorm.io/gorm"
 )
 
 type FaceHandler struct {
-	DB  *sql.DB
-	Cfg config.Config
+	FaceRepo   repository.FaceRepositoryInterface
+	PersonRepo repository.PersonRepositoryInterface
+	Cfg        config.Config
 }
 
 func (fh *FaceHandler) AddFace(w http.ResponseWriter, r *http.Request) {
@@ -42,16 +44,19 @@ func (fh *FaceHandler) AddFace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var personIDUint *uint
 	if req.PersonID != nil {
 		if *req.PersonID <= 0 {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid person_id value"})
 			return
 		}
-		if _, err := database.GetPersonByID(fh.DB, *req.PersonID); err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
+		pid := uint(*req.PersonID)
+		personIDUint = &pid
+		if _, err := fh.PersonRepo.GetByID(*personIDUint); err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Person with provided person_id not found"})
 			} else {
-				log.Printf("Error checking person %d before adding face: %v", *req.PersonID, err)
+				log.Printf("Error checking person %d before adding face: %v", *personIDUint, err)
 				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to verify person"})
 			}
 			return
@@ -74,20 +79,28 @@ func (fh *FaceHandler) AddFace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	faceID, err := database.AddFace(fh.DB, req.PersonID, imagePathForDB, req.X1, req.Y1, req.X2, req.Y2)
-	if err != nil {
-		log.Printf("Error adding face (person: %v) to image %s: %v", req.PersonID, imagePathForDB, err)
+	face := models.Face{
+		PersonID:  personIDUint,
+		ImagePath: imagePathForDB,
+		X1:        req.X1,
+		Y1:        req.Y1,
+		X2:        req.X2,
+		Y2:        req.Y2,
+	}
+	createErr := fh.FaceRepo.Create(&face)
+	if createErr != nil {
+		log.Printf("Error adding face (person: %v) to image %s: %v", req.PersonID, imagePathForDB, createErr)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to add face tag"})
 		return
 	}
 
-	newFace, err := database.GetFaceByID(fh.DB, faceID)
-	if err != nil {
-		log.Printf("Error fetching newly created face %d: %v", faceID, err)
-		writeJSON(w, http.StatusCreated, map[string]interface{}{"message": "Face added successfully", "id": faceID})
+	createdFace, fetchErr := fh.FaceRepo.GetByID(face.ID)
+	if fetchErr != nil {
+		log.Printf("Error fetching newly created face %d: %v", face.ID, fetchErr)
+		writeJSON(w, http.StatusCreated, face)
 		return
 	}
-	writeJSON(w, http.StatusCreated, newFace)
+	writeJSON(w, http.StatusCreated, createdFace)
 }
 
 func (fh *FaceHandler) ListFacesByImage(w http.ResponseWriter, r *http.Request) {
@@ -107,28 +120,28 @@ func (fh *FaceHandler) ListFacesByImage(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	imagePathForDB := filepath.ToSlash(cleanRelativePath)
-	faces, err := database.ListFacesByImagePath(fh.DB, imagePathForDB)
+	faces, err := fh.FaceRepo.ListByImagePath(imagePathForDB)
 	if err != nil {
 		log.Printf("Error listing faces for image %s: %v", imagePathForDB, err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve faces for image"})
 		return
 	}
 	if faces == nil {
-		faces = []database.Face{}
+		faces = []models.Face{}
 	}
 	writeJSON(w, http.StatusOK, faces)
 }
 
 func (fh *FaceHandler) GetFace(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "face_id")
-	faceID, err := strconv.ParseInt(idStr, 10, 64)
+	faceID, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid face ID format"})
 		return
 	}
-	face, err := database.GetFaceByID(fh.DB, faceID)
+	face, err := fh.FaceRepo.GetByID(uint(faceID))
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Face tag not found"})
 		} else {
 			log.Printf("Error getting face %d: %v", faceID, err)
@@ -141,14 +154,15 @@ func (fh *FaceHandler) GetFace(w http.ResponseWriter, r *http.Request) {
 
 func (fh *FaceHandler) UpdateFace(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "face_id")
-	faceID, err := strconv.ParseInt(idStr, 10, 64)
+	faceID, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid face ID format"})
 		return
 	}
 
-	if _, err := database.GetFaceByID(fh.DB, faceID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+	// check if face exists first
+	if _, err := fh.FaceRepo.GetByID(uint(faceID)); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Face tag not found"})
 		} else {
 			log.Printf("Error finding face %d for update: %v", faceID, err)
@@ -163,23 +177,23 @@ func (fh *FaceHandler) UpdateFace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var personIDUpdate *int64
+	var personIDUpdate *uint
 	personIDProvided := false
 
 	if pidVal, ok := reqMap["person_id"]; ok {
 		personIDProvided = true
-		if pidVal == nil {
-
+		if pidVal == nil { // explicitly un-tagging
+			// personIDUpdate remains nil
 		} else if pidFloat, ok := pidVal.(float64); ok {
-			pidInt := int64(pidFloat)
-			if pidInt > 0 {
-				personIDUpdate = &pidInt
-			} else {
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid value for person_id"})
+			pidUint := uint(pidFloat)
+			if pidUint > 0 {
+				personIDUpdate = &pidUint
+			} else { // person_id: 0 is not valid for tagging
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid non-zero value for person_id"})
 				return
 			}
 		} else {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid type for person_id"})
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid type for person_id, expected number or null"})
 			return
 		}
 	}
@@ -203,8 +217,9 @@ func (fh *FaceHandler) UpdateFace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if personIDProvided && personIDUpdate != nil {
-		if _, err := database.GetPersonByID(fh.DB, *personIDUpdate); err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
+		// *personIDUpdate is uint here because personIDUpdate is *uint
+		if _, err := fh.PersonRepo.GetByID(*personIDUpdate); err != nil { // Use PersonRepo
+			if errors.Is(err, gorm.ErrRecordNotFound) {
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Person with provided person_id not found"})
 			} else {
 				log.Printf("Error checking person %d before updating face %d: %v", *personIDUpdate, faceID, err)
@@ -214,14 +229,9 @@ func (fh *FaceHandler) UpdateFace(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	var finalPersonID *int64 = nil
-	if personIDProvided {
-		finalPersonID = personIDUpdate
-	}
-
-	err = database.UpdateFace(fh.DB, faceID, finalPersonID, x1Update, y1Update, x2Update, y2Update)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+	updateErr := fh.FaceRepo.Update(uint(faceID), personIDUpdate, x1Update, y1Update, x2Update, y2Update)
+	if updateErr != nil {
+		if errors.Is(updateErr, gorm.ErrRecordNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Face tag not found during update"})
 		} else {
 			log.Printf("Error updating face %d: %v", faceID, err)
@@ -230,9 +240,10 @@ func (fh *FaceHandler) UpdateFace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updatedFace, err := database.GetFaceByID(fh.DB, faceID)
+	updatedFace, err := fh.FaceRepo.GetByID(uint(faceID))
 	if err != nil {
 		log.Printf("Error fetching updated face %d: %v", faceID, err)
+		// still, the update was successful at DB level
 		writeJSON(w, http.StatusOK, map[string]string{"message": "Face updated successfully"})
 		return
 	}
@@ -241,14 +252,14 @@ func (fh *FaceHandler) UpdateFace(w http.ResponseWriter, r *http.Request) {
 
 func (fh *FaceHandler) DeleteFace(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "face_id")
-	faceID, err := strconv.ParseInt(idStr, 10, 64)
+	faceID, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid face ID format"})
 		return
 	}
-	err = database.DeleteFace(fh.DB, faceID)
+	err = fh.FaceRepo.Delete(uint(faceID))
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Face tag not found"})
 		} else {
 			log.Printf("Error deleting face %d: %v", faceID, err)
@@ -265,17 +276,18 @@ func (fh *FaceHandler) SearchFacesByPerson(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Missing required query parameter: query"})
 		return
 	}
-	personIDs, err := database.FindPersonIDsByNameOrAlias(fh.DB, query)
+
+	personIDs, err := fh.PersonRepo.FindPersonIDsByNameOrAlias(query)
 	if err != nil {
 		log.Printf("Error searching for person IDs with query '%s': %v", query, err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to search for people"})
 		return
 	}
 	if len(personIDs) == 0 {
-		writeJSON(w, http.StatusOK, []string{})
+		writeJSON(w, http.StatusOK, []string{}) // return empty list of image paths
 		return
 	}
-	imagePaths, err := database.FindImagesByPersonIDs(fh.DB, personIDs)
+	imagePaths, err := fh.PersonRepo.FindImagesByPersonIDs(personIDs)
 	if err != nil {
 		log.Printf("Error finding images for person IDs %v: %v", personIDs, err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to find images associated with person"})

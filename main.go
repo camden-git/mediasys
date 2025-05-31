@@ -12,6 +12,7 @@ import (
 	"github.com/camden-git/mediasysbackend/config"
 	"github.com/camden-git/mediasysbackend/database"
 	"github.com/camden-git/mediasysbackend/handlers"
+	"github.com/camden-git/mediasysbackend/repository"
 	"github.com/camden-git/mediasysbackend/workers"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -37,11 +38,21 @@ func main() {
 		}
 	}
 
-	db, err := database.InitDB(cfg.DatabasePath)
+	gormDB, err := database.InitGormDB(cfg.DatabasePath)
 	if err != nil {
-		log.Fatalf("FATAL: Failed to initialize database: %v", err)
+		log.Fatalf("FATAL: Failed to initialize GORM database: %v", err)
 	}
-	defer db.Close()
+	sqlDB, err := gormDB.DB()
+	if err != nil {
+		log.Fatalf("FATAL: Failed to get underlying sql.DB from GORM: %v", err)
+	}
+	defer sqlDB.Close()
+
+	log.Println("Running GORM AutoMigrate...")
+	if err := database.AutoMigrateModels(gormDB); err != nil {
+		log.Fatalf("FATAL: Failed to auto-migrate GORM models: %v", err)
+	}
+	log.Println("GORM AutoMigrate completed.")
 
 	mediaSubDirs := map[media.AssetType]string{
 		media.AssetTypeThumbnail: filepath.Base(cfg.ThumbnailsPath),
@@ -56,7 +67,19 @@ func main() {
 
 	log.Printf("Initializing image processor worker pool (Workers: %d, Queue Size: %d)...", cfg.NumThumbnailWorkers, cfg.ThumbnailQueueSize)
 
-	imageProcessor := workers.NewImageProcessor(cfg, db, cfg.ThumbnailQueueSize, cfg.NumThumbnailWorkers)
+	albumRepo := repository.NewAlbumRepository(gormDB)
+	personRepo := repository.NewPersonRepository(gormDB)
+	faceRepo := repository.NewFaceRepository(gormDB)
+	imageRepo := repository.NewImageRepository(gormDB)
+
+	imageProcessor := workers.NewImageProcessor(
+		cfg,
+		imageRepo,
+		albumRepo,
+		faceRepo,
+		cfg.ThumbnailQueueSize,
+		cfg.NumThumbnailWorkers,
+	)
 
 	log.Printf("Serving files from root: %s", cfg.RootDirectory)
 	log.Printf("Using database: %s", cfg.DatabasePath)
@@ -83,10 +106,10 @@ func main() {
 	r.Use(middleware.Timeout(60 * time.Second))
 	r.Use(corsHandler.Handler)
 
-	albumHandler := &handlers.AlbumHandler{DB: db, Cfg: cfg, ThumbGen: imageProcessor, MediaProcessor: mediaProcessor}
-	personHandler := &handlers.PersonHandler{DB: db}
-	faceHandler := &handlers.FaceHandler{DB: db, Cfg: cfg}
-	imagePreviewHandler := &handlers.ImagePreviewHandler{DB: db, Cfg: cfg}
+	albumHandler := &handlers.AlbumHandler{AlbumRepo: albumRepo, ImageRepo: imageRepo, Cfg: cfg, ThumbGen: imageProcessor, MediaProcessor: mediaProcessor}
+	personHandler := &handlers.PersonHandler{PersonRepo: personRepo}
+	faceHandler := &handlers.FaceHandler{FaceRepo: faceRepo, PersonRepo: personRepo, Cfg: cfg}
+	imagePreviewHandler := &handlers.ImagePreviewHandler{FaceRepo: faceRepo, Cfg: cfg}
 
 	r.Route("/api", func(r chi.Router) {
 		r.Route("/albums", func(r chi.Router) {
@@ -152,7 +175,7 @@ func main() {
 			r.Get("/image_with_faces", imagePreviewHandler.ServeImageWithFaces)
 		})
 
-		r.Get("/*", handlers.DirectoryHandler(cfg, db, imageProcessor))
+		r.Get("/*", handlers.DirectoryHandler(cfg, imageRepo, imageProcessor))
 	})
 
 	port := os.Getenv("PORT")

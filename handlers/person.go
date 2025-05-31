@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"log"
@@ -9,12 +8,15 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/camden-git/mediasysbackend/database"
+	"github.com/camden-git/mediasysbackend/models"
+	"github.com/camden-git/mediasysbackend/repository"
 	"github.com/go-chi/chi/v5"
+	"gorm.io/gorm" // For gorm.ErrRecordNotFound
 )
 
 type PersonHandler struct {
-	DB *sql.DB
+	PersonRepo repository.PersonRepositoryInterface
+	// GormDB *gorm.DB
 }
 
 func (ph *PersonHandler) CreatePerson(w http.ResponseWriter, r *http.Request) {
@@ -33,64 +35,68 @@ func (ph *PersonHandler) CreatePerson(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	personID, err := database.CreatePerson(ph.DB, req.PrimaryName)
+	person := models.Person{
+		PrimaryName: req.PrimaryName,
+	}
+
+	err := ph.PersonRepo.Create(&person)
 	if err != nil {
+		// GORM might return a more specific error for unique constraints
 		log.Printf("Error creating person '%s': %v", req.PrimaryName, err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to create person"})
 		return
 	}
 
+	// add aliases if provided
 	if len(req.Aliases) > 0 {
 		for _, aliasName := range req.Aliases {
 			if strings.TrimSpace(aliasName) != "" {
-				_, aliasErr := database.AddAlias(ph.DB, personID, aliasName)
+				alias := models.Alias{
+					PersonID: person.ID,
+					Name:     aliasName,
+				}
+				aliasErr := ph.PersonRepo.AddAlias(&alias)
 				if aliasErr != nil {
-					log.Printf("Error adding initial alias '%s' for person %d: %v", aliasName, personID, aliasErr)
+					log.Printf("Error adding initial alias '%s' for person %d: %v", aliasName, person.ID, aliasErr)
 				}
 			}
 		}
 	}
 
-	person, err := database.GetPersonByID(ph.DB, personID)
-	if err != nil {
-		log.Printf("Error fetching newly created person %d: %v", personID, err)
-		writeJSON(w, http.StatusCreated, map[string]interface{}{"message": "Person created successfully", "id": personID})
+	createdPerson, fetchErr := ph.PersonRepo.GetByID(person.ID)
+	if fetchErr != nil {
+		log.Printf("Error fetching newly created person %d with aliases: %v", person.ID, fetchErr)
+		writeJSON(w, http.StatusCreated, person)
 		return
 	}
-	aliases, err := database.ListAliasesByPersonID(ph.DB, personID)
-	if err != nil {
-		log.Printf("Error fetching aliases for newly created person %d: %v", personID, err)
-	} else {
-		person.Aliases = aliases
-	}
 
-	writeJSON(w, http.StatusCreated, person)
+	writeJSON(w, http.StatusCreated, createdPerson)
 }
 
 func (ph *PersonHandler) ListPeople(w http.ResponseWriter, r *http.Request) {
-	people, err := database.ListPeople(ph.DB)
+	people, err := ph.PersonRepo.ListAll()
 	if err != nil {
 		log.Printf("Error listing people: %v", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve people"})
 		return
 	}
 	if people == nil {
-		people = []database.Person{}
+		people = []models.Person{}
 	}
 	writeJSON(w, http.StatusOK, people)
 }
 
 func (ph *PersonHandler) GetPerson(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "person_id")
-	personID, err := strconv.ParseInt(idStr, 10, 64)
+	personID, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid person ID format"})
 		return
 	}
 
-	person, err := database.GetPersonByID(ph.DB, personID)
+	person, err := ph.PersonRepo.GetByID(uint(personID))
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Person not found"})
 		} else {
 			log.Printf("Error getting person %d: %v", personID, err)
@@ -98,20 +104,13 @@ func (ph *PersonHandler) GetPerson(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-
-	aliases, err := database.ListAliasesByPersonID(ph.DB, personID)
-	if err != nil {
-		log.Printf("Error fetching aliases for person %d: %v", personID, err)
-	} else {
-		person.Aliases = aliases
-	}
-
+	// Aliases should be preloaded by GetByID if defined in repository method
 	writeJSON(w, http.StatusOK, person)
 }
 
 func (ph *PersonHandler) UpdatePerson(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "person_id")
-	personID, err := strconv.ParseInt(idStr, 10, 64)
+	personID, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid person ID format"})
 		return
@@ -129,42 +128,46 @@ func (ph *PersonHandler) UpdatePerson(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = database.UpdatePerson(ph.DB, personID, req.PrimaryName)
+	personToUpdate, err := ph.PersonRepo.GetByID(uint(personID))
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Person not found"})
 		} else {
-			log.Printf("Error updating person %d: %v", personID, err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to update person"})
+			log.Printf("Error finding person %d for update: %v", personID, err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to find person for update"})
 		}
 		return
 	}
 
-	updatedPerson, err := database.GetPersonByID(ph.DB, personID)
+	personToUpdate.PrimaryName = req.PrimaryName
+
+	err = ph.PersonRepo.Update(personToUpdate)
 	if err != nil {
-		log.Printf("Error fetching updated person %d: %v", personID, err)
-		writeJSON(w, http.StatusOK, map[string]string{"message": "Person updated successfully"})
+		log.Printf("Error updating person %d: %v", personID, err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to update person"})
 		return
 	}
-	aliases, err := database.ListAliasesByPersonID(ph.DB, personID)
-	if err == nil {
-		updatedPerson.Aliases = aliases
-	}
 
+	updatedPerson, err := ph.PersonRepo.GetByID(uint(personID))
+	if err != nil {
+		log.Printf("Error fetching updated person %d: %v", personID, err)
+		writeJSON(w, http.StatusOK, map[string]string{"message": "Person updated successfully, but failed to fetch full details."})
+		return
+	}
 	writeJSON(w, http.StatusOK, updatedPerson)
 }
 
 func (ph *PersonHandler) DeletePerson(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "person_id")
-	personID, err := strconv.ParseInt(idStr, 10, 64)
+	personID, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid person ID format"})
 		return
 	}
 
-	err = database.DeletePerson(ph.DB, personID)
+	err = ph.PersonRepo.Delete(uint(personID))
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Person not found"})
 		} else {
 			log.Printf("Error deleting person %d: %v", personID, err)
@@ -172,20 +175,20 @@ func (ph *PersonHandler) DeletePerson(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-
 	writeJSON(w, http.StatusNoContent, nil)
 }
 
 func (ph *PersonHandler) AddAlias(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "person_id")
-	personID, err := strconv.ParseInt(idStr, 10, 64)
+	personID, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid person ID format"})
 		return
 	}
 
-	if _, err := database.GetPersonByID(ph.DB, personID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+	_, err = ph.PersonRepo.GetByID(uint(personID))
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Person not found"})
 		} else {
 			log.Printf("Error checking person %d before adding alias: %v", personID, err)
@@ -206,9 +209,13 @@ func (ph *PersonHandler) AddAlias(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	aliasID, err := database.AddAlias(ph.DB, personID, req.Name)
+	alias := models.Alias{
+		PersonID: uint(personID),
+		Name:     req.Name,
+	}
+	err = ph.PersonRepo.AddAlias(&alias)
 	if err != nil {
-		if strings.Contains(err.Error(), "already exists") {
+		if strings.Contains(strings.ToLower(err.Error()), "unique") || strings.Contains(err.Error(), "UNIQUE constraint failed") {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "Alias already exists for this person"})
 		} else {
 			log.Printf("Error adding alias '%s' to person %d: %v", req.Name, personID, err)
@@ -217,20 +224,20 @@ func (ph *PersonHandler) AddAlias(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": aliasID, "person_id": personID, "name": req.Name})
+	writeJSON(w, http.StatusCreated, alias)
 }
 
 func (ph *PersonHandler) DeleteAlias(w http.ResponseWriter, r *http.Request) {
 	aliasIdStr := chi.URLParam(r, "alias_id")
-	aliasID, err := strconv.ParseInt(aliasIdStr, 10, 64)
+	aliasID, err := strconv.ParseUint(aliasIdStr, 10, 64)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid alias ID format"})
 		return
 	}
 
-	err = database.DeleteAlias(ph.DB, aliasID)
+	err = ph.PersonRepo.DeleteAlias(uint(aliasID))
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Alias not found"})
 		} else {
 			log.Printf("Error deleting alias %d: %v", aliasID, err)
@@ -238,6 +245,5 @@ func (ph *PersonHandler) DeleteAlias(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-
 	writeJSON(w, http.StatusNoContent, nil)
 }
