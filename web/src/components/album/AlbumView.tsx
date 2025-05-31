@@ -84,11 +84,17 @@ const AlbumView: React.FC = () => {
                                     <CameraIcon className='size-4 text-gray-950/40' />
                                     Camden Rush
                                 </div>
-                                <span className='hidden text-gray-950/25 sm:inline dark:text-white/25'>&middot;</span>
-                                <div className='flex items-center gap-1.5'>
-                                    <MapPinIcon className='size-4 text-gray-950/40' />
-                                    Lane Tech
-                                </div>
+                                {currentAlbum?.location && (
+                                    <>
+                                        <span className='hidden text-gray-950/25 sm:inline dark:text-white/25'>
+                                            &middot;
+                                        </span>
+                                        <div className='flex items-center gap-1.5'>
+                                            <MapPinIcon className='size-4 text-gray-950/40' />
+                                            {currentAlbum.location}
+                                        </div>
+                                    </>
+                                )}
                             </div>
                             <div className='mt-10'>
                                 {currentAlbum?.zip_size && (

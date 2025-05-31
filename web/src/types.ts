@@ -3,6 +3,7 @@ export interface Album {
     name: string;
     slug: string;
     description?: string;
+    location?: string;
     folder_path: string;
     banner_image_path?: string;
     zip_path?: string;
