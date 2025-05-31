@@ -9,6 +9,6 @@ test
 test/*
 data
 data/*
-models/*
+DNN_models/*
 
 .idea/

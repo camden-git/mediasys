@@ -3,7 +3,6 @@ module github.com/camden-git/mediasysbackend
 go 1.23.0
 
 require (
-	github.com/Masterminds/squirrel v1.5.4
 	github.com/disintegration/imaging v1.6.2
 	github.com/facette/natsort v0.0.0-20181210072756-2cd4dd1e2dcb
 	github.com/go-chi/chi/v5 v5.2.1
@@ -20,8 +19,6 @@ require (
 require (
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
-	github.com/lann/builder v0.0.0-20180802200727-47ae307949d0 // indirect
-	github.com/lann/ps v0.0.0-20150810152359-62de8c46ede0 // indirect
 	github.com/mattn/go-sqlite3 v1.14.28 // indirect
 	golang.org/x/image v0.0.0-20191009234506-e7c1f5e7dbb8 // indirect
 	golang.org/x/text v0.25.0 // indirect
