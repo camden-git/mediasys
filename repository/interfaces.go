@@ -11,7 +11,7 @@ type AlbumRepositoryInterface interface {
 	ListAll() ([]models.Album, error)
 	GetByID(id uint) (*models.Album, error)
 	GetBySlug(slug string) (*models.Album, error)
-	Update(albumID uint, name string, description *string) error
+	Update(albumID uint, name string, description *string, isHidden *bool, location *string) error
 	RequestZip(albumID uint) error
 	MarkZipProcessing(albumID uint) error
 	SetZipResult(albumID uint, zipPath *string, zipSize *int64, taskErr error) error

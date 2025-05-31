@@ -44,11 +44,12 @@ func (r *AlbumRepository) Create(album *models.Album) error {
 	return nil
 }
 
-// ListAll retrieves all albums, ordered by name
+// ListAll retrieves all non-hidden albums, ordered by name
 func (r *AlbumRepository) ListAll() ([]models.Album, error) {
 	var albums []models.Album
 
-	err := r.DB.Order("name ASC").Find(&albums).Error
+	// Filter out hidden albums
+	err := r.DB.Where("is_hidden = ?", false).Order("name ASC").Find(&albums).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to list albums: %w", err)
 	}
@@ -81,9 +82,9 @@ func (r *AlbumRepository) GetBySlug(slug string) (*models.Album, error) {
 	return &album, nil
 }
 
-// Update updates an existing album's name and description
+// Update updates an existing album's name, description, hidden status, and location
 // other fields are updated by specific methods
-func (r *AlbumRepository) Update(albumID uint, name string, description *string) error {
+func (r *AlbumRepository) Update(albumID uint, name string, description *string, isHidden *bool, location *string) error {
 	now := time.Now().Unix()
 	updates := map[string]interface{}{
 		"updated_at": now,
@@ -93,10 +94,19 @@ func (r *AlbumRepository) Update(albumID uint, name string, description *string)
 	}
 	if description != nil {
 		updates["description"] = *description
-	} else {
-		updates["description"] = gorm.Expr("NULL")
+	}
+	if isHidden != nil {
+		updates["is_hidden"] = *isHidden
+	}
+	if location != nil {
+		if *location == "" { // allow clearing the location
+			updates["location"] = gorm.Expr("NULL")
+		} else {
+			updates["location"] = *location
+		}
 	}
 
+	// if only updated_at is present, no actual fields were changed
 	if len(updates) == 1 {
 		return nil
 	}
@@ -106,7 +116,11 @@ func (r *AlbumRepository) Update(albumID uint, name string, description *string)
 		return fmt.Errorf("failed to update album ID %d: %w", albumID, result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
+		var count int64
+		r.DB.Model(&models.Album{}).Where("id = ?", albumID).Count(&count)
+		if count == 0 {
+			return gorm.ErrRecordNotFound
+		}
 	}
 	return nil
 }

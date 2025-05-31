@@ -67,10 +67,12 @@ func (ah *AlbumHandler) getAlbumByIdentifier(identifier string) (*models.Album, 
 
 func (ah *AlbumHandler) CreateAlbum(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name        string `json:"name"`
-		Slug        string `json:"slug"`
-		FolderPath  string `json:"folder_path"`
-		Description string `json:"description"`
+		Name        string  `json:"name"`
+		Slug        string  `json:"slug"`
+		FolderPath  string  `json:"folder_path"`
+		Description *string `json:"description"`
+		IsHidden    *bool   `json:"is_hidden"`
+		Location    *string `json:"location"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -113,8 +115,14 @@ func (ah *AlbumHandler) CreateAlbum(w http.ResponseWriter, r *http.Request) {
 	newAlbumGorm := models.Album{
 		Name:        req.Name,
 		Slug:        req.Slug,
-		Description: &req.Description,
+		Description: req.Description,
 		FolderPath:  folderPathForDB,
+	}
+	if req.IsHidden != nil {
+		newAlbumGorm.IsHidden = *req.IsHidden
+	}
+	if req.Location != nil {
+		newAlbumGorm.Location = req.Location
 	}
 
 	err = ah.AlbumRepo.Create(&newAlbumGorm)
@@ -268,6 +276,8 @@ func (ah *AlbumHandler) UpdateAlbum(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name        *string `json:"name"` // pointers to distinguish between empty string and not provided
 		Description *string `json:"description"`
+		IsHidden    *bool   `json:"is_hidden"`
+		Location    *string `json:"location"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body: " + err.Error()})
@@ -276,6 +286,8 @@ func (ah *AlbumHandler) UpdateAlbum(w http.ResponseWriter, r *http.Request) {
 
 	var nameUpdate string
 	var descUpdate *string // keep as pointer for repository
+	var isHiddenUpdate *bool
+	var locationUpdate *string
 	updateRequested := false
 
 	if req.Name != nil {
@@ -292,12 +304,26 @@ func (ah *AlbumHandler) UpdateAlbum(w http.ResponseWriter, r *http.Request) {
 		descUpdate = album.Description
 	}
 
-	if !updateRequested && req.Name == nil && req.Description == nil {
+	if req.IsHidden != nil {
+		isHiddenUpdate = req.IsHidden
+		updateRequested = true
+	} else {
+		isHiddenUpdate = &album.IsHidden
+	}
+
+	if req.Location != nil {
+		locationUpdate = req.Location
+		updateRequested = true
+	} else {
+		locationUpdate = album.Location
+	}
+
+	if !updateRequested {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "No fields provided for update"})
 		return
 	}
 
-	err = ah.AlbumRepo.Update(album.ID, nameUpdate, descUpdate)
+	err = ah.AlbumRepo.Update(album.ID, nameUpdate, descUpdate, isHiddenUpdate, locationUpdate)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album not found during update"})
