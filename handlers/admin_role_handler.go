@@ -22,10 +22,7 @@ func NewAdminRoleHandler(roleRepo repository.RoleRepository) *AdminRoleHandler {
 	return &AdminRoleHandler{RoleRepo: roleRepo}
 }
 
-// --- DTOs for Role Management ---
-
-// RoleAlbumPermissionCreate is used within RoleCreatePayload
-// to define album-specific permissions without needing an existing ID.
+// RoleAlbumPermissionCreate is used within RoleCreatePayload to define album-specific permissions without needing an existing ID
 type RoleAlbumPermissionCreate struct {
 	AlbumID     uint     `json:"album_id"`
 	Permissions []string `json:"permissions"`
@@ -35,37 +32,36 @@ type RoleCreatePayload struct {
 	Name                   string                      `json:"name"`
 	GlobalPermissions      []string                    `json:"global_permissions"`
 	GlobalAlbumPermissions []string                    `json:"global_album_permissions"`
-	AlbumPermissions       []RoleAlbumPermissionCreate `json:"album_permissions"` // Simplified for creation
+	AlbumPermissions       []RoleAlbumPermissionCreate `json:"album_permissions"`
 }
 
-// RoleAlbumPermissionInput is used within RoleUpdatePayload
-// It can include an ID for existing permissions or define new ones.
+// RoleAlbumPermissionInput is used within RoleUpdatePayload; it can include an ID for existing permissions or define new ones
 type RoleAlbumPermissionInput struct {
 	ID          uint     `json:"id,omitempty"` // ID of existing RoleAlbumPermission to update
-	AlbumID     uint     `json:"album_id"`     // Required
-	Permissions []string `json:"permissions"`  // Required
+	AlbumID     uint     `json:"album_id"`     // required
+	Permissions []string `json:"permissions"`  // required
 }
 
 type RoleUpdatePayload struct {
 	Name                   *string                     `json:"name,omitempty"`
 	GlobalPermissions      *[]string                   `json:"global_permissions,omitempty"`
 	GlobalAlbumPermissions *[]string                   `json:"global_album_permissions,omitempty"`
-	AlbumPermissions       *[]RoleAlbumPermissionInput `json:"album_permissions,omitempty"` // For full replacement
+	AlbumPermissions       *[]RoleAlbumPermissionInput `json:"album_permissions,omitempty"`
 }
 
-// RoleResponseDTO is a simplified Role model for API responses.
+// RoleResponseDTO is a simplified Role model for API responses
 type RoleResponseDTO struct {
 	ID                     uint                         `json:"id"`
 	Name                   string                       `json:"name"`
 	GlobalPermissions      []string                     `json:"global_permissions"`
 	GlobalAlbumPermissions []string                     `json:"global_album_permissions"`
-	AlbumPermissions       []models.RoleAlbumPermission `json:"album_permissions"` // Full RoleAlbumPermission objects
+	AlbumPermissions       []models.RoleAlbumPermission `json:"album_permissions"`
 	CreatedAt              string                       `json:"created_at"`
 	UpdatedAt              string                       `json:"updated_at"`
-	Users                  []UserSummaryDTO             `json:"users,omitempty"` // Optional list of users in the role
+	Users                  []UserSummaryDTO             `json:"users,omitempty"`
 }
 
-// UserSummaryDTO is a very minimal user representation for embedding in other responses.
+// UserSummaryDTO is a very minimal user representation for embedding in other responses
 type UserSummaryDTO struct {
 	ID       uint   `json:"id"`
 	Username string `json:"username"`
@@ -87,7 +83,6 @@ func toUserSummaryListDTO(users []models.User) []UserSummaryDTO {
 }
 
 func toRoleResponseDTO(role *models.Role) RoleResponseDTO {
-	// AlbumPermissions should be preloaded by RoleRepo methods
 	return RoleResponseDTO{
 		ID:                     role.ID,
 		Name:                   role.Name,
@@ -96,7 +91,6 @@ func toRoleResponseDTO(role *models.Role) RoleResponseDTO {
 		AlbumPermissions:       role.AlbumPermissions,
 		CreatedAt:              role.CreatedAt.Format(http.TimeFormat),
 		UpdatedAt:              role.UpdatedAt.Format(http.TimeFormat),
-		// Users are not populated by default, only on specific requests
 	}
 }
 
@@ -108,8 +102,6 @@ func toRoleListResponseDTO(roles []models.Role) []RoleResponseDTO {
 	return dtos
 }
 
-// --- Handler Methods ---
-
 // ListRoles godoc
 // @Summary List all roles
 // @Description Get a list of all roles with their permissions
@@ -120,7 +112,7 @@ func toRoleListResponseDTO(roles []models.Role) []RoleResponseDTO {
 // @Router /api/admin/roles [get]
 // @Security BearerAuth
 func (h *AdminRoleHandler) ListRoles(w http.ResponseWriter, r *http.Request) {
-	roles, err := h.RoleRepo.ListAll() // Assumes ListAll preloads AlbumPermissions
+	roles, err := h.RoleRepo.ListAll()
 	if err != nil {
 		http.Error(w, "Failed to retrieve roles: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -191,13 +183,12 @@ func (h *AdminRoleHandler) CreateRole(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Role name is required", http.StatusBadRequest)
 		return
 	}
-	// Prevent creating another role with the Super Admin name
+
 	if payload.Name == models.SuperAdminRoleName {
 		http.Error(w, fmt.Sprintf("Role name '%s' is reserved.", models.SuperAdminRoleName), http.StatusBadRequest)
 		return
 	}
 
-	// Validate global permissions
 	for _, pKey := range payload.GlobalPermissions {
 		permDef, ok := permissions.GetPermissionDefinition(pKey)
 		if !ok {
@@ -210,7 +201,6 @@ func (h *AdminRoleHandler) CreateRole(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Validate global album permissions
 	for _, pKey := range payload.GlobalAlbumPermissions {
 		permDef, ok := permissions.GetPermissionDefinition(pKey)
 		if !ok {
@@ -229,16 +219,13 @@ func (h *AdminRoleHandler) CreateRole(w http.ResponseWriter, r *http.Request) {
 		GlobalAlbumPermissions: payload.GlobalAlbumPermissions,
 	}
 
-	// Create the role first to get an ID
 	if err := h.RoleRepo.Create(role); err != nil {
 		http.Error(w, "Failed to create role: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Now handle album permissions
 	createdAlbumPermissions := []models.RoleAlbumPermission{}
 	for _, apPayload := range payload.AlbumPermissions {
-		// Validate album permissions
 		for _, pKey := range apPayload.Permissions {
 			permDef, ok := permissions.GetPermissionDefinition(pKey)
 			if !ok {
@@ -257,7 +244,7 @@ func (h *AdminRoleHandler) CreateRole(w http.ResponseWriter, r *http.Request) {
 			Permissions: apPayload.Permissions,
 		}
 		if err := h.RoleRepo.CreateRoleAlbumPermission(rap); err != nil {
-			// Attempt to clean up the created role if subsequent album perm creation fails
+			// attempt to clean up the created role if subsequent album perm creation fails
 			_ = h.RoleRepo.Delete(role.ID)
 			http.Error(w, fmt.Sprintf("Failed to create album permission for album %d: %s", apPayload.AlbumID, err.Error()), http.StatusInternalServerError)
 			return
@@ -266,7 +253,6 @@ func (h *AdminRoleHandler) CreateRole(w http.ResponseWriter, r *http.Request) {
 	}
 	role.AlbumPermissions = createdAlbumPermissions
 
-	// Reload the role to get all associations correctly populated by GORM
 	reloadedRole, err := h.RoleRepo.GetByID(role.ID)
 	if err != nil {
 		http.Error(w, "Failed to retrieve newly created role with associations: "+err.Error(), http.StatusInternalServerError)
@@ -320,15 +306,12 @@ func (h *AdminRoleHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Prevent any modification of the Super Administrator role
 	if role.Name == models.SuperAdminRoleName {
 		http.Error(w, "The Super Administrator role cannot be modified.", http.StatusForbidden)
 		return
 	}
 
-	// Proceed with updates for other roles
 	if payload.Name != nil {
-		// Prevent renaming another role to "Super Administrator"
 		if *payload.Name == models.SuperAdminRoleName && role.Name != models.SuperAdminRoleName {
 			http.Error(w, fmt.Sprintf("Role name '%s' is reserved.", models.SuperAdminRoleName), http.StatusBadRequest)
 			return
@@ -337,7 +320,6 @@ func (h *AdminRoleHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if payload.GlobalPermissions != nil {
-		// Validate global permissions
 		for _, pKey := range *payload.GlobalPermissions {
 			permDef, ok := permissions.GetPermissionDefinition(pKey)
 			if !ok {
@@ -353,7 +335,6 @@ func (h *AdminRoleHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if payload.GlobalAlbumPermissions != nil {
-		// Validate global album permissions
 		for _, pKey := range *payload.GlobalAlbumPermissions {
 			permDef, ok := permissions.GetPermissionDefinition(pKey)
 			if !ok {
@@ -368,9 +349,7 @@ func (h *AdminRoleHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 		role.GlobalAlbumPermissions = *payload.GlobalAlbumPermissions
 	}
 
-	// Handle AlbumPermissions update: Full replacement
 	if payload.AlbumPermissions != nil {
-		// 1. Delete all existing RoleAlbumPermissions for this role
 		existingRaps, err := h.RoleRepo.GetRoleAlbumPermissions(role.ID)
 		if err != nil {
 			http.Error(w, "Failed to retrieve existing album permissions for update: "+err.Error(), http.StatusInternalServerError)
@@ -383,10 +362,8 @@ func (h *AdminRoleHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// 2. Add new RoleAlbumPermissions from payload
 		newAlbumPermissions := []models.RoleAlbumPermission{}
 		for _, apInput := range *payload.AlbumPermissions {
-			// Validate album permissions
 			for _, pKey := range apInput.Permissions {
 				permDef, ok := permissions.GetPermissionDefinition(pKey)
 				if !ok {
@@ -403,7 +380,7 @@ func (h *AdminRoleHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 				AlbumID:     apInput.AlbumID,
 				Permissions: apInput.Permissions,
 			}
-			// Use CreateRoleAlbumPermission which handles conflicts (upsert-like)
+
 			if err := h.RoleRepo.CreateRoleAlbumPermission(rap); err != nil {
 				http.Error(w, fmt.Sprintf("Failed to create/update album permission for album %d: %s", apInput.AlbumID, err.Error()), http.StatusInternalServerError)
 				return
@@ -416,13 +393,11 @@ func (h *AdminRoleHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 		role.AlbumPermissions = newAlbumPermissions
 	}
 
-	// Update the role's direct fields (Name, GlobalPermissions, etc.)
 	if err := h.RoleRepo.Update(role); err != nil {
 		http.Error(w, "Failed to update role: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Reload the role to get all associations correctly populated
 	updatedRole, err := h.RoleRepo.GetByID(role.ID)
 	if err != nil {
 		http.Error(w, "Failed to retrieve updated role with associations: "+err.Error(), http.StatusInternalServerError)
@@ -456,7 +431,6 @@ func (h *AdminRoleHandler) DeleteRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if role exists
 	role, err := h.RoleRepo.GetByID(uint(roleID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -467,7 +441,6 @@ func (h *AdminRoleHandler) DeleteRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Prevent deletion of the Super Administrator role
 	if role.Name == models.SuperAdminRoleName {
 		http.Error(w, "The Super Administrator role cannot be deleted.", http.StatusForbidden)
 		return
@@ -480,8 +453,6 @@ func (h *AdminRoleHandler) DeleteRole(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusNoContent)
 }
-
-// --- User-Role Association Handlers ---
 
 // GetRoleUsers godoc
 // @Summary Get users assigned to a role
@@ -503,7 +474,6 @@ func (h *AdminRoleHandler) GetRoleUsers(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Check if role exists first
 	if _, err := h.RoleRepo.GetByID(uint(roleID)); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			http.Error(w, "Role not found", http.StatusNotFound)
@@ -564,7 +534,6 @@ func (h *AdminRoleHandler) AddUserToRole(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Prevent assignment to the Super Administrator role
 	role, err := h.RoleRepo.GetByID(uint(roleID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -579,8 +548,7 @@ func (h *AdminRoleHandler) AddUserToRole(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// TODO: Check if user exists before adding. This requires a UserRepository.
-	// For now, we assume the frontend sends a valid user ID.
+	// TODO: check if user exists before adding
 
 	if err := h.RoleRepo.AddUserToRole(payload.UserID, uint(roleID)); err != nil {
 		http.Error(w, "Failed to add user to role: "+err.Error(), http.StatusInternalServerError)
@@ -618,7 +586,6 @@ func (h *AdminRoleHandler) RemoveUserFromRole(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Prevent modification of the Super Administrator role
 	role, err := h.RoleRepo.GetByID(uint(roleID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {

@@ -3,7 +3,6 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
-	// "fmt" // Unused import
 	"net/http"
 	"strconv"
 	"time"
@@ -22,12 +21,9 @@ func NewAdminInviteCodeHandler(inviteCodeRepo repository.InviteCodeRepository) *
 	return &AdminInviteCodeHandler{InviteCodeRepo: inviteCodeRepo}
 }
 
-// --- DTOs for Invite Code Management ---
-
 type InviteCodeCreatePayload struct {
 	ExpiresAt *string `json:"expires_at,omitempty"` // ISO 8601 format e.g., "2023-12-31T23:59:59Z" or null
 	MaxUses   *int    `json:"max_uses,omitempty"`   // Nullable for unlimited
-	// IsActive field removed, codes are active by default on creation
 }
 
 type InviteCodeUpdatePayload struct {
@@ -36,7 +32,7 @@ type InviteCodeUpdatePayload struct {
 	IsActive  *bool   `json:"is_active,omitempty"`
 }
 
-// InviteCodeResponseDTO for API responses.
+// InviteCodeResponseDTO for API responses
 type InviteCodeResponseDTO struct {
 	ID              uint    `json:"id"`
 	Code            string  `json:"code"`
@@ -76,9 +72,6 @@ func toInviteCodeListResponseDTO(ics []models.InviteCode) []InviteCodeResponseDT
 	return dtos
 }
 
-// --- Handler Methods ---
-
-// ListInviteCodes
 func (h *AdminInviteCodeHandler) ListInviteCodes(w http.ResponseWriter, r *http.Request) {
 	codes, err := h.InviteCodeRepo.ListAll()
 	if err != nil {
@@ -88,12 +81,10 @@ func (h *AdminInviteCodeHandler) ListInviteCodes(w http.ResponseWriter, r *http.
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(toInviteCodeListResponseDTO(codes)); err != nil {
-		// Log error, but response header is already sent.
 		// fmt.Printf("Error encoding JSON response for ListInviteCodes: %v\n", err)
 	}
 }
 
-// GetInviteCode
 func (h *AdminInviteCodeHandler) GetInviteCode(w http.ResponseWriter, r *http.Request) {
 	codeIDStr := chi.URLParam(r, "id")
 	codeID, err := strconv.ParseUint(codeIDStr, 10, 32)
@@ -118,7 +109,6 @@ func (h *AdminInviteCodeHandler) GetInviteCode(w http.ResponseWriter, r *http.Re
 	}
 }
 
-// CreateInviteCode
 func (h *AdminInviteCodeHandler) CreateInviteCode(w http.ResponseWriter, r *http.Request) {
 	var payload InviteCodeCreatePayload
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -126,7 +116,7 @@ func (h *AdminInviteCodeHandler) CreateInviteCode(w http.ResponseWriter, r *http
 		return
 	}
 
-	// Get authenticated user ID from context (set by AuthMiddleware)
+	// get authenticated user ID from context (set by AuthMiddleware)
 	currentUser, ok := r.Context().Value(UserContextKey).(*models.User)
 	if !ok || currentUser == nil {
 		http.Error(w, "User not found in context (authentication error)", http.StatusInternalServerError)
@@ -147,20 +137,11 @@ func (h *AdminInviteCodeHandler) CreateInviteCode(w http.ResponseWriter, r *http
 		inviteCode.ExpiresAt = &t
 	}
 
-	// IsActive is now always true on creation, handled by model's BeforeCreate or GORM default.
-	// No need to set it from payload here.
-	// if payload.IsActive != nil {
-	// 	inviteCode.IsActive = *payload.IsActive
-	// } else {
-	// 	inviteCode.IsActive = true // Default to active
-	// }
-
 	if err := h.InviteCodeRepo.Create(inviteCode); err != nil {
 		http.Error(w, "Failed to create invite code: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Reload to get default values like generated Code string
 	reloadedCode, err := h.InviteCodeRepo.GetByID(inviteCode.ID)
 	if err != nil {
 		http.Error(w, "Failed to retrieve newly created invite code: "+err.Error(), http.StatusInternalServerError)
@@ -174,7 +155,6 @@ func (h *AdminInviteCodeHandler) CreateInviteCode(w http.ResponseWriter, r *http
 	}
 }
 
-// UpdateInviteCode
 func (h *AdminInviteCodeHandler) UpdateInviteCode(w http.ResponseWriter, r *http.Request) {
 	codeIDStr := chi.URLParam(r, "id")
 	codeID, err := strconv.ParseUint(codeIDStr, 10, 32)
@@ -200,7 +180,7 @@ func (h *AdminInviteCodeHandler) UpdateInviteCode(w http.ResponseWriter, r *http
 	}
 
 	if payload.ExpiresAt != nil {
-		if *payload.ExpiresAt == "" { // Allow unsetting expiry
+		if *payload.ExpiresAt == "" {
 			inviteCode.ExpiresAt = nil
 		} else {
 			t, err := time.Parse(time.RFC3339, *payload.ExpiresAt)
@@ -212,7 +192,7 @@ func (h *AdminInviteCodeHandler) UpdateInviteCode(w http.ResponseWriter, r *http
 		}
 	}
 	if payload.MaxUses != nil {
-		inviteCode.MaxUses = payload.MaxUses // Allow setting to null (via pointer) or a value
+		inviteCode.MaxUses = payload.MaxUses
 	}
 	if payload.IsActive != nil {
 		inviteCode.IsActive = *payload.IsActive
@@ -229,7 +209,6 @@ func (h *AdminInviteCodeHandler) UpdateInviteCode(w http.ResponseWriter, r *http
 	}
 }
 
-// DeleteInviteCode
 func (h *AdminInviteCodeHandler) DeleteInviteCode(w http.ResponseWriter, r *http.Request) {
 	codeIDStr := chi.URLParam(r, "id")
 	codeID, err := strconv.ParseUint(codeIDStr, 10, 32)
@@ -238,7 +217,7 @@ func (h *AdminInviteCodeHandler) DeleteInviteCode(w http.ResponseWriter, r *http
 		return
 	}
 
-	_, err = h.InviteCodeRepo.GetByID(uint(codeID)) // Check existence
+	_, err = h.InviteCodeRepo.GetByID(uint(codeID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			http.Error(w, "Invite code not found", http.StatusNotFound)
