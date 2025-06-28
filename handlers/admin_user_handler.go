@@ -17,45 +17,40 @@ import (
 
 type AdminUserHandler struct {
 	UserRepo repository.UserRepository
-	RoleRepo repository.RoleRepository // For validating role IDs during user creation/update
+	RoleRepo repository.RoleRepository
 }
 
 func NewAdminUserHandler(userRepo repository.UserRepository, roleRepo repository.RoleRepository) *AdminUserHandler {
 	return &AdminUserHandler{UserRepo: userRepo, RoleRepo: roleRepo}
 }
 
-// --- DTOs for User Management ---
-
 type UserCreatePayload struct {
 	Username          string   `json:"username"`
 	Password          string   `json:"password"`
-	RoleIDs           []uint   `json:"role_ids"` // IDs of roles to assign
+	RoleIDs           []uint   `json:"role_ids"`
 	GlobalPermissions []string `json:"global_permissions"`
-	// AlbumPermissions are more complex and might be handled via separate endpoints
-	// e.g., POST /api/admin/users/{id}/album-permissions
 }
 
 type UserUpdatePayload struct {
 	Username          *string   `json:"username,omitempty"`
-	Password          *string   `json:"password,omitempty"` // For password changes
-	RoleIDs           *[]uint   `json:"role_ids,omitempty"` // Full set of role IDs to assign
+	Password          *string   `json:"password,omitempty"`
+	RoleIDs           *[]uint   `json:"role_ids,omitempty"`
 	GlobalPermissions *[]string `json:"global_permissions,omitempty"`
 }
 
-// UserResponseDTO is a simplified User model for API responses, excluding sensitive data.
+// UserResponseDTO is a simplified User model for API responses
 type UserResponseDTO struct {
 	ID                uint                         `json:"id"`
 	Username          string                       `json:"username"`
-	Roles             []models.Role                `json:"roles"` // Or RoleDTOs
+	Roles             []models.Role                `json:"roles"`
 	GlobalPermissions []string                     `json:"global_permissions"`
-	AlbumPermissions  []models.UserAlbumPermission `json:"album_permissions"` // Direct album perms
+	AlbumPermissions  []models.UserAlbumPermission `json:"album_permissions"`
 	CreatedAt         string                       `json:"created_at"`
 	UpdatedAt         string                       `json:"updated_at"`
 }
 
 func toUserResponseDTO(user *models.User, userAlbumPerms []models.UserAlbumPermission) UserResponseDTO {
-	// Ensure Roles are loaded if user.Roles is nil but should be populated
-	// This depends on how user was fetched. For now, assume it's populated.
+	// ensure Roles are loaded if user.Roles is nil but should be populated
 	roles := []models.Role{}
 	if user.Roles != nil {
 		for _, r := range user.Roles {
@@ -70,7 +65,7 @@ func toUserResponseDTO(user *models.User, userAlbumPerms []models.UserAlbumPermi
 		Username:          user.Username,
 		Roles:             roles,
 		GlobalPermissions: user.GlobalPermissions,
-		AlbumPermissions:  userAlbumPerms, // Pass the separately fetched direct album perms
+		AlbumPermissions:  userAlbumPerms,
 		CreatedAt:         user.CreatedAt.Format(http.TimeFormat),
 		UpdatedAt:         user.UpdatedAt.Format(http.TimeFormat),
 	}
@@ -79,16 +74,10 @@ func toUserResponseDTO(user *models.User, userAlbumPerms []models.UserAlbumPermi
 func toUserListResponseDTO(users []models.User) []UserResponseDTO {
 	dtos := make([]UserResponseDTO, len(users))
 	for i, user := range users {
-		// For list view, we might not need to fetch individual album perms for each user
-		// or roles in full detail to keep it performant.
-		// This is a simplification; a real app might need more optimized queries.
-		// For now, assuming user objects in the list have roles preloaded if needed.
-		dtos[i] = toUserResponseDTO(&user, nil) // Pass nil for album perms in list view for now
+		dtos[i] = toUserResponseDTO(&user, nil) // TODO: pass nil for album perms in list view for now
 	}
 	return dtos
 }
-
-// --- Handler Methods ---
 
 // ListUsers godoc
 // @Summary List all users
@@ -100,16 +89,12 @@ func toUserListResponseDTO(users []models.User) []UserResponseDTO {
 // @Router /api/admin/users [get]
 // @Security BearerAuth
 func (h *AdminUserHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
-	users, err := h.UserRepo.ListAll() // Uses the new ListAll method
+	users, err := h.UserRepo.ListAll()
 	if err != nil {
 		http.Error(w, "Failed to retrieve users: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// The toUserListResponseDTO already handles converting []models.User to []UserResponseDTO.
-	// It also correctly passes nil for album permissions in the list view for now.
-	// If detailed album permissions per user are needed in the list, toUserListResponseDTO
-	// and UserRepo.ListAll() would need adjustment for preloading or N+1 fetching.
 	responseDTOs := toUserListResponseDTO(users)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -148,7 +133,7 @@ func (h *AdminUserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	userAlbumPerms, _ := h.UserRepo.GetUserAlbumPermissions(user.ID) // Fetch direct album perms
+	userAlbumPerms, _ := h.UserRepo.GetUserAlbumPermissions(user.ID)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -181,13 +166,11 @@ func (h *AdminUserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate global permissions
 	for _, pKey := range payload.GlobalPermissions {
 		if !permissions.IsValidPermissionKey(pKey) {
 			http.Error(w, fmt.Sprintf("Invalid global permission key: %s", pKey), http.StatusBadRequest)
 			return
 		}
-		// Further check if scope is global (optional, as HasGlobalPermission handles it)
 	}
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(payload.Password), bcrypt.DefaultCost)
@@ -202,7 +185,6 @@ func (h *AdminUserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		GlobalPermissions: payload.GlobalPermissions,
 	}
 
-	// Validate and fetch roles
 	if len(payload.RoleIDs) > 0 {
 		user.Roles = make([]*models.Role, 0, len(payload.RoleIDs))
 		for _, roleID := range payload.RoleIDs {
@@ -220,12 +202,10 @@ func (h *AdminUserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.UserRepo.Create(user); err != nil {
-		// Could be a unique constraint violation for username
 		http.Error(w, "Failed to create user: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Reload user to get ID and populated fields like CreatedAt, UpdatedAt, and preloaded roles
 	createdUser, err := h.UserRepo.GetByUsername(user.Username)
 	if err != nil {
 		http.Error(w, "Failed to retrieve newly created user: "+err.Error(), http.StatusInternalServerError)
@@ -288,7 +268,6 @@ func (h *AdminUserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if payload.GlobalPermissions != nil {
-		// Validate global permissions
 		for _, pKey := range *payload.GlobalPermissions {
 			if !permissions.IsValidPermissionKey(pKey) {
 				http.Error(w, fmt.Sprintf("Invalid global permission key: %s", pKey), http.StatusBadRequest)
@@ -298,7 +277,6 @@ func (h *AdminUserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		user.GlobalPermissions = *payload.GlobalPermissions
 	}
 
-	// Handle RoleIDs update: Replace all existing roles with the new set
 	if payload.RoleIDs != nil {
 		newRoles := make([]*models.Role, 0, len(*payload.RoleIDs))
 		for _, roleID := range *payload.RoleIDs {
@@ -313,7 +291,7 @@ func (h *AdminUserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 			}
 			newRoles = append(newRoles, role)
 		}
-		user.Roles = newRoles // This will trigger GORM to update the associations
+		user.Roles = newRoles
 	}
 
 	if err := h.UserRepo.Update(user); err != nil {
@@ -321,7 +299,7 @@ func (h *AdminUserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Reload user to get updated fields and associations
+	// reload user to get updated fields and associations
 	updatedUser, err := h.UserRepo.GetByID(user.ID)
 	if err != nil {
 		http.Error(w, "Failed to retrieve updated user: "+err.Error(), http.StatusInternalServerError)
@@ -355,7 +333,6 @@ func (h *AdminUserHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Optional: Check if user exists before attempting delete, though Delete might handle it.
 	_, err = h.UserRepo.GetByID(uint(userID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {

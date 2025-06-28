@@ -17,7 +17,7 @@ import (
 type SetupHandler struct {
 	UserRepo repository.UserRepository
 	RoleRepo repository.RoleRepository
-	DB       *gorm.DB // For transaction
+	DB       *gorm.DB
 }
 
 func NewSetupHandler(db *gorm.DB, userRepo repository.UserRepository, roleRepo repository.RoleRepository) *SetupHandler {
@@ -29,8 +29,8 @@ type FirstAdminPayload struct {
 	Password string `json:"password"`
 }
 
-// SyncSuperAdminRole ensures the Super Administrator role exists and has all defined permissions.
-// This function is idempotent and safe to run on every application startup.
+// SyncSuperAdminRole ensures the Super Administrator role exists and has all defined permissions
+// This function is idempotent and safe to run on every application startup
 func SyncSuperAdminRole(roleRepo repository.RoleRepository) error {
 	fmt.Println("Syncing Super Administrator role...")
 
@@ -64,11 +64,10 @@ func SyncSuperAdminRole(roleRepo repository.RoleRepository) error {
 			fmt.Printf("'%s' role created successfully with all permissions.\n", models.SuperAdminRoleName)
 			return nil
 		}
-		// Another error occurred
+
 		return fmt.Errorf("failed to query for '%s' role: %w", models.SuperAdminRoleName, err)
 	}
 
-	// 3. Role exists, check if its permissions need updating
 	sort.Strings(role.GlobalPermissions)
 	sort.Strings(role.GlobalAlbumPermissions)
 
@@ -90,10 +89,9 @@ func SyncSuperAdminRole(roleRepo repository.RoleRepository) error {
 	return nil
 }
 
-// CreateFirstAdmin handles the creation of the initial administrator user.
-// This endpoint should only be usable if no other users exist in the system.
+// CreateFirstAdmin handles the creation of the initial administrator user
+// This endpoint should only be usable if no other users exist in the system!!
 func (h *SetupHandler) CreateFirstAdmin(w http.ResponseWriter, r *http.Request) {
-	// 1. Check if any users already exist.
 	var count int64
 	if err := h.DB.Model(&models.User{}).Count(&count).Error; err != nil {
 		http.Error(w, "Database error while checking for existing users.", http.StatusInternalServerError)
@@ -115,9 +113,7 @@ func (h *SetupHandler) CreateFirstAdmin(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Use a transaction to ensure atomicity
 	txErr := h.DB.Transaction(func(tx *gorm.DB) error {
-		// Re-check within transaction for safety
 		var innerCount int64
 		if err := tx.Model(&models.User{}).Count(&innerCount).Error; err != nil {
 			return fmt.Errorf("failed to count existing users in transaction: %w", err)
@@ -126,15 +122,12 @@ func (h *SetupHandler) CreateFirstAdmin(w http.ResponseWriter, r *http.Request) 
 			return errors.New("setup already completed")
 		}
 
-		// 2. Find the "Super Admin" Role (should have been created/synced on startup)
 		var superAdminRole models.Role
 		err := tx.Where("name = ?", models.SuperAdminRoleName).First(&superAdminRole).Error
 		if err != nil {
-			// This should not happen if SyncSuperAdminRole ran successfully on startup
 			return fmt.Errorf("could not find the '%s' role, which should have been auto-generated: %w", models.SuperAdminRoleName, err)
 		}
 
-		// 3. Create the first admin user
 		adminUser := &models.User{
 			Username: payload.Username,
 		}
@@ -146,14 +139,13 @@ func (h *SetupHandler) CreateFirstAdmin(w http.ResponseWriter, r *http.Request) 
 			return fmt.Errorf("failed to create admin user: %w", err)
 		}
 
-		// 4. Assign the "Super Admin" role to the user
 		userRole := models.UserRole{UserID: adminUser.ID, RoleID: superAdminRole.ID}
 		if err := tx.Create(&userRole).Error; err != nil {
 			return fmt.Errorf("failed to assign super admin role to user: %w", err)
 		}
 
 		fmt.Printf("Successfully created initial admin user '%s' with Super Administrator role.\n", adminUser.Username)
-		return nil // Commit transaction
+		return nil
 	})
 
 	if txErr != nil {

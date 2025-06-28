@@ -7,7 +7,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// InviteCode represents an invitation code for user registration.
+// InviteCode represents an invitation code for user registration
 type InviteCode struct {
 	ID              uint       `json:"id" gorm:"primaryKey"`
 	Code            string     `json:"code" gorm:"uniqueIndex;not null"`
@@ -21,19 +21,15 @@ type InviteCode struct {
 	UpdatedAt       time.Time  `json:"updated_at"`
 }
 
-// BeforeCreate generates a unique code if not provided.
+// BeforeCreate generates a unique code if not provided
 func (ic *InviteCode) BeforeCreate(tx *gorm.DB) (err error) {
 	if ic.Code == "" {
-		ic.Code = uuid.New().String() // Generate a UUID as the invite code
+		ic.Code = uuid.New().String()
 	}
-	// GORM's default:true for IsActive handles this now.
-	// if ic.IsActive == false && ic.ID == 0 { // Default to true on creation if not set
-	// 	ic.IsActive = true
-	// }
 	return
 }
 
-// IsValid checks if the invite code can still be used.
+// IsValid checks if the invite code can still be used
 func (ic *InviteCode) IsValid() bool {
 	if !ic.IsActive {
 		return false
