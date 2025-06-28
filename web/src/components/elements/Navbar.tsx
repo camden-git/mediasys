@@ -1,8 +1,8 @@
 import * as Headless from '@headlessui/react';
-import clsx from 'clsx';
-import { LayoutGroup, motion } from 'framer-motion';
-import React, { forwardRef, useId } from 'react';
+import { AnimatePresence, LayoutGroup, motion } from 'framer-motion';
+import React, { forwardRef, useEffect, useId, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
+import { clsx } from 'clsx';
 import { TouchTarget } from './Button.tsx';
 
 export function Navbar({ className, ...props }: React.ComponentPropsWithoutRef<'nav'>) {
@@ -34,8 +34,9 @@ export const NavbarItem = forwardRef(function NavbarItem(
         className,
         children,
         includeSubPaths,
+        accent,
         ...props
-    }: { className?: string; children: React.ReactNode; includeSubPaths?: boolean } & (
+    }: { className?: string; children: React.ReactNode; includeSubPaths?: boolean; accent?: boolean } & (
         | Omit<Headless.ButtonProps, 'as' | 'className'>
         | Omit<React.ComponentPropsWithoutRef<typeof NavLink>, 'className'>
     ),
@@ -49,7 +50,7 @@ export const NavbarItem = forwardRef(function NavbarItem(
         // Trailing icon (down chevron or similar)
         '*:not-nth-2:last:data-[slot=icon]:ml-auto *:not-nth-2:last:data-[slot=icon]:size-5 sm:*:not-nth-2:last:data-[slot=icon]:size-4',
         // Avatar
-        '*:data-[slot=avatar]:-m-0.5 *:data-[slot=avatar]:size-7 *:data-[slot=avatar]:[--avatar-radius:var(--radius-md)] sm:*:data-[slot=avatar]:size-6',
+        '*:data-[slot=avatar]:-m-0.5 *:data-[slot=avatar]:size-7 *:data-[slot=avatar]:[--avatar-radius:var(--radius)] *:data-[slot=avatar]:[--ring-opacity:10%] sm:*:data-[slot=avatar]:size-6',
         // Hover
         'data-hover:bg-zinc-950/5 data-hover:*:data-[slot=icon]:fill-zinc-950',
         // Active
@@ -59,7 +60,6 @@ export const NavbarItem = forwardRef(function NavbarItem(
         'dark:data-hover:bg-white/5 dark:data-hover:*:data-[slot=icon]:fill-white',
         'dark:data-active:bg-white/5 dark:data-active:*:data-[slot=icon]:fill-white',
     );
-
     const location = useLocation();
 
     let current: boolean;
@@ -79,21 +79,29 @@ export const NavbarItem = forwardRef(function NavbarItem(
 
     return (
         <span className={clsx(className, 'relative')}>
-            {current && (
-                <motion.span
-                    layoutId='current-indicator'
-                    className='absolute inset-x-2 -bottom-2.5 h-0.5 rounded-full bg-zinc-950 dark:bg-white'
-                />
-            )}
+            <AnimatePresence>
+                {current && (
+                    <motion.span
+                        layoutId='current-indicator'
+                        className={clsx([
+                            'absolute inset-x-2 -bottom-2.5 h-0.5',
+                            accent ? 'bg-sky-500/50 dark:bg-sky-500/25' : 'rounded-full bg-zinc-950 dark:bg-white',
+                        ])}
+                    />
+                )}
+            </AnimatePresence>
+
             {'to' in props ? (
-                <NavLink
-                    {...props}
-                    className={classes}
-                    data-current={current ? 'true' : undefined}
-                    ref={ref as React.ForwardedRef<HTMLAnchorElement>}
-                >
-                    <TouchTarget>{children}</TouchTarget>
-                </NavLink>
+                <Headless.DataInteractive>
+                    <NavLink
+                        {...props}
+                        className={classes}
+                        data-current={current ? 'true' : undefined}
+                        ref={ref as React.ForwardedRef<HTMLAnchorElement>}
+                    >
+                        <TouchTarget>{children}</TouchTarget>
+                    </NavLink>
+                </Headless.DataInteractive>
             ) : (
                 <Headless.Button
                     {...props}
@@ -107,6 +115,56 @@ export const NavbarItem = forwardRef(function NavbarItem(
         </span>
     );
 });
+
+interface NavbarAlertProps {
+    className?: string;
+    text: string;
+    icon: React.ReactNode;
+    autoOpen?: boolean;
+    flash?: boolean;
+}
+
+export const NavbarAlert = forwardRef<HTMLButtonElement, NavbarAlertProps>(
+    ({ className, text, icon, autoOpen = false, flash = false, ...props }, ref) => {
+        const [isHovered, setIsHovered] = useState(false);
+        const [isExpanded, setIsExpanded] = useState(autoOpen);
+
+        useEffect(() => {
+            if (autoOpen) {
+                const timer = setTimeout(() => setIsExpanded(false), 5000);
+                return () => clearTimeout(timer);
+            }
+            return undefined;
+        }, [autoOpen]);
+
+        return (
+            <motion.div
+                className={clsx(
+                    'relative flex items-center overflow-hidden rounded-lg p-2 text-base font-medium text-zinc-950 sm:text-sm',
+                    'dark:text-white dark:hover:bg-white/5',
+                    className,
+                )}
+                onHoverStart={() => setIsHovered(true)}
+                onHoverEnd={() => setIsHovered(false)}
+            >
+                <Headless.Button {...props} className='flex cursor-default items-center gap-2' ref={ref}>
+                    <span className={clsx(['size-6 sm:size-4', flash && 'animate-pulse'])}>{icon}</span>
+                    <motion.span
+                        initial={{ width: 0, opacity: 0 }}
+                        animate={{
+                            width: isExpanded || isHovered ? 'auto' : 0,
+                            opacity: isExpanded || isHovered ? 1 : 0,
+                        }}
+                        transition={{ duration: 0.3, ease: 'easeInOut' }}
+                        className='overflow-hidden whitespace-nowrap'
+                    >
+                        {text}
+                    </motion.span>
+                </Headless.Button>
+            </motion.div>
+        );
+    },
+);
 
 export function NavbarLabel({ className, ...props }: React.ComponentPropsWithoutRef<'span'>) {
     return <span {...props} className={clsx(className, 'truncate')} />;
