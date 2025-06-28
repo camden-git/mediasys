@@ -1,6 +1,12 @@
 import { createStore, action, thunk, Action, Thunk } from 'easy-peasy';
 import { Album, DirectoryListing } from '../types';
 import { getAlbums, getAlbumDetails, getAlbumContents } from '../api';
+import authModel, { AuthModel } from './authModel';
+import uiStore, { UIStore } from './uiStore';
+import inviteCodeStore, { InviteCodeStore } from './inviteCodeStore';
+import roleStore, { RoleStore } from './roleStore';
+import userStore, { UserStore } from './userStore';
+import progressStore, { ProgressStore } from './progressStore';
 
 export interface AlbumListModel {
     items: Album[];
@@ -111,11 +117,23 @@ const contentViewModel: ContentViewModel = {
 export interface StoreModel {
     albumList: AlbumListModel;
     contentView: ContentViewModel;
+    auth: AuthModel;
+    ui: UIStore;
+    inviteCodes: InviteCodeStore;
+    roles: RoleStore;
+    users: UserStore;
+    progress: ProgressStore;
 }
 
 const rootStoreModel: StoreModel = {
     albumList: albumListModel,
     contentView: contentViewModel,
+    auth: authModel,
+    ui: uiStore,
+    inviteCodes: inviteCodeStore,
+    roles: roleStore,
+    users: userStore,
+    progress: progressStore,
 };
 
 const store = createStore(rootStoreModel);

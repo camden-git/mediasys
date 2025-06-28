@@ -58,3 +58,64 @@ type FaceRepositoryInterface interface {
 	TagFace(faceID uint, personID uint) error
 	UntagFace(faceID uint) error
 }
+
+// UserRepository defines the methods for user data operations
+type UserRepository interface {
+	Create(user *models.User) error
+	GetByID(id uint) (*models.User, error)
+	GetByUsername(username string) (*models.User, error)
+	Update(user *models.User) error // General update, might need more granular methods
+	Delete(id uint) error
+	ListAll() ([]models.User, error) // Added ListAll
+
+	// Role management for a user
+	AddRoleToUser(userID uint, roleID uint) error
+	RemoveRoleFromUser(userID uint, roleID uint) error
+	GetUserRoles(userID uint) ([]models.Role, error) // Might need to return []*models.Role
+
+	// Direct global permission management for a user
+	SetUserGlobalPermissions(userID uint, permissions []string) error
+
+	// Direct album-specific permission management for a user
+	CreateUserAlbumPermission(uap *models.UserAlbumPermission) error
+	GetUserAlbumPermission(userID, albumID uint) (*models.UserAlbumPermission, error)
+	UpdateUserAlbumPermission(uap *models.UserAlbumPermission) error
+	DeleteUserAlbumPermission(userID, albumID uint) error
+	GetUserAlbumPermissions(userID uint) ([]models.UserAlbumPermission, error) // Get all album perms for a user
+}
+
+// RoleRepository defines the methods for role data operations
+type RoleRepository interface {
+	Create(role *models.Role) error
+	GetByID(id uint) (*models.Role, error)
+	GetByName(name string) (*models.Role, error)
+	ListAll() ([]models.Role, error)
+	Update(role *models.Role) error // General update
+	Delete(id uint) error
+
+	// Global permission management for a role
+	SetRoleGlobalPermissions(roleID uint, permissions []string) error
+
+	// Album-specific permission management for a role
+	CreateRoleAlbumPermission(rap *models.RoleAlbumPermission) error
+	GetRoleAlbumPermission(roleID, albumID uint) (*models.RoleAlbumPermission, error)
+	UpdateRoleAlbumPermission(rap *models.RoleAlbumPermission) error
+	DeleteRoleAlbumPermission(roleID, albumID uint) error
+	GetRoleAlbumPermissions(roleID uint) ([]models.RoleAlbumPermission, error)
+
+	// User-Role Management
+	FindUsersByRoleID(roleID uint) ([]models.User, error)
+	AddUserToRole(userID, roleID uint) error
+	RemoveUserFromRole(userID, roleID uint) error
+}
+
+// InviteCodeRepository defines the methods for invite code data operations
+type InviteCodeRepository interface {
+	Create(inviteCode *models.InviteCode) error
+	GetByCode(code string) (*models.InviteCode, error)
+	GetByID(id uint) (*models.InviteCode, error)
+	Update(inviteCode *models.InviteCode) error
+	IncrementUses(id uint) error
+	ListAll() ([]models.InviteCode, error)
+	Delete(id uint) error
+}

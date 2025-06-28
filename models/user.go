@@ -9,8 +9,9 @@ import (
 type User struct {
 	ID                uint     `json:"id" gorm:"primaryKey"`
 	Username          string   `json:"username" gorm:"uniqueIndex;not null"`
-	PasswordHash      string   `json:"-" gorm:"not null"`                     // "-" means don't include in JSON responses
-	GlobalPermissions []string `json:"global_permissions" gorm:"type:text[]"` // Storing as array of strings
+	PasswordHash      string   `json:"-" gorm:"not null"`                            // "-" means don't include in JSON responses
+	GlobalPermissions []string `json:"global_permissions" gorm:"serializer:json"`    // Use JSON serializer
+	Roles             []*Role  `json:"roles,omitempty" gorm:"many2many:user_roles;"` // Roles assigned to the user
 	// AlbumPermissions stores permissions specific to certain albums.
 	// Key: AlbumID (as string, since GORM might handle complex map keys better as JSON or serialized string)
 	// Value: List of permission strings for that album
@@ -33,7 +34,7 @@ type UserAlbumPermission struct {
 	User    User `json:"-" gorm:"foreignKey:UserID"`
 	AlbumID uint `json:"album_id" gorm:"index:idx_user_album,unique"` // Assuming Album model will have uint ID
 	// Album      Album    `json:"-" gorm:"foreignKey:AlbumID"` // Link to Album model
-	Permissions []string  `json:"permissions" gorm:"type:text[]"`
+	Permissions []string  `json:"permissions" gorm:"serializer:json"` // Use JSON serializer
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
@@ -54,38 +55,87 @@ func (u *User) CheckPassword(password string) bool {
 	return err == nil
 }
 
-// HasGlobalPermission checks if the user has a specific global permission.
+// HasGlobalPermission checks if the user has a specific global permission,
+// considering both direct permissions and permissions from roles.
 func (u *User) HasGlobalPermission(permission string) bool {
-	if u.GlobalPermissions == nil {
-		return false
-	}
+	// Check direct global permissions
 	for _, p := range u.GlobalPermissions {
 		if p == permission {
 			return true
 		}
 	}
-	return false
-}
 
-// GetAlbumPermissions returns the list of permissions for a specific album.
-// This would typically be populated by a DB query joining UserAlbumPermission.
-func (u *User) GetAlbumPermissions(albumID uint) []string {
-	// This is a placeholder. In a real scenario, this data would be loaded
-	// from the UserAlbumPermission table or the AlbumPermissionsMap if populated.
-	if perms, ok := u.AlbumPermissionsMap[string(albumID)]; ok { // Convert albumID to string for map key
-		return perms
-	}
-	return []string{}
-}
-
-// HasAlbumPermission checks if the user has a specific permission for a given album.
-// This would also be populated from UserAlbumPermission table.
-func (u *User) HasAlbumPermission(albumID uint, permission string) bool {
-	albumPerms := u.GetAlbumPermissions(albumID)
-	for _, p := range albumPerms {
-		if p == permission {
-			return true
+	// Check global permissions from roles
+	// Assumes u.Roles is preloaded
+	for _, role := range u.Roles {
+		if role == nil { // Defensive check
+			continue
+		}
+		for _, p := range role.GlobalPermissions {
+			if p == permission {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+// getAllAlbumPermissionsSet collects all unique album-specific permissions for a user
+// from direct assignments and all assigned roles for a specific album.
+// Assumes u.AlbumPermissionsMap is populated for direct permissions,
+// and u.Roles with their respective Role.AlbumPermissions are preloaded.
+func (u *User) getAllAlbumPermissionsSet(albumID uint) map[string]struct{} {
+	allPerms := make(map[string]struct{})
+
+	// 1. Add direct user album permissions
+	// AlbumPermissionsMap uses string keys for albumID
+	if directPerms, ok := u.AlbumPermissionsMap[string(albumID)]; ok {
+		for _, p := range directPerms {
+			allPerms[p] = struct{}{}
+		}
+	}
+
+	// 2. Add role-based permissions
+	for _, role := range u.Roles {
+		if role == nil { // Defensive check
+			continue
+		}
+		// 2a. Add role-based global album permissions
+		for _, p := range role.GlobalAlbumPermissions {
+			allPerms[p] = struct{}{}
+		}
+
+		// 2b. Add role-based album-specific permissions
+		// Assumes role.AlbumPermissions is preloaded
+		for _, rap := range role.AlbumPermissions {
+			if rap.AlbumID == albumID {
+				for _, p := range rap.Permissions {
+					allPerms[p] = struct{}{}
+				}
+			}
+		}
+	}
+	return allPerms
+}
+
+// GetAlbumPermissions returns a slice of unique permissions for a specific album,
+// considering both direct user permissions and permissions from roles.
+func (u *User) GetAlbumPermissions(albumID uint) []string {
+	permSet := u.getAllAlbumPermissionsSet(albumID)
+	if len(permSet) == 0 {
+		return []string{}
+	}
+	permissions := make([]string, 0, len(permSet))
+	for p := range permSet {
+		permissions = append(permissions, p)
+	}
+	return permissions
+}
+
+// HasAlbumPermission checks if the user has a specific permission for a given album,
+// considering both direct user permissions and permissions from roles.
+func (u *User) HasAlbumPermission(albumID uint, permission string) bool {
+	permSet := u.getAllAlbumPermissionsSet(albumID)
+	_, ok := permSet[permission]
+	return ok
 }

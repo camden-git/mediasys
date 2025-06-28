@@ -71,6 +71,14 @@ func main() {
 	personRepo := repository.NewPersonRepository(gormDB)
 	faceRepo := repository.NewFaceRepository(gormDB)
 	imageRepo := repository.NewImageRepository(gormDB)
+	userRepo := repository.NewGormUserRepository(gormDB)
+	roleRepo := repository.NewGormRoleRepository(gormDB)
+	inviteCodeRepo := repository.NewGormInviteCodeRepository(gormDB)
+
+	// sync the super admin role on startup to ensure it exists and has all permissions
+	if err := handlers.SyncSuperAdminRole(roleRepo); err != nil {
+		log.Fatalf("FATAL: Failed to sync Super Administrator role: %v", err)
+	}
 
 	imageProcessor := workers.NewImageProcessor(
 		cfg,
@@ -89,12 +97,11 @@ func main() {
 	r := chi.NewRouter()
 
 	corsOptions := cors.Options{
-		AllowedOrigins:   []string{"http://localhost:5173"}, //TODO: configurable
-		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
-		ExposedHeaders:   []string{"Link"},
-		AllowCredentials: true,
-		MaxAge:           300,
+		AllowedOrigins: []string{"http://localhost:5173", "http://127.0.0.1:5173"},
+		AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders: []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
+		ExposedHeaders: []string{"Link"},
+		MaxAge:         300,
 	}
 
 	corsHandler := cors.New(corsOptions)
@@ -110,9 +117,135 @@ func main() {
 	personHandler := &handlers.PersonHandler{PersonRepo: personRepo}
 	faceHandler := &handlers.FaceHandler{FaceRepo: faceRepo, PersonRepo: personRepo, Cfg: cfg}
 	imagePreviewHandler := &handlers.ImagePreviewHandler{FaceRepo: faceRepo, Cfg: cfg}
+	authHandler := handlers.NewAuthHandler(userRepo, inviteCodeRepo) // Pass inviteCodeRepo
+	permissionsHandler := handlers.NewPermissionsHandler()
+	adminUserHandler := handlers.NewAdminUserHandler(userRepo, roleRepo)
+	adminRoleHandler := handlers.NewAdminRoleHandler(roleRepo)
+	adminInviteCodeHandler := handlers.NewAdminInviteCodeHandler(inviteCodeRepo)
+	setupHandler := handlers.NewSetupHandler(gormDB, userRepo, roleRepo) // Initialize SetupHandler
 
 	r.Route("/api", func(r chi.Router) {
+		r.Post("/setup/initial-admin", setupHandler.CreateFirstAdmin)
+
+		// authentication routes
+		r.Route("/auth", func(r chi.Router) {
+			r.Post("/login", authHandler.Login)
+			r.Post("/register", authHandler.Register)
+			r.Post("/logout", authHandler.Logout)
+
+			r.Group(func(r chi.Router) {
+				r.Use(func(next http.Handler) http.Handler {
+					return handlers.AuthMiddleware(userRepo, next)
+				})
+				r.Get("/me", authHandler.CurrentUser)
+			})
+		})
+
+		// permissions definition routes
+		r.Route("/permissions", func(r chi.Router) {
+			r.Get("/", permissionsHandler.ListDefinedPermissions)
+			r.Get("/keys", permissionsHandler.ListDefinedPermissionKeys)
+		})
+
+		// admin routes for User and Role management
+		r.Route("/admin", func(r chi.Router) {
+			r.Use(func(next http.Handler) http.Handler {
+				return handlers.AuthMiddleware(userRepo, next) // All admin routes require authentication
+			})
+
+			// user management Routes
+			r.Route("/users", func(r chi.Router) {
+				r.With(func(next http.Handler) http.Handler {
+					return handlers.RequireGlobalPermission("user.list", next)
+				}).Get("/", adminUserHandler.ListUsers)
+
+				r.With(func(next http.Handler) http.Handler {
+					return handlers.RequireGlobalPermission("user.create", next)
+				}).Post("/", adminUserHandler.CreateUser)
+
+				r.Route("/{id}", func(r chi.Router) {
+					r.With(func(next http.Handler) http.Handler {
+						return handlers.RequireGlobalPermission("user.view", next)
+					}).Get("/", adminUserHandler.GetUser)
+
+					r.With(func(next http.Handler) http.Handler {
+						return handlers.RequireGlobalPermission("user.edit", next)
+					}).Put("/", adminUserHandler.UpdateUser)
+
+					r.With(func(next http.Handler) http.Handler {
+						return handlers.RequireGlobalPermission("user.delete", next)
+					}).Delete("/", adminUserHandler.DeleteUser)
+				})
+			})
+
+			// role management Routes
+			r.Route("/roles", func(r chi.Router) {
+				r.With(func(next http.Handler) http.Handler {
+					return handlers.RequireAnyGlobalPermission([]string{"role.list", "role.view", "role.create", "role.edit", "role.delete"}, next)
+				}).Get("/", adminRoleHandler.ListRoles)
+
+				r.With(func(next http.Handler) http.Handler {
+					return handlers.RequireGlobalPermission("role.create", next)
+				}).Post("/", adminRoleHandler.CreateRole)
+
+				r.Route("/{roleID}", func(r chi.Router) {
+					r.With(func(next http.Handler) http.Handler {
+						return handlers.RequireGlobalPermission("role.view", next)
+					}).Get("/", adminRoleHandler.GetRole)
+
+					r.With(func(next http.Handler) http.Handler {
+						return handlers.RequireGlobalPermission("role.edit", next)
+					}).Put("/", adminRoleHandler.UpdateRole)
+
+					r.With(func(next http.Handler) http.Handler {
+						return handlers.RequireGlobalPermission("role.delete", next)
+					}).Delete("/", adminRoleHandler.DeleteRole)
+
+					// user-role association routes
+					r.Route("/users", func(r chi.Router) {
+						r.With(func(next http.Handler) http.Handler {
+							return handlers.RequireGlobalPermission("role.view.users", next)
+						}).Get("/", adminRoleHandler.GetRoleUsers)
+
+						r.With(func(next http.Handler) http.Handler {
+							return handlers.RequireGlobalPermission("role.edit.users", next)
+						}).Post("/", adminRoleHandler.AddUserToRole)
+
+						r.With(func(next http.Handler) http.Handler {
+							return handlers.RequireGlobalPermission("role.edit.users", next)
+						}).Delete("/{userID}", adminRoleHandler.RemoveUserFromRole)
+					})
+				})
+			})
+
+			// invite code management routes
+			r.Route("/invite-codes", func(r chi.Router) {
+				r.With(func(next http.Handler) http.Handler {
+					return handlers.RequireAnyGlobalPermission([]string{"invite.list", "invite.view", "invite.create", "invite.edit", "invite.delete"}, next)
+				}).Get("/", adminInviteCodeHandler.ListInviteCodes)
+
+				r.With(func(next http.Handler) http.Handler {
+					return handlers.RequireGlobalPermission("invite.create", next)
+				}).Post("/", adminInviteCodeHandler.CreateInviteCode)
+
+				r.Route("/{id}", func(r chi.Router) {
+					r.With(func(next http.Handler) http.Handler {
+						return handlers.RequireGlobalPermission("invite.view", next)
+					}).Get("/", adminInviteCodeHandler.GetInviteCode)
+
+					r.With(func(next http.Handler) http.Handler {
+						return handlers.RequireGlobalPermission("invite.edit", next)
+					}).Put("/", adminInviteCodeHandler.UpdateInviteCode)
+
+					r.With(func(next http.Handler) http.Handler {
+						return handlers.RequireGlobalPermission("invite.delete", next)
+					}).Delete("/", adminInviteCodeHandler.DeleteInviteCode)
+				})
+			})
+		})
+
 		r.Route("/albums", func(r chi.Router) {
+			// TODO: Protect album routes with AuthMiddleware and permission checks as needed
 			r.Post("/", albumHandler.CreateAlbum)
 			r.Get("/", albumHandler.ListAlbums)
 			r.Route("/{album_identifier}", func(r chi.Router) {

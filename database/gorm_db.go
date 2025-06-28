@@ -55,6 +55,12 @@ func AutoMigrateModels(db *gorm.DB) error {
 		&models.Face{},
 		&models.Image{},
 		&models.Album{},
+		&models.User{},
+		&models.UserAlbumPermission{},
+		&models.Role{},
+		&models.UserRole{},
+		&models.RoleAlbumPermission{},
+		&models.InviteCode{},
 	)
 	if err != nil {
 		return fmt.Errorf("GORM AutoMigrate failed: %w", err)
