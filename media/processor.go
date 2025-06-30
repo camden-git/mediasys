@@ -90,7 +90,7 @@ func (p *Processor) GenerateThumbnail(originalImg image.Image, originalRelPath s
 }
 
 // ProcessBanner resizes an uploaded banner and saves it
-// returns relative path to saved banner or error
+// returns the relative path to saved banner or error
 func (p *Processor) ProcessBanner(fileData io.Reader) (string, error) {
 	img, format, err := image.Decode(fileData)
 	if err != nil {

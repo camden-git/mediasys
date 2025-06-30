@@ -68,7 +68,7 @@ func getShutterSpeed(exifData *exif.Exif) *string {
 	}
 	num, den, err := tag.Rat2(0)
 	if err != nil || den == 0 {
-		return nil // Cannot represent as fraction
+		return nil // Cannot represent as a fraction
 	}
 
 	if num == 1 && den > 1 { // common case: 1/XXX
@@ -82,7 +82,7 @@ func getShutterSpeed(exifData *exif.Exif) *string {
 		s := fmt.Sprintf("%.1fs", val) // e.g., 1.5s, 30.0s
 		return &s
 	} else {
-		s := fmt.Sprintf("%.4fs", val) // use float representation if not simple fraction
+		s := fmt.Sprintf("%.4fs", val) // use float representation if not a simple fraction
 		return &s
 	}
 }
@@ -113,7 +113,7 @@ func GetImageMetadata(filePath string) (*Metadata, error) {
 
 	exifData, err := exif.Decode(file)
 	if err != nil {
-		// not necessarily a fatal error, file might just lack EXIF data
+		// not necessarily a fatal error, the file might just lack EXIF data
 		log.Printf("metadata: No EXIF data found or error decoding EXIF for %s: %v", filePath, err)
 		// return metadata struct with only dimensions if they were found
 		return &Metadata{Width: width, Height: height}, nil

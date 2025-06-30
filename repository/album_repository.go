@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"time"
@@ -72,7 +73,7 @@ func (r *AlbumRepository) GetByID(id uint) (*models.Album, error) {
 	var album models.Album
 	err := r.DB.First(&album, id).Error
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
 		}
 		return nil, fmt.Errorf("failed to get album by ID %d: %w", id, err)
@@ -85,7 +86,7 @@ func (r *AlbumRepository) GetBySlug(slug string) (*models.Album, error) {
 	var album models.Album
 	err := r.DB.Where("slug = ?", slug).First(&album).Error
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
 		}
 		return nil, fmt.Errorf("failed to get album by slug %s: %w", slug, err)

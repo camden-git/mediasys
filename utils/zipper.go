@@ -82,8 +82,8 @@ func CreateAlbumZip(sourceRootDir, albumRelativeFolderPath, archiveSaveDir, arch
 		}() // Immediately invoke the func to ensure defer runs
 	}
 
-	// Close the zip writer *explicitly* here to ensure data is flushed
-	// before we stat the file. The defer will also run, but this ensures timing.
+	// Close the zip writer explicitly here to ensure data is flushed before the
+	// file is stat. The defer will also run, but this ensures timing.
 	if err := zipWriter.Close(); err != nil {
 		// Attempt cleanup on finalize error
 		zipFile.Close()
@@ -105,7 +105,7 @@ func CreateAlbumZip(sourceRootDir, albumRelativeFolderPath, archiveSaveDir, arch
 	zipInfo, err := os.Stat(zipFilePath)
 	if err != nil {
 		// File might be locked briefly? Unlikely but possible.
-		// If Stat fails, we can't return size, but file might exist.
+		// If Stat fails, we can't return size, but the file might exist.
 		log.Printf("zipper: Warning - failed to stat created zip file %s: %v", zipFilePath, err)
 		return zipFilename, 0, fmt.Errorf("zip created but failed to get size: %w", err) // Return filename but size 0 and error
 	}

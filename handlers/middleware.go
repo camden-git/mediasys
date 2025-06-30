@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -45,7 +46,7 @@ func AuthMiddleware(userRepo repository.UserRepository, next http.Handler) http.
 		})
 
 		if err != nil {
-			if err == jwt.ErrSignatureInvalid {
+			if errors.Is(err, jwt.ErrSignatureInvalid) {
 				http.Error(w, "Invalid token signature", http.StatusUnauthorized)
 				return
 			}

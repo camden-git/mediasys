@@ -17,7 +17,7 @@ import CreateAlbumForm from '../components/admin/albums/CreateAlbumForm.tsx';
 
 export interface RouteDefinition {
     path: string;
-    // If undefined is passed this route is still rendered into the router itself
+    // If undefined is passed, this route is still rendered into the router itself,
     // but no navigation link is displayed in the sub-navigation menu.
     name: string | undefined;
     component: React.ComponentType;

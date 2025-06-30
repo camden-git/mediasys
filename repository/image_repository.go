@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"time"
@@ -27,7 +28,7 @@ func (r *ImageRepository) GetByPath(originalPath string) (*models.Image, error) 
 	// GORM automatically respects soft deletes if DeletedAt is on the model
 	err := r.DB.Where("original_path = ?", originalPath).First(&image).Error
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
 		}
 		return nil, fmt.Errorf("failed to get image by path %s: %w", originalPath, err)
@@ -175,7 +176,7 @@ func (r *ImageRepository) UpdateDetectionResult(originalPath string, detections 
 
 		if taskErr == nil && len(detections) > 0 {
 			newFaces := make([]models.Face, len(detections))
-			faceCreatedAt := time.Now().Unix() // all faces in this batch get same timestamp
+			faceCreatedAt := time.Now().Unix() // all faces in this batch get the same timestamp
 			for i, det := range detections {
 				newFaces[i] = models.Face{
 					// PersonID is nil for untagged faces

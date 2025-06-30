@@ -104,7 +104,7 @@ func (ph *PersonHandler) GetPerson(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	// Aliases should be preloaded by GetByID if defined in repository method
+	// GetByID should preload aliases if defined in repository method
 	writeJSON(w, http.StatusOK, person)
 }
 

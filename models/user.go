@@ -2,6 +2,7 @@ package models
 
 import (
 	"golang.org/x/crypto/bcrypt"
+	"strconv"
 	"time"
 )
 
@@ -83,7 +84,7 @@ func (u *User) HasGlobalPermission(permission string) bool {
 func (u *User) getAllAlbumPermissionsSet(albumID uint) map[string]struct{} {
 	allPerms := make(map[string]struct{})
 
-	if directPerms, ok := u.AlbumPermissionsMap[string(albumID)]; ok {
+	if directPerms, ok := u.AlbumPermissionsMap[strconv.Itoa(int(albumID))]; ok {
 		for _, p := range directPerms {
 			allPerms[p] = struct{}{}
 		}

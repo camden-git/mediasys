@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -40,7 +41,7 @@ func (r *PersonRepository) GetByID(id uint) (*models.Person, error) {
 	var person models.Person
 	err := r.DB.Preload("Aliases").Preload("Faces").First(&person, id).Error
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
 		}
 		return nil, fmt.Errorf("failed to get person by ID %d: %w", id, err)
@@ -134,13 +135,13 @@ func (r *PersonRepository) FindPersonIDsByNameOrAlias(query string) ([]uint, err
 	likeQuery := "%" + query + "%"
 
 	err := r.DB.Model(&models.Person{}).Where("primary_name LIKE ?", likeQuery).Pluck("id", &ids).Error
-	if err != nil && err != gorm.ErrRecordNotFound {
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fmt.Errorf("error searching people by primary name for '%s': %w", query, err)
 	}
 
 	var aliasPersonIDs []uint
 	err = r.DB.Model(&models.Alias{}).Where("name LIKE ?", likeQuery).Pluck("person_id", &aliasPersonIDs).Error
-	if err != nil && err != gorm.ErrRecordNotFound {
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fmt.Errorf("error searching aliases by name for '%s': %w", query, err)
 	}
 

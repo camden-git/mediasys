@@ -11,7 +11,7 @@ type Role struct {
 	CreatedAt              time.Time             `json:"created_at"`
 	UpdatedAt              time.Time             `json:"updated_at"`
 	Users                  []*User               `json:"-" gorm:"many2many:user_roles;"`                       // Many-to-many relationship with User
-	AlbumPermissions       []RoleAlbumPermission `json:"album_permissions,omitempty" gorm:"foreignKey:RoleID"` // Album specific permissions for this role
+	AlbumPermissions       []RoleAlbumPermission `json:"album_permissions,omitempty" gorm:"foreignKey:RoleID"` // Album-specific permissions for this role
 }
 
 // UserRole is the join table for the many-to-many relationship between users and roles.
@@ -29,8 +29,8 @@ type RoleAlbumPermission struct {
 	ID          uint      `json:"id" gorm:"primaryKey"`
 	RoleID      uint      `json:"role_id" gorm:"index:idx_role_album,unique"`
 	Role        Role      `json:"-" gorm:"foreignKey:RoleID"`
-	AlbumID     uint      `json:"album_id" gorm:"index:idx_role_album,unique"` // assuming Album model will have uint ID
-	Permissions []string  `json:"permissions" gorm:"serializer:json"`          // use JSON serializer
+	AlbumID     uint      `json:"album_id" gorm:"index:idx_role_album,unique"`
+	Permissions []string  `json:"permissions" gorm:"serializer:json"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }

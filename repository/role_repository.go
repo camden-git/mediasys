@@ -64,7 +64,6 @@ func (r *GormRoleRepository) SetRoleGlobalPermissions(roleID uint, permissions [
 	return r.db.Model(&models.Role{}).Where("id = ?", roleID).Update("global_permissions", permissions).Error
 }
 
-// RoleAlbumPermission management
 func (r *GormRoleRepository) CreateRoleAlbumPermission(rap *models.RoleAlbumPermission) error {
 	return r.db.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "role_id"}, {Name: "album_id"}},

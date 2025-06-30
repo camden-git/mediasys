@@ -11,10 +11,6 @@ type PermissionHandler struct {
 	// No dependencies needed for now, as it uses a package-level variable
 }
 
-func NewPermissionHandler() *PermissionHandler {
-	return &PermissionHandler{}
-}
-
 // ListPermissionDefinitions serves the statically defined permission groups.
 func (h *PermissionHandler) ListPermissionDefinitions(w http.ResponseWriter, r *http.Request) {
 	definitions := permissions.DefinedPermissionGroups

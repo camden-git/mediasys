@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log"
@@ -261,11 +262,11 @@ func listDirectoryContents(baseDirFullPath string, requestPathPrefix string, cfg
 			dbKeyPath := filepath.ToSlash(relPathFromRoot)
 
 			var imageInfo *models.Image
-			var recordExists bool = true
+			var recordExists = true
 
 			imageInfo, err = imgRepo.GetByPath(dbKeyPath)
 
-			if err == gorm.ErrRecordNotFound {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
 				recordExists = false
 				// ensure record exists with pending statuses before queuing tasks
 				created, ensureErr := imgRepo.EnsureExists(dbKeyPath, modTimeUnix)
@@ -286,15 +287,15 @@ func listDirectoryContents(baseDirFullPath string, requestPathPrefix string, cfg
 					log.Printf("WARNING: EnsureImageRecordExists reported not created, but record might exist or error occurred. Path: %s", dbKeyPath)
 					// attempt to fetch anyway, or rely on the initial imageInfo being nil
 					imageInfo, err = imgRepo.GetByPath(dbKeyPath)
-					if err != nil && err != gorm.ErrRecordNotFound {
+					if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 						log.Printf("ERROR fetching image record for %s after Ensure reported not created: %v", dbKeyPath, err)
 						fileInfos = append(fileInfos, apiFileInfo)
 						continue
 					}
 				}
-				// if imageInfo is still nil after all attempts (e.g. EnsureExists failed silently or GetByPath failed after creation)
+				// if imageInfo is still nil after all attempts (e.g., EnsureExists failed silently or GetByPath failed after creation)
 				// then recordExists will remain false
-				if imageInfo != nil && err == nil { // auccessfully fetched or created and fetched
+				if imageInfo != nil && err == nil { // successfully fetched or created and fetched
 					recordExists = true
 				} else { // could not get/create a record
 					recordExists = false

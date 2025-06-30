@@ -67,7 +67,7 @@ func (iph *ImagePreviewHandler) ServeImageWithFaces(w http.ResponseWriter, r *ht
 		// do not return, proceed to show image without boxes if DB error occurs
 	}
 
-	blue := color.RGBA{0, 0, 255, 0}
+	blue := color.RGBA{B: 255} // color.RGBA{0, 0, 255, 0}
 	thickness := 2
 
 	if len(faces) > 0 {

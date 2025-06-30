@@ -1,4 +1,3 @@
-// media/types.go
 package media
 
 type AssetType string
@@ -7,12 +6,9 @@ const (
 	AssetTypeThumbnail AssetType = "thumbnail"
 	AssetTypeBanner    AssetType = "banner"
 	AssetTypeArchive   AssetType = "archive"
-	AssetTypeOriginal  AssetType = "original"
-	AssetTypeVideo     AssetType = "video" // soon tm
-	AssetTypeUnknown   AssetType = "unknown"
 )
 
-// ProcessingOptions can hold parameters for transformations
+// ImageProcessingOptions holds parameters for transformations
 type ImageProcessingOptions struct {
 	TargetWidth  int
 	TargetHeight int // 0 preserves aspect ratio

@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"time"
@@ -41,7 +42,7 @@ func (r *FaceRepository) GetByID(id uint) (*models.Face, error) {
 	// preload Person to get PersonName if PersonID is not null
 	err := r.DB.Preload("Person").First(&face, id).Error
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
 		}
 		return nil, fmt.Errorf("failed to get face by ID %d: %w", id, err)
