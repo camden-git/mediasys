@@ -12,7 +12,7 @@ import (
 
 // Store defines the interface for saving, retrieving, and deleting media assets
 type Store interface {
-	// Save stores data from reader to a specific relative path within a sub-directory
+	// Save stores data from reader to a specific relative path within a subdirectory
 	// returns the final relative path used (might include generated filename) and error
 	Save(assetType AssetType, relativeDirHint string, filenameHint string, data io.Reader) (string, error)
 	// Get retrieves a reader for an asset

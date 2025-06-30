@@ -19,7 +19,7 @@ const styles = {
     solid: [
         // Optical border, implemented as the button background to avoid corner artifacts
         'border-transparent bg-(--btn-border)',
-        // Dark mode: border is rendered on `after` so background is set to button background
+        // Dark mode: border is rendered on `after` so background is set to the button background
         'dark:bg-(--btn-bg)',
         // Button background, implemented as foreground layer to stack on top of pseudo-border layer
         'before:absolute before:inset-0 before:-z-10 before:rounded-[calc(var(--radius-lg)-1px)] before:bg-(--btn-bg)',
@@ -35,7 +35,7 @@ const styles = {
         'after:shadow-[shadow:inset_0_1px_--theme(--color-white/15%)]',
         // White overlay on hover
         'data-active:after:bg-(--btn-hover-overlay) data-hover:after:bg-(--btn-hover-overlay)',
-        // Dark mode: `after` layer expands to cover entire button
+        // Dark mode: `after` layer expands to cover the entire button
         'dark:after:-inset-px dark:after:rounded-lg',
         // Disabled
         'data-disabled:before:shadow-none data-disabled:after:shadow-none',

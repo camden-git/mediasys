@@ -35,8 +35,8 @@ func SyncSuperAdminRole(roleRepo repository.RoleRepository) error {
 	fmt.Println("Syncing Super Administrator role...")
 
 	// get all defined permissions from the static definitions
-	allGlobalPerms := []string{}
-	allGlobalAlbumPerms := []string{}
+	var allGlobalPerms []string
+	var allGlobalAlbumPerms []string
 	for _, group := range permissions.DefinedPermissionGroups {
 		for _, perm := range group.Permissions {
 			if perm.Scope == permissions.ScopeGlobal {

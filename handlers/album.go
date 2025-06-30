@@ -147,7 +147,7 @@ func (ah *AlbumHandler) ListAlbums(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if albums == nil {
-		albums = []models.Album{} // ensure empty array instead of null for JSON
+		albums = []models.Album{} // ensure an empty array instead of null for JSON
 	}
 	writeJSON(w, http.StatusOK, albums)
 }
@@ -285,7 +285,7 @@ func (ah *AlbumHandler) UpdateAlbum(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var nameUpdate string
-	var descUpdate *string // keep as pointer for repository
+	var descUpdate *string // keep as a pointer for repository
 	var isHiddenUpdate *bool
 	var locationUpdate *string
 	updateRequested := false
@@ -398,7 +398,7 @@ func (ah *AlbumHandler) UploadAlbumBanner(w http.ResponseWriter, r *http.Request
 	newBannerRelativePath := savedRelPath
 	if oldBannerRelativePathPtr != nil && (*oldBannerRelativePathPtr != newBannerRelativePath) {
 		mediaStore, storeErr := media.NewLocalStorage(ah.Cfg.MediaStoragePath, map[media.AssetType]string{})
-		if storeErr == nil { // only attempt delete if store initialized
+		if storeErr == nil { // only attempt to delete if store initialized
 			oldBannerFullPath, pathErr := mediaStore.GetFullPath(*oldBannerRelativePathPtr)
 			if pathErr == nil {
 				if removeErr := os.Remove(oldBannerFullPath); removeErr != nil && !os.IsNotExist(removeErr) {
@@ -431,7 +431,7 @@ func (ah *AlbumHandler) UploadAlbumBanner(w http.ResponseWriter, r *http.Request
 	updatedAlbum, err := ah.AlbumRepo.GetByID(album.ID)
 	if err != nil {
 		log.Printf("Error fetching updated album %d after banner upload: %v", album.ID, err)
-		// banner was uploaded and DB updated, so this is a partial success
+		// the banner was uploaded and DB updated, so this is a partial success
 		writeJSON(w, http.StatusOK, map[string]interface{}{"message": "Banner uploaded successfully", "banner_image_path": newBannerRelativePath})
 		return
 	}
@@ -505,7 +505,7 @@ func (ah *AlbumHandler) DownloadAlbumZipByID(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// construct full path to the zip file
+	// construct the full path to the zip file
 	fullZipPath := filepath.Join(ah.Cfg.MediaStoragePath, *album.ZipPath)
 	fullZipPath = filepath.Clean(fullZipPath)
 
@@ -575,7 +575,7 @@ func (ah *AlbumHandler) DownloadAlbumZip(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// construct full path to the zip file
+	// construct the full path to the zip file
 	fullZipPath := filepath.Join(ah.Cfg.MediaStoragePath, *album.ZipPath)
 	fullZipPath = filepath.Clean(fullZipPath)
 

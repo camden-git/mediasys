@@ -29,9 +29,9 @@ type Config struct {
 
 	// media storage configuration
 	MediaStoragePath string // primary root for generated assets (thumbs, banners, zips)
-	ThumbnailsPath   string // full calculated path for thumbnails
-	BannersPath      string // full calculated path for banners
-	ArchivesPath     string // full calculated path for archives
+	ThumbnailsPath   string // full-calculated path for thumbnails
+	BannersPath      string // full-calculated path for banners
+	ArchivesPath     string // full-calculated path for archives
 
 	// thumbnail generation settings
 	ThumbnailMaxSize int

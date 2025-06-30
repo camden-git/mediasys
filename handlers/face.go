@@ -284,7 +284,7 @@ func (fh *FaceHandler) SearchFacesByPerson(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if len(personIDs) == 0 {
-		writeJSON(w, http.StatusOK, []string{}) // return empty list of image paths
+		writeJSON(w, http.StatusOK, []string{}) // return an empty list of image paths
 		return
 	}
 	imagePaths, err := fh.PersonRepo.FindImagesByPersonIDs(personIDs)

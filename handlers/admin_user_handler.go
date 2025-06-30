@@ -51,7 +51,7 @@ type UserResponseDTO struct {
 
 func toUserResponseDTO(user *models.User, userAlbumPerms []models.UserAlbumPermission) UserResponseDTO {
 	// ensure Roles are loaded if user.Roles is nil but should be populated
-	roles := []models.Role{}
+	var roles []models.Role
 	if user.Roles != nil {
 		for _, r := range user.Roles {
 			if r != nil {

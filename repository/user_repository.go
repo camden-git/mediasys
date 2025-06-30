@@ -123,7 +123,6 @@ func (r *GormUserRepository) SetUserGlobalPermissions(userID uint, permissions [
 	return r.db.Model(&models.User{}).Where("id = ?", userID).Update("global_permissions", permissions).Error
 }
 
-// UserAlbumPermission management
 func (r *GormUserRepository) CreateUserAlbumPermission(uap *models.UserAlbumPermission) error {
 	return r.db.Create(uap).Error
 }

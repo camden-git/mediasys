@@ -95,7 +95,7 @@ const authModel: AuthModel = {
             actions.setUser(user as AuthenticatedUser);
         } catch (err: any) {
             console.error('Failed to fetch current user:', err);
-            actions.clearAuth(); // token might be invalid or expired
+            actions.clearAuth(); // the token might be invalid or expired
         }
     }),
     initializeAuth: thunk(async (actions, _, { getState }) => {

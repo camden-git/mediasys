@@ -96,7 +96,7 @@ func (d *DNNFaceDetector) DetectFaces(img gocv.Mat) []DetectionResult {
 	detectionsMat := d.Net.Forward("")
 	defer detectionsMat.Close()
 
-	results := []DetectionResult{}
+	var results []DetectionResult
 
 	sizes := detectionsMat.Size()
 	if len(sizes) != 4 || sizes[0] != 1 || sizes[1] != 1 {

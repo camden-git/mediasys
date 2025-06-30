@@ -224,7 +224,7 @@ func (h *AdminRoleHandler) CreateRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	createdAlbumPermissions := []models.RoleAlbumPermission{}
+	var createdAlbumPermissions []models.RoleAlbumPermission
 	for _, apPayload := range payload.AlbumPermissions {
 		for _, pKey := range apPayload.Permissions {
 			permDef, ok := permissions.GetPermissionDefinition(pKey)
@@ -269,7 +269,7 @@ func (h *AdminRoleHandler) CreateRole(w http.ResponseWriter, r *http.Request) {
 // UpdateRole godoc
 // @Summary Update an existing role
 // @Description Update details of an existing role, including its global and album-specific permissions.
-// @Description Album permissions are fully replaced by the provided set. The Super Administrator role cannot be modified.
+// @Description The provided set fully replaces album permissions. The Super Administrator role cannot be modified.
 // @Tags admin-roles
 // @Accept json
 // @Produce json
@@ -362,7 +362,7 @@ func (h *AdminRoleHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		newAlbumPermissions := []models.RoleAlbumPermission{}
+		var newAlbumPermissions []models.RoleAlbumPermission
 		for _, apInput := range *payload.AlbumPermissions {
 			for _, pKey := range apInput.Permissions {
 				permDef, ok := permissions.GetPermissionDefinition(pKey)

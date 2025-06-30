@@ -89,7 +89,7 @@ type RegisterPayload struct {
 	InviteCode string `json:"invite_code"`
 }
 
-// RegisterHandler handles new user registration using an invite code
+// Register handles new user registration using an invitation code
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	var payload RegisterPayload
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {

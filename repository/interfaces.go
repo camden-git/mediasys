@@ -65,26 +65,26 @@ type UserRepository interface {
 	Create(user *models.User) error
 	GetByID(id uint) (*models.User, error)
 	GetByUsername(username string) (*models.User, error)
-	Update(user *models.User) error // General update, might need more granular methods
+	Update(user *models.User) error
 	Delete(id uint) error
-	ListAll() ([]models.User, error) // Added ListAll
+	ListAll() ([]models.User, error)
 
-	// Role management for a user
+	// role management for a user
 	AddRoleToUser(userID uint, roleID uint) error
 	RemoveRoleFromUser(userID uint, roleID uint) error
-	GetUserRoles(userID uint) ([]models.Role, error) // Might need to return []*models.Role
+	GetUserRoles(userID uint) ([]models.Role, error)
 
-	// Direct global permission management for a user
+	// direct global permission management for a user
 	SetUserGlobalPermissions(userID uint, permissions []string) error
 
-	// Direct album-specific permission management for a user
+	// direct album-specific permission management for a user
 	CreateUserAlbumPermission(uap *models.UserAlbumPermission) error
 	GetUserAlbumPermission(userID, albumID uint) (*models.UserAlbumPermission, error)
 	UpdateUserAlbumPermission(uap *models.UserAlbumPermission) error
 	DeleteUserAlbumPermission(userID, albumID uint) error
-	GetUserAlbumPermissions(userID uint) ([]models.UserAlbumPermission, error) // Get all album perms for a user
+	GetUserAlbumPermissions(userID uint) ([]models.UserAlbumPermission, error)
 
-	// Album-specific user management
+	// album-specific user management
 	GetUsersWithAlbumPermissions(albumID uint) ([]models.User, error)    // get all users who have permissions for a specific album
 	GetUsersWithoutAlbumPermissions(albumID uint) ([]models.User, error) // get all users who don't have permissions for a specific album
 }
@@ -98,17 +98,17 @@ type RoleRepository interface {
 	Update(role *models.Role) error // General update
 	Delete(id uint) error
 
-	// Global permission management for a role
+	// global permission management for a role
 	SetRoleGlobalPermissions(roleID uint, permissions []string) error
 
-	// Album-specific permission management for a role
+	// album-specific permission management for a role
 	CreateRoleAlbumPermission(rap *models.RoleAlbumPermission) error
 	GetRoleAlbumPermission(roleID, albumID uint) (*models.RoleAlbumPermission, error)
 	UpdateRoleAlbumPermission(rap *models.RoleAlbumPermission) error
 	DeleteRoleAlbumPermission(roleID, albumID uint) error
 	GetRoleAlbumPermissions(roleID uint) ([]models.RoleAlbumPermission, error)
 
-	// User-Role Management
+	// user-Role Management
 	FindUsersByRoleID(roleID uint) ([]models.User, error)
 	AddUserToRole(userID, roleID uint) error
 	RemoveUserFromRole(userID, roleID uint) error
