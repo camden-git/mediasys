@@ -56,6 +56,17 @@ func (r *AlbumRepository) ListAll() ([]models.Album, error) {
 	return albums, nil
 }
 
+// ListAllAdmin retrieves all albums (including hidden ones) for admin view, ordered by name
+func (r *AlbumRepository) ListAllAdmin() ([]models.Album, error) {
+	var albums []models.Album
+
+	err := r.DB.Order("name ASC").Find(&albums).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to list albums for admin: %w", err)
+	}
+	return albums, nil
+}
+
 // GetByID retrieves an album by its ID
 func (r *AlbumRepository) GetByID(id uint) (*models.Album, error) {
 	var album models.Album

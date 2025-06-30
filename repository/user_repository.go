@@ -158,3 +158,43 @@ func (r *GormUserRepository) GetUserAlbumPermissions(userID uint) ([]models.User
 	err := r.db.Where("user_id = ?", userID).Find(&permissions).Error
 	return permissions, err
 }
+
+// GetUsersWithAlbumPermissions returns all users who have direct album permissions for a specific album
+func (r *GormUserRepository) GetUsersWithAlbumPermissions(albumID uint) ([]models.User, error) {
+	var users []models.User
+
+	// get users with direct album permissions
+	err := r.db.Joins("JOIN user_album_permissions ON users.id = user_album_permissions.user_id").
+		Where("user_album_permissions.album_id = ?", albumID).
+		Preload("Roles").
+		Find(&users).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	// load album permissions for each user
+	for i := range users {
+		var userAlbumPerms []models.UserAlbumPermission
+		if err := r.db.Where("user_id = ? AND album_id = ?", users[i].ID, albumID).Find(&userAlbumPerms).Error; err == nil {
+			users[i].AlbumPermissionsMap = make(map[string][]string)
+			for _, uap := range userAlbumPerms {
+				users[i].AlbumPermissionsMap[fmt.Sprint(uap.AlbumID)] = uap.Permissions
+			}
+		}
+	}
+
+	return users, nil
+}
+
+// GetUsersWithoutAlbumPermissions returns all users who don't have direct album permissions for a specific album
+func (r *GormUserRepository) GetUsersWithoutAlbumPermissions(albumID uint) ([]models.User, error) {
+	var users []models.User
+
+	// get users who don't have direct album permissions for this album
+	err := r.db.Where("id NOT IN (SELECT user_id FROM user_album_permissions WHERE album_id = ?)", albumID).
+		Preload("Roles").
+		Find(&users).Error
+
+	return users, err
+}

@@ -172,6 +172,12 @@ var DefinedPermissionGroups = []PermissionGroupDefinition{
 				Description: "Allows adding/removing users or changing their permissions for a specific album.",
 				Scope:       ScopeAlbum,
 			},
+			{
+				Key:         "album.manage.members.global",
+				Name:        "Manage Album Members (Global)",
+				Description: "Allows managing album members for any album (admin access).",
+				Scope:       ScopeGlobal,
+			},
 		},
 	},
 	{

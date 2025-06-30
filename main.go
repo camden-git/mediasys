@@ -75,11 +75,6 @@ func main() {
 	roleRepo := repository.NewGormRoleRepository(gormDB)
 	inviteCodeRepo := repository.NewGormInviteCodeRepository(gormDB)
 
-	// sync the super admin role on startup to ensure it exists and has all permissions
-	if err := handlers.SyncSuperAdminRole(roleRepo); err != nil {
-		log.Fatalf("FATAL: Failed to sync Super Administrator role: %v", err)
-	}
-
 	imageProcessor := workers.NewImageProcessor(
 		cfg,
 		imageRepo,
@@ -97,11 +92,12 @@ func main() {
 	r := chi.NewRouter()
 
 	corsOptions := cors.Options{
-		AllowedOrigins: []string{"http://localhost:5173", "http://127.0.0.1:5173"},
-		AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders: []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
-		ExposedHeaders: []string{"Link"},
-		MaxAge:         300,
+		AllowedOrigins:   []string{"http://localhost:5173", "http://127.0.0.1:5173"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "Content-Length"},
+		ExposedHeaders:   []string{"Link"},
+		MaxAge:           300,
+		AllowCredentials: true,
 	}
 
 	corsHandler := cors.New(corsOptions)
@@ -122,7 +118,13 @@ func main() {
 	adminUserHandler := handlers.NewAdminUserHandler(userRepo, roleRepo)
 	adminRoleHandler := handlers.NewAdminRoleHandler(roleRepo)
 	adminInviteCodeHandler := handlers.NewAdminInviteCodeHandler(inviteCodeRepo)
+	adminAlbumHandler := handlers.NewAdminAlbumHandler(albumRepo, imageRepo, userRepo, roleRepo, cfg)
+	adminAlbumUserHandler := handlers.NewAdminAlbumUserHandler(userRepo, albumRepo)
 	setupHandler := handlers.NewSetupHandler(gormDB, userRepo, roleRepo) // Initialize SetupHandler
+
+	if err := handlers.SyncSuperAdminRole(roleRepo); err != nil {
+		log.Fatalf("Failed to sync super admin role: %v", err)
+	}
 
 	r.Route("/api", func(r chi.Router) {
 		r.Post("/setup/initial-admin", setupHandler.CreateFirstAdmin)
@@ -242,20 +244,75 @@ func main() {
 					}).Delete("/", adminInviteCodeHandler.DeleteInviteCode)
 				})
 			})
+
+			// album management routes
+			r.Route("/albums", func(r chi.Router) {
+				r.With(func(next http.Handler) http.Handler {
+					return handlers.RequireAnyGlobalPermission([]string{"album.list", "album.view", "album.create", "album.edit.general", "album.delete"}, next)
+				}).Get("/", adminAlbumHandler.ListAlbums)
+
+				r.With(func(next http.Handler) http.Handler {
+					return handlers.RequireGlobalPermission("album.create", next)
+				}).Post("/", adminAlbumHandler.CreateAlbum)
+
+				r.Route("/{id}", func(r chi.Router) {
+					r.With(func(next http.Handler) http.Handler {
+						return handlers.RequireGlobalPermission("album.list", next)
+					}).Get("/", adminAlbumHandler.GetAlbum)
+
+					r.With(func(next http.Handler) http.Handler {
+						return handlers.RequireGlobalPermission("album.edit.general", next)
+					}).Put("/", adminAlbumHandler.UpdateAlbum)
+
+					r.With(func(next http.Handler) http.Handler {
+						return handlers.RequireGlobalPermission("album.delete", next)
+					}).Delete("/", adminAlbumHandler.DeleteAlbum)
+
+					r.With(func(next http.Handler) http.Handler {
+						return handlers.RequireGlobalPermission("album.edit.general", next)
+					}).Put("/banner", albumHandler.UploadAlbumBanner)
+
+					r.With(func(next http.Handler) http.Handler {
+						return handlers.RequireGlobalPermission("album.edit.general", next)
+					}).Post("/zip", albumHandler.RequestAlbumZipGeneration)
+
+					r.With(func(next http.Handler) http.Handler {
+						return handlers.RequireGlobalPermission("album.list", next)
+					}).Get("/zip", albumHandler.DownloadAlbumZipByID)
+
+					// Album user management routes
+					r.Route("/users", func(r chi.Router) {
+						r.With(func(next http.Handler) http.Handler {
+							return handlers.RequireGlobalPermission("album.manage.members.global", next)
+						}).Get("/", adminAlbumUserHandler.GetAlbumUsers)
+
+						r.With(func(next http.Handler) http.Handler {
+							return handlers.RequireGlobalPermission("album.manage.members.global", next)
+						}).Get("/available", adminAlbumUserHandler.GetAvailableUsers)
+
+						r.With(func(next http.Handler) http.Handler {
+							return handlers.RequireGlobalPermission("album.manage.members.global", next)
+						}).Post("/", adminAlbumUserHandler.AddUserToAlbum)
+
+						r.Route("/{userID}", func(r chi.Router) {
+							r.With(func(next http.Handler) http.Handler {
+								return handlers.RequireGlobalPermission("album.manage.members.global", next)
+							}).Put("/", adminAlbumUserHandler.UpdateUserAlbumPermissions)
+
+							r.With(func(next http.Handler) http.Handler {
+								return handlers.RequireGlobalPermission("album.manage.members.global", next)
+							}).Delete("/", adminAlbumUserHandler.RemoveUserFromAlbum)
+						})
+					})
+				})
+			})
 		})
 
 		r.Route("/albums", func(r chi.Router) {
-			// TODO: Protect album routes with AuthMiddleware and permission checks as needed
-			r.Post("/", albumHandler.CreateAlbum)
 			r.Get("/", albumHandler.ListAlbums)
 			r.Route("/{album_identifier}", func(r chi.Router) {
 				r.Get("/", albumHandler.GetAlbum)
-				r.Put("/", albumHandler.UpdateAlbum)
-				r.Delete("/", albumHandler.DeleteAlbum)
 				r.Get("/contents", albumHandler.GetAlbumContents)
-				r.Put("/banner", albumHandler.UploadAlbumBanner)
-				r.Put("/sort_order", albumHandler.UpdateAlbumSortOrder)
-				r.Post("/zip", albumHandler.RequestAlbumZipGeneration)
 				r.Get("/zip", albumHandler.DownloadAlbumZip)
 			})
 		})
@@ -321,8 +378,8 @@ func main() {
 	server := &http.Server{
 		Addr:         serverAddr,
 		Handler:      r,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
+		ReadTimeout:  60 * time.Second,
+		WriteTimeout: 60 * time.Second,
 		IdleTimeout:  120 * time.Second,
 	}
 	log.Fatal(server.ListenAndServe())

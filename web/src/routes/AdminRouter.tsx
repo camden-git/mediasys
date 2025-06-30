@@ -12,6 +12,8 @@ import HomeContainer from '../components/admin/home/HomeContainer.tsx';
 import UsersContainer from '../components/admin/users/UsersContainer.tsx';
 import { Can } from '../components/elements/Can.tsx';
 import UserView from '../components/admin/users/UserView.tsx';
+import AlbumManagementContainer from '../components/admin/albums/AlbumManagementContainer.tsx';
+import CreateAlbumForm from '../components/admin/albums/CreateAlbumForm.tsx';
 
 export interface RouteDefinition {
     path: string;
@@ -63,6 +65,18 @@ const navItems: AdminRouteDefinition[] = [
         permission: 'user.view',
         name: undefined,
         component: UserView,
+    },
+    {
+        path: 'albums',
+        permission: 'album.*',
+        name: 'Albums',
+        component: AlbumManagementContainer,
+    },
+    {
+        path: 'albums/create',
+        permission: 'album.create',
+        name: undefined,
+        component: CreateAlbumForm,
     },
 ];
 

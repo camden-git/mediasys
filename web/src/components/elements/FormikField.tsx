@@ -1,6 +1,7 @@
 import React, { forwardRef } from 'react';
 import { Field as FormikField, FieldProps } from 'formik';
 import { Input } from './Input';
+import { Textarea } from './Textarea';
 import { Field, Label, Description, ErrorMessage } from './Fieldset';
 
 interface FormikFieldProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'name'> {
@@ -9,40 +10,43 @@ interface FormikFieldProps extends Omit<React.InputHTMLAttributes<HTMLInputEleme
     description?: string;
     validate?: (value: any) => undefined | string | Promise<any>;
     className?: string;
+    type?: 'input' | 'textarea';
+    rows?: number;
 }
 
-export const FormikFieldComponent = forwardRef<HTMLInputElement, FormikFieldProps>(
-    ({ name, label, description, validate, className, ...inputProps }, ref) => (
+export const FormikFieldComponent = forwardRef<HTMLInputElement | HTMLTextAreaElement, FormikFieldProps>(
+    ({ name, label, description, validate, className, type = 'input', rows, ...inputProps }, ref) => (
         <FormikField name={name} validate={validate}>
             {({ field, form: { errors, touched, setFieldValue, setFieldTouched } }: FieldProps) => {
                 const hasError = touched[name] && errors[name];
 
+                const commonProps = {
+                    ref,
+                    id: name,
+                    'data-invalid': hasError ? true : undefined,
+                    ...field,
+                    ...inputProps,
+                    onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+                        const value = e.target.value;
+                        if (inputProps.type === 'number') {
+                            // allow empty string or valid numbers
+                            if (value === '' || !isNaN(Number(value))) {
+                                setFieldValue(name, value === '' ? '' : Number(value));
+                            }
+                        } else {
+                            setFieldValue(name, value);
+                        }
+                    },
+                    onBlur: (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+                        setFieldTouched(name, true);
+                        field.onBlur(e);
+                    },
+                };
+
                 return (
                     <Field className={className}>
                         {label && <Label htmlFor={name}>{label}</Label>}
-                        <Input
-                            ref={ref}
-                            id={name}
-                            data-invalid={hasError ? true : undefined}
-                            {...field}
-                            {...inputProps}
-                            // handle special cases for number inputs
-                            onChange={(e) => {
-                                const value = e.target.value;
-                                if (inputProps.type === 'number') {
-                                    // allow empty string or valid numbers
-                                    if (value === '' || !isNaN(Number(value))) {
-                                        setFieldValue(name, value === '' ? '' : Number(value));
-                                    }
-                                } else {
-                                    setFieldValue(name, value);
-                                }
-                            }}
-                            onBlur={(e) => {
-                                setFieldTouched(name, true);
-                                field.onBlur(e);
-                            }}
-                        />
+                        {type === 'textarea' ? <Textarea {...commonProps} rows={rows} /> : <Input {...commonProps} />}
                         {hasError ? (
                             <ErrorMessage>{errors[name] as string}</ErrorMessage>
                         ) : description ? (

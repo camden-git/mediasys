@@ -4,6 +4,7 @@ import IndexRouter from './routes/IndexRouter';
 import AlbumRouter from './routes/AlbumRouter';
 import AuthRouter from './routes/AuthRouter';
 import AdminRouter from './routes/AdminRouter';
+import AdminAlbumRouter from './routes/AdminAlbumRouter';
 import { useStoreActions } from './store/hooks';
 import ProgressBar from './components/elements/ProgressBar';
 
@@ -20,6 +21,7 @@ function App() {
             <Routes>
                 <Route path='/auth/*' element={<AuthRouter />} />
 
+                <Route path='/admin/albums/view/:id/*' element={<AdminAlbumRouter />} />
                 <Route path='/admin/*' element={<AdminRouter />} />
 
                 <Route path='/album/:identifier/*' element={<AlbumRouter />} />
