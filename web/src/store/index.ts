@@ -7,6 +7,8 @@ import inviteCodeStore, { InviteCodeStore } from './inviteCodeStore';
 import roleStore, { RoleStore } from './roleStore';
 import userStore, { UserStore } from './userStore';
 import progressStore, { ProgressStore } from './progressStore';
+import adminAlbumStore, { AdminAlbumStore } from './adminAlbumStore';
+import albumContextStore, { AlbumContextStore } from './albumContext';
 
 export interface AlbumListModel {
     items: Album[];
@@ -123,6 +125,8 @@ export interface StoreModel {
     roles: RoleStore;
     users: UserStore;
     progress: ProgressStore;
+    adminAlbums: AdminAlbumStore;
+    albumContext: AlbumContextStore;
 }
 
 const rootStoreModel: StoreModel = {
@@ -134,6 +138,8 @@ const rootStoreModel: StoreModel = {
     roles: roleStore,
     users: userStore,
     progress: progressStore,
+    adminAlbums: adminAlbumStore,
+    albumContext: albumContextStore,
 };
 
 const store = createStore(rootStoreModel);

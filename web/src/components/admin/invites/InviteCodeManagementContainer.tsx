@@ -9,6 +9,7 @@ import LoadingSpinner from '../../elements/LoadingSpinner.tsx';
 import { useInviteCodes } from '../../../api/swr/useInviteCodes';
 import { useFlash } from '../../../hooks/useFlash';
 import FlashMessageRender from '../../elements/FlashMessageRender.tsx';
+import { Text, TextLink } from '../../elements/Text.tsx';
 
 const InviteCodeManagementContainer: React.FC = () => {
     const { data: inviteCodes, error, isValidating } = useInviteCodes();
@@ -30,7 +31,13 @@ const InviteCodeManagementContainer: React.FC = () => {
     return (
         <PageContentBlock title={'Invite Codes'}>
             <div className='mb-16 flex w-full flex-wrap items-end justify-between gap-4'>
-                <Heading>Invite Codes</Heading>
+                <div>
+                    <Heading>Invite Codes</Heading>
+                    <Text className={'mt-1'}>
+                        Invite Codes allow users to <TextLink to={'/auth/register'}>register</TextLink> without needing
+                        to have their account manually created by an admin.
+                    </Text>
+                </div>
                 <div className='flex gap-4'>
                     <Can permission={'invite.create'}>
                         <CreateInviteCodeForm />

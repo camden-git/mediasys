@@ -11,9 +11,10 @@ export interface Album {
     zip_status: string;
     zip_last_generated_at?: number;
     zip_last_requested_at?: number;
-
+    zip_error?: string;
     created_at: number;
     updated_at: number;
+    is_hidden?: boolean;
 }
 
 export interface FileInfo {

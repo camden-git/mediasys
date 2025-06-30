@@ -9,6 +9,7 @@ import (
 type AlbumRepositoryInterface interface {
 	Create(album *models.Album) error
 	ListAll() ([]models.Album, error)
+	ListAllAdmin() ([]models.Album, error)
 	GetByID(id uint) (*models.Album, error)
 	GetBySlug(slug string) (*models.Album, error)
 	Update(albumID uint, name string, description *string, isHidden *bool, location *string) error
@@ -82,6 +83,10 @@ type UserRepository interface {
 	UpdateUserAlbumPermission(uap *models.UserAlbumPermission) error
 	DeleteUserAlbumPermission(userID, albumID uint) error
 	GetUserAlbumPermissions(userID uint) ([]models.UserAlbumPermission, error) // Get all album perms for a user
+
+	// Album-specific user management
+	GetUsersWithAlbumPermissions(albumID uint) ([]models.User, error)    // get all users who have permissions for a specific album
+	GetUsersWithoutAlbumPermissions(albumID uint) ([]models.User, error) // get all users who don't have permissions for a specific album
 }
 
 // RoleRepository defines the methods for role data operations
