@@ -56,6 +56,7 @@ const AlbumSubusersPage: React.FC = () => {
             addFlash({
                 key: 'album-user-added',
                 type: 'success',
+                title: 'Success',
                 message: 'User added to album successfully',
             });
             setShowAddModal(false);
@@ -66,6 +67,7 @@ const AlbumSubusersPage: React.FC = () => {
             addFlash({
                 key: 'album-user-added-error',
                 type: 'error',
+                title: 'Error',
                 message: error.response?.data?.error || 'Failed to add user to album',
             });
         } finally {
@@ -86,6 +88,7 @@ const AlbumSubusersPage: React.FC = () => {
             addFlash({
                 key: 'album-permissions-updated',
                 type: 'success',
+                title: 'Success',
                 message: 'User permissions updated successfully',
             });
             setShowEditModal(false);
@@ -96,6 +99,7 @@ const AlbumSubusersPage: React.FC = () => {
             addFlash({
                 key: 'album-permissions-updated-error',
                 type: 'error',
+                title: 'Error',
                 message: error.response?.data?.error || 'Failed to update user permissions',
             });
         } finally {
@@ -111,6 +115,7 @@ const AlbumSubusersPage: React.FC = () => {
             addFlash({
                 key: 'album-user-removed',
                 type: 'success',
+                title: 'Success',
                 message: 'User removed from album successfully',
             });
             mutateUsers();
@@ -118,6 +123,7 @@ const AlbumSubusersPage: React.FC = () => {
             addFlash({
                 key: 'album-user-removed-error',
                 type: 'error',
+                title: 'Error',
                 message: error.response?.data?.error || 'Failed to remove user from album',
             });
         }

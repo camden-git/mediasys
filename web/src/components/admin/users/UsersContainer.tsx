@@ -1,5 +1,5 @@
 import React from 'react';
-import ContentBlock from '../../elements/ContentBlock';
+import ContentBlock from '../../elements/PageContentBlock.tsx';
 import { Heading } from '../../elements/Heading';
 import UserList from './UserList';
 

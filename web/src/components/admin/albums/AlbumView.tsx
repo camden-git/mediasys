@@ -1,6 +1,7 @@
 import React from 'react';
 import { useStoreState } from '../../../store/hooks';
 import { formatDistanceToNow } from 'date-fns';
+import { getBannerUrl } from '../../../api.ts';
 
 const AlbumView: React.FC = () => {
     const album = useStoreState((state) => state.albumContext.data!);
@@ -86,7 +87,7 @@ const AlbumView: React.FC = () => {
                     </div>
                     <div className='px-6 py-4'>
                         <img
-                            src={`/banners/${album.banner_image_path}`}
+                            src={getBannerUrl(album.banner_image_path)}
                             alt={`Banner for ${album.name}`}
                             className='h-auto max-w-md rounded-lg'
                         />

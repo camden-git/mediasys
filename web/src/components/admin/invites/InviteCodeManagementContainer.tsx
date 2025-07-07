@@ -3,7 +3,7 @@ import { CreateInviteCodeForm } from './CreateInviteCodeForm.tsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../elements/Table.tsx';
 import { AdminInviteCodeResponse } from '../../../types.ts';
 import { Heading } from '../../elements/Heading.tsx';
-import PageContentBlock from '../../elements/ContentBlock.tsx';
+import PageContentBlock from '../../elements/PageContentBlock.tsx';
 import { Can } from '../../elements/Can.tsx';
 import LoadingSpinner from '../../elements/LoadingSpinner.tsx';
 import { useInviteCodes } from '../../../api/swr/useInviteCodes';

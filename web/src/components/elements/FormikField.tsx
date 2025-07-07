@@ -10,7 +10,7 @@ interface FormikFieldProps extends Omit<React.InputHTMLAttributes<HTMLInputEleme
     description?: string;
     validate?: (value: any) => undefined | string | Promise<any>;
     className?: string;
-    type?: 'input' | 'textarea';
+    type?: 'input' | 'textarea'; // TODO: this breaks input types so this needs to be refactored
     rows?: number;
 }
 

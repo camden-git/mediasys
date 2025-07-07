@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useStoreActions, useStoreState } from 'easy-peasy';
-import PageContentBlock from '../../elements/ContentBlock.tsx';
+import PageContentBlock from '../../elements/PageContentBlock.tsx';
 import { Can } from '../../elements/Can.tsx';
 
 const HomeContainer: React.FC = () => {

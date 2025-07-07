@@ -32,6 +32,8 @@ export const computeLayout = (images: FileInfo[], options: LayoutOptions): Proce
         debug = false,
     } = options;
 
+    const t0 = performance.now();
+
     if (debug)
         console.debug(
             `layout debug: computeLayout (v5) called. images: ${images.length}, width: ${containerWidth}, targetHeight: ${targetRowHeight}, spacing: ${boxSpacing}, maxRatio: ${maxRowHeightRatio ?? 'none'}`,
@@ -59,6 +61,8 @@ export const computeLayout = (images: FileInfo[], options: LayoutOptions): Proce
     };
 
     const finalizeRow = (items: FileInfo[], arSum: number, isLastOverallRow: boolean): void => {
+        const rowStart = performance.now();
+
         if (items.length === 0) {
             if (debug) console.debug(`layout debug: row ${currentRowIndex}: attempted to finalize empty row.`);
             return;
@@ -66,12 +70,10 @@ export const computeLayout = (images: FileInfo[], options: LayoutOptions): Proce
 
         let finalHeight = calculateHeight(items.length, arSum);
 
-        // clamp the last row if stretching is disabled
         if (isLastOverallRow && !stretchLastRow) {
             finalHeight = Math.min(finalHeight, targetRowHeight);
         }
 
-        // cap height if it exceeds the allowed ratio (unless it's a single tall portrait)
         if (maxRowHeightRatio && maxRowHeightRatio > 0) {
             const maxHeight = targetRowHeight * maxRowHeightRatio;
             if (finalHeight > maxHeight) {
@@ -85,7 +87,14 @@ export const computeLayout = (images: FileInfo[], options: LayoutOptions): Proce
 
         processedRows.push({ items, height: finalHeight, rowIndex: currentRowIndex });
         currentRowIndex++;
+
+        if (debug) {
+            const rowEnd = performance.now();
+            console.debug(`layout debug: row ${currentRowIndex - 1} finalized in ${(rowEnd - rowStart).toFixed(2)}ms`);
+        }
     };
+
+    const loopStart = performance.now();
 
     images.forEach((image) => {
         const aspectRatio = getAspectRatio(image);
@@ -104,21 +113,15 @@ export const computeLayout = (images: FileInfo[], options: LayoutOptions): Proce
         const nextHeight = calculateHeight(nextItems.length, nextARSum);
         const nextCost = calculateCost(nextHeight);
 
-        // const maxAllowedNextHeight = maxRowHeightRatio ? targetRowHeight * maxRowHeightRatio : Infinity;
-
         let cutBeforeThisImage = false;
 
         if (currentItems.length > 0) {
-            // cut if cost does not improve with this image
             if (currentCost <= nextCost) {
                 const singleItemBadFitThreshold = targetRowHeight * 0.75;
-
-                // avoid early cut if only one item and the fit is bad
                 if (!(currentItems.length === 1 && currentCost > singleItemBadFitThreshold)) {
                     cutBeforeThisImage = true;
                 }
             } else {
-                // cut even if cost improves but new row is too short
                 const minAllowedHeightThreshold = targetRowHeight * 0.65;
                 if (nextHeight < minAllowedHeightThreshold) {
                     const currentHeightAcceptableFactor = 1.5;
@@ -139,8 +142,19 @@ export const computeLayout = (images: FileInfo[], options: LayoutOptions): Proce
         }
     });
 
+    const loopEnd = performance.now();
+
     finalizeRow(currentRowItems, currentRowAspectRatioSum, true);
 
-    if (debug) console.debug(`layout debug: computeLayout finished. generated ${processedRows.length} rows.`);
+    const t1 = performance.now();
+
+    if (debug) {
+        console.debug(`layout debug: computeLayout finished.`);
+        console.debug(`  Time - Total: ${(t1 - t0).toFixed(2)}ms`);
+        console.debug(`  Time - Loop : ${(loopEnd - loopStart).toFixed(2)}ms`);
+        console.debug(`  Time - Finalize Last Row: ${(t1 - loopEnd).toFixed(2)}ms`);
+        console.debug(`  Rows Generated: ${processedRows.length}`);
+    }
+
     return processedRows;
 };

@@ -10,7 +10,7 @@ import { Dialog, DialogActions, DialogDescription, DialogTitle } from '../../ele
 import { Can } from '../../elements/Can';
 import { PlusIcon, PencilIcon, TrashIcon, EyeIcon } from '@heroicons/react/20/solid';
 import { formatDistanceToNow } from 'date-fns';
-import PageContentBlock from '../../elements/ContentBlock.tsx';
+import PageContentBlock from '../../elements/PageContentBlock.tsx';
 
 const AlbumManagementContainer: React.FC = () => {
     const { albums, isLoading, error, mutate } = useAlbums();
