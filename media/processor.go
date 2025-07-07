@@ -19,8 +19,8 @@ const (
 	ThumbnailFileExtension = ".jpg"
 )
 
-// Processor handles media transformations like thumbnailing and resizing.
-// it relies on a Store implementation for saving the results.
+// Processor handles media transformations like thumbnailing and resizing. it
+// relies on a Store implementation for saving the results.
 type Processor struct {
 	store Store
 }
@@ -89,8 +89,8 @@ func (p *Processor) GenerateThumbnail(originalImg image.Image, originalRelPath s
 	return savedRelPath, nil
 }
 
-// ProcessBanner resizes an uploaded banner and saves it
-// returns the relative path to saved banner or error
+// ProcessBanner resizes an uploaded banner and saves it returns the relative
+// path to saved banner or error
 func (p *Processor) ProcessBanner(fileData io.Reader) (string, error) {
 	img, format, err := image.Decode(fileData)
 	if err != nil {

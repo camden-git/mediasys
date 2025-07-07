@@ -144,11 +144,13 @@ const AdminAlbumRouter: React.FC = () => {
                                     <DropdownLabel>{album.name}</DropdownLabel>
                                 </DropdownItem>
                             ))}
-                            <DropdownDivider />
-                            <DropdownItem to='/admin/albums/create'>
-                                <PlusIcon />
-                                <DropdownLabel>New team&hellip;</DropdownLabel>
-                            </DropdownItem>
+                            <Can permission={'album.create'}>
+                                <DropdownDivider />
+                                <DropdownItem to='/admin/albums/create'>
+                                    <PlusIcon />
+                                    <DropdownLabel>New album&hellip;</DropdownLabel>
+                                </DropdownItem>
+                            </Can>
                         </DropdownMenu>
                     </Dropdown>
                     <NavbarSection className='max-lg:hidden'>

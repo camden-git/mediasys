@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { DescriptionList, DescriptionTerm, DescriptionDetails } from '../../elements/DescriptionList';
 import { Heading } from '../../elements/Heading';
-import ContentBlock from '../../elements/ContentBlock';
+import ContentBlock from '../../elements/PageContentBlock.tsx';
 import { Button } from '../../elements/Button';
 import { Can } from '../../elements/Can';
 import EditRoleForm from './EditRoleForm';

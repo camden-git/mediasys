@@ -3,6 +3,7 @@ import { Action, action } from 'easy-peasy';
 export interface FlashMessage {
     key: string;
     type: 'success' | 'error' | 'info' | 'warning';
+    title: string;
     message: string;
 }
 
@@ -32,6 +33,7 @@ const uiStore: UIStore = {
         state.flashes.push({
             key,
             type: 'error',
+            title: 'Error',
             message: error.message || 'An error occurred',
         });
     }),

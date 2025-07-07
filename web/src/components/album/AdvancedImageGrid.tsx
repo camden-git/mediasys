@@ -22,7 +22,7 @@ const AdvancedImageGrid: React.FC<AdvancedImageGridProps> = ({
     boxSpacing = 5,
     stretchLastRow = false,
     maxRowHeightRatio = null,
-    debugLayout = false,
+    debugLayout = true,
     debounceDelay = 250,
     onImageClick,
 }) => {
@@ -98,7 +98,7 @@ const AdvancedImageGrid: React.FC<AdvancedImageGridProps> = ({
                     })}
                 </div>
             ))}
-            {containerSize.width > 0 && images.length > 0 && processedLayout.length === 0 && (
+            {processedLayout.length === 0 && (
                 <div className='mx-auto flex justify-center'>
                     <svg
                         className='mr-3 h-6 w-6 animate-spin text-white'
@@ -120,7 +120,9 @@ const AdvancedImageGrid: React.FC<AdvancedImageGridProps> = ({
                             d='M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z'
                         ></path>
                     </svg>
-                    <p className='my-auto font-light text-gray-600'>Calculating layout</p>
+                    <p className='my-auto font-light text-gray-600'>
+                        Calculating layout {processedLayout.length} - {images.length}
+                    </p>
                 </div>
             )}
         </div>

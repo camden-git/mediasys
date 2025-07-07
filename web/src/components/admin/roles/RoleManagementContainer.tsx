@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Heading } from '../../elements/Heading';
-import PageContentBlock from '../../elements/ContentBlock';
+import PageContentBlock from '../../elements/PageContentBlock.tsx';
 import { Can } from '../../elements/Can';
 import LoadingSpinner from '../../elements/LoadingSpinner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../elements/Table';

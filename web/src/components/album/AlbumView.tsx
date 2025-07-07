@@ -6,12 +6,12 @@ import ErrorMessage from '../elements/ErrorMessage.tsx';
 import { Heading } from '../elements/Heading.tsx';
 import { Button } from '../elements/Button.tsx';
 import AdvancedImageGrid from './AdvancedImageGrid.tsx';
-import { getAlbumDownloadUrl, getBannerUrl } from '../../api.ts';
+import { getAlbumDownloadUrl, getBannerUrl, getOriginalImageUrl } from '../../api.ts';
 import { FileInfo } from '../../types.ts';
 import ImageLightbox from './ImageLightbox.tsx';
 import { Dialog, DialogActions, DialogBody, DialogDescription, DialogTitle } from '../elements/Dialog.tsx';
 import { bytesToString } from '../../lib/formatters.ts';
-import { ArrowDownIcon, CameraIcon, MapPinIcon, PhotoIcon } from '@heroicons/react/16/solid';
+import { ArrowDownIcon, CameraIcon, MapPinIcon, PhotoIcon, ShareIcon } from '@heroicons/react/16/solid';
 
 const AlbumView: React.FC = () => {
     const { currentAlbum, directoryListing, isLoading, error } = useStoreState(
@@ -20,6 +20,7 @@ const AlbumView: React.FC = () => {
 
     const [selectedImage, setSelectedImage] = useState<FileInfo | null>(null);
     const [downloadModalOpen, setDownloadModalOpen] = useState(false);
+    const [isSharing, setIsSharing] = useState(false);
 
     const imageFiles = useMemo(() => {
         if (!directoryListing?.files) {
@@ -48,6 +49,36 @@ const AlbumView: React.FC = () => {
         link.click();
         document.body.removeChild(link);
         setDownloadModalOpen(false);
+    };
+
+    const handleShare = async () => {
+        if (!navigator.share || !currentAlbum || imageFiles.length === 0) {
+            return;
+        }
+
+        setIsSharing(true);
+        try {
+            // TODO: 10 is an arbitrary number to limit the max size to 100mb, this will need to be replaced in the future
+            const imagesToShare = imageFiles.slice(0, 10);
+
+            const files = await Promise.all(
+                imagesToShare.map(async (image, index) => {
+                    const response = await fetch(getOriginalImageUrl(image.path));
+                    const blob = await response.blob();
+                    return new File([blob], `photo${index + 1}.jpg`, { type: 'image/jpeg' });
+                }),
+            );
+
+            await navigator.share({
+                files: files,
+                title: currentAlbum.name,
+                text: `Check out these photos from ${currentAlbum.name}!`,
+            });
+        } catch (error) {
+            console.error('Error sharing images:', error);
+        } finally {
+            setIsSharing(false);
+        }
     };
 
     return (
@@ -96,7 +127,7 @@ const AlbumView: React.FC = () => {
                                     </>
                                 )}
                             </div>
-                            <div className='mt-10'>
+                            <div className='mt-10 flex gap-3'>
                                 {currentAlbum?.zip_size && (
                                     <>
                                         <button
@@ -125,6 +156,16 @@ const AlbumView: React.FC = () => {
                                         </Dialog>
                                     </>
                                 )}
+                                {imageFiles.length > 0 && (
+                                    <button
+                                        onClick={handleShare}
+                                        disabled={isSharing}
+                                        className='inline-flex items-center gap-x-2 rounded-full bg-gray-950 px-3 py-0.5 text-sm/7 font-semibold text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-700 dark:hover:bg-gray-600'
+                                    >
+                                        <ShareIcon className='size-2 fill-white' />
+                                        {isSharing ? 'Sharing...' : 'Share'}
+                                    </button>
+                                )}
                             </div>
                         </div>
 
@@ -136,7 +177,7 @@ const AlbumView: React.FC = () => {
                             {!isLoading && !error && directoryListing && (
                                 <AdvancedImageGrid
                                     images={imageFiles}
-                                    targetRowHeight={260}
+                                    targetRowHeight={280}
                                     boxSpacing={4}
                                     onImageClick={handleImageClick}
                                 />

@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { Fragment } from 'react';
 import { useStoreState } from '../../store/hooks';
-import { FlashMessage } from '../../store/uiStore';
+import Notification from './Notification.tsx';
 
 interface FlashMessageRenderProps {
     byKey: string;
@@ -16,23 +16,20 @@ const FlashMessageRender: React.FC<FlashMessageRenderProps> = ({ byKey, classNam
     }
 
     return (
-        <div className={className}>
-            {filteredFlashes.map((flash: FlashMessage, index: number) => (
-                <div
-                    key={`${flash.key}-${index}`}
-                    className={`mb-4 rounded-md p-4 ${
-                        flash.type === 'error'
-                            ? 'border border-red-200 bg-red-50 text-red-800'
-                            : flash.type === 'success'
-                              ? 'border border-green-200 bg-green-50 text-green-800'
-                              : flash.type === 'warning'
-                                ? 'border border-yellow-200 bg-yellow-50 text-yellow-800'
-                                : 'border border-blue-200 bg-blue-50 text-blue-800'
-                    }`}
-                >
-                    {flash.message}
-                </div>
-            ))}
+        <div
+            aria-live='assertive'
+            className='pointer-events-none fixed inset-0 z-100 flex items-end px-4 py-6 sm:items-start sm:p-6'
+        >
+            <div className='flex w-full flex-col items-center space-y-4 sm:items-end'>
+                {filteredFlashes.map((flash, index) => (
+                    <Fragment key={`${flash.key}-${index}`}>
+                        {index > 0 && <div className='mt-2'></div>}
+                        <Notification type={flash.type} title={'flash message'}>
+                            {flash.message}
+                        </Notification>
+                    </Fragment>
+                ))}
+            </div>
         </div>
     );
 };

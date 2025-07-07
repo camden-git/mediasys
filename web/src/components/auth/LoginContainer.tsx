@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useStoreActions, useStoreState } from '../../store/hooks'; // Assuming hooks are set up for easy-peasy
+import { useStoreActions, useStoreState } from '../../store/hooks';
 import { useNavigate } from 'react-router-dom';
 import { Heading } from '../elements/Heading.tsx';
 import { Field, Label } from '../elements/Fieldset.tsx';
@@ -80,7 +80,7 @@ export const LoginContainer: React.FC = () => {
             </Button>
             <Text>
                 Don’t have an account?{' '}
-                <TextLink to='#'>
+                <TextLink to='/auth/register'>
                     <Strong>Sign up</Strong>
                 </TextLink>
             </Text>
