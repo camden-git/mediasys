@@ -17,7 +17,7 @@ export interface AdminAlbumStore {
 }
 
 const adminAlbumStore: AdminAlbumStore = {
-    createAlbum: action((state, { payload, onSuccess, addFlash }) => {
+    createAlbum: action((_state, { payload, onSuccess, addFlash }) => {
         createAlbum(payload)
             .then(() => {
                 addFlash({
@@ -36,7 +36,7 @@ const adminAlbumStore: AdminAlbumStore = {
             });
     }),
 
-    updateAlbum: action((state, { id, payload, onSuccess, addFlash, setAlbum }) => {
+    updateAlbum: action((_state, { id, payload, onSuccess, addFlash, setAlbum }) => {
         updateAlbum(id, payload)
             .then((updatedAlbum) => {
                 addFlash({
@@ -59,7 +59,7 @@ const adminAlbumStore: AdminAlbumStore = {
             });
     }),
 
-    deleteAlbum: action((state, { id, onSuccess, addFlash }) => {
+    deleteAlbum: action((_state, { id, onSuccess, addFlash }) => {
         deleteAlbum(id)
             .then(() => {
                 addFlash({
@@ -78,7 +78,7 @@ const adminAlbumStore: AdminAlbumStore = {
             });
     }),
 
-    uploadAlbumBanner: action((state, { id, file, onSuccess, addFlash, setAlbum }) => {
+    uploadAlbumBanner: action((_state, { id, file, onSuccess, addFlash, setAlbum }) => {
         uploadAlbumBanner(id, file)
             .then((updatedAlbum) => {
                 addFlash({

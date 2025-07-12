@@ -1,12 +1,12 @@
 import http from '../http';
-import { InviteCodeResponse, InviteCodeCreatePayload } from '../../types';
+import { AdminInviteCodeResponse, InviteCodeCreatePayload } from '../../types';
 
-export const listInviteCodes = async (): Promise<InviteCodeResponse[]> => {
+export const listInviteCodes = async (): Promise<AdminInviteCodeResponse[]> => {
     const response = await http.get('/admin/invite-codes');
     return response.data;
 };
 
-export const createInviteCode = async (payload: InviteCodeCreatePayload): Promise<InviteCodeResponse> => {
+export const createInviteCode = async (payload: InviteCodeCreatePayload): Promise<AdminInviteCodeResponse> => {
     const response = await http.post('/admin/invite-codes', payload);
     return response.data;
 };

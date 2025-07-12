@@ -63,7 +63,7 @@ export function UpdateAlbumForm() {
                             <FormikFieldComponent
                                 name='description'
                                 label='Description'
-                                type='textarea'
+                                fieldType='textarea'
                                 rows={4}
                                 placeholder='Optional description of the album'
                             />

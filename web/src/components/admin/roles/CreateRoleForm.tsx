@@ -35,7 +35,7 @@ const CreateRoleForm: React.FC<CreateRoleFormProps> = ({ isOpen, onClose }) => {
     const { addFlash, clearFlashes } = useFlash();
     const { mutate } = useRoles();
     const { data: permissionDefinitions } = usePermissionDefinitions();
-    const { data: albums, isLoading: isLoadingAlbums, error: albumError } = useAlbums();
+    const { albums, isLoading: isLoadingAlbums, error: albumError } = useAlbums();
 
     const initialValues: RoleCreatePayload = {
         name: '',

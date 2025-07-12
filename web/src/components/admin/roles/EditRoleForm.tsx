@@ -36,7 +36,7 @@ const EditRoleForm: React.FC<EditRoleFormProps> = ({ isOpen, onClose, role }) =>
     const { addFlash, clearFlashes } = useFlash();
     const { mutate } = useRoles();
     const { data: permissionDefinitions } = usePermissionDefinitions();
-    const { data: albums, isLoading: isLoadingAlbums, error: albumError } = useAlbums();
+    const { albums, isLoading: isLoadingAlbums, error: albumError } = useAlbums();
 
     // Set initial values from the role prop
     const initialValues: RoleUpdatePayload = {

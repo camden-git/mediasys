@@ -7,7 +7,7 @@ interface FlashMessageRenderProps {
     className?: string;
 }
 
-const FlashMessageRender: React.FC<FlashMessageRenderProps> = ({ byKey, className = '' }) => {
+const FlashMessageRender: React.FC<FlashMessageRenderProps> = ({ byKey }) => {
     const flashes = useStoreState((state) => state.ui.flashes);
     const filteredFlashes = flashes.filter((flash) => flash.key === byKey);
 
