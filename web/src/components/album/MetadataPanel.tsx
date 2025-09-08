@@ -4,6 +4,7 @@ import { FileInfo } from '../../types.ts';
 import { Subheading } from '../elements/Heading.tsx';
 import { XMarkIcon } from '@heroicons/react/24/solid';
 import { Text } from '../elements/Text.tsx';
+import { bytesToString } from '../../lib/formatters.ts';
 
 interface MetadataPanelProps {
     isOpen: boolean;
@@ -12,14 +13,7 @@ interface MetadataPanelProps {
 }
 
 const MetadataPanel: React.FC<MetadataPanelProps> = ({ isOpen, onClose, image }) => {
-    const formatBytes = (bytes: number, decimals = 2): string => {
-        if (bytes === 0) return '0 Bytes';
-        const k = 1024;
-        const dm = decimals < 0 ? 0 : decimals;
-        const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-    };
+    const formatBytes = (bytes: number): string => bytesToString(bytes);
 
     const formatShutterSpeed = (speed?: string): string | null => {
         if (!speed) return null;
@@ -61,7 +55,7 @@ const MetadataPanel: React.FC<MetadataPanelProps> = ({ isOpen, onClose, image })
                     >
                         <div className='p-6'>
                             <div className='mb-6 flex items-center justify-between'>
-                                <Subheading huge>this is my really long image name</Subheading>
+                                <Subheading huge>{image.name}</Subheading>
                                 <button
                                     onClick={onClose}
                                     className='text-gray-500 transition-colors hover:text-gray-800'
@@ -70,11 +64,9 @@ const MetadataPanel: React.FC<MetadataPanelProps> = ({ isOpen, onClose, image })
                                     <XMarkIcon className='h-6 w-6' />
                                 </button>
                             </div>
-                            <Text className={'mb-4'}>
-                                With my even longer description. testWith my even longer description. testWith my longer
-                                description. testWith my even longer description. testWith my even longer description.
-                                testWith my even longer description. test
-                            </Text>
+                            {image.path && (
+                                <Text className={'mb-4 break-words'}>{image.path}</Text>
+                            )}
 
                             <div className='space-y-3 text-sm'>
                                 {/* File Info */}

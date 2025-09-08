@@ -22,7 +22,7 @@ const AdvancedImageGrid: React.FC<AdvancedImageGridProps> = ({
     boxSpacing = 5,
     stretchLastRow = false,
     maxRowHeightRatio = null,
-    debugLayout = true,
+    debugLayout = false,
     debounceDelay = 250,
     onImageClick,
 }) => {

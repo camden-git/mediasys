@@ -40,9 +40,20 @@ type Config struct {
 	ThumbnailQueueSize  int
 	NumThumbnailWorkers int
 
-	// face detection model paths (DNN)
+	// face detection model paths (DNN - legacy)
 	FaceDNNNetConfigPath string
 	FaceDNNNetModelPath  string
+
+	// face detection model paths (RetinaFace)
+	RetinaFaceModelPath string
+
+	// face recognition model paths
+	FaceRecognitionModelPath string
+	FaceRecognitionModelName string // "arcface", "facenet", etc.
+
+	// face recognition settings
+	FaceRecognitionThreshold float64 // similarity threshold for face matching
+	FaceRecognitionEnabled   bool    // whether to enable face recognition
 }
 
 func getEnvOrDefault(key, defaultValue string) string {
@@ -61,6 +72,32 @@ func getEnvIntOrDefault(envVar string, defaultVal int) int {
 	val, err := strconv.Atoi(valStr)
 	if err != nil || val <= 0 {
 		log.Printf("Warning: Invalid %s '%s'. Using default %d. Error: %v", envVar, valStr, defaultVal, err)
+		return defaultVal
+	}
+	return val
+}
+
+func getEnvFloatOrDefault(envVar string, defaultVal float64) float64 {
+	valStr := os.Getenv(envVar)
+	if valStr == "" {
+		return defaultVal
+	}
+	val, err := strconv.ParseFloat(valStr, 64)
+	if err != nil {
+		log.Printf("Warning: Invalid %s '%s'. Using default %f. Error: %v", envVar, valStr, defaultVal, err)
+		return defaultVal
+	}
+	return val
+}
+
+func getEnvBoolOrDefault(envVar string, defaultVal bool) bool {
+	valStr := os.Getenv(envVar)
+	if valStr == "" {
+		return defaultVal
+	}
+	val, err := strconv.ParseBool(valStr)
+	if err != nil {
+		log.Printf("Warning: Invalid %s '%s'. Using default %t. Error: %v", envVar, valStr, defaultVal, err)
 		return defaultVal
 	}
 	return val
@@ -95,21 +132,36 @@ func LoadConfig() (Config, error) {
 	queueSize := getEnvIntOrDefault("THUMBNAIL_QUEUE_SIZE", defaultThumbnailQueueSize)
 	numWorkers := getEnvIntOrDefault("NUM_THUMBNAIL_WORKERS", defaultNumThumbnailWorkers)
 
+	// Legacy DNN face detection
 	faceDNNConfig := getEnvOrDefault("FACE_DNN_CONFIG_PATH", "./models/deploy.prototxt.txt")
 	faceDNNModel := getEnvOrDefault("FACE_DNN_MODEL_PATH", "./models/res10_300x300_ssd_iter_140000_fp16.caffemodel")
 
+	// New RetinaFace detection
+	retinaFaceModel := getEnvOrDefault("RETINAFACE_MODEL_PATH", "./models/retinaface.onnx")
+
+	// Face recognition
+	faceRecognitionModel := getEnvOrDefault("FACE_RECOGNITION_MODEL_PATH", "./models/arcface.onnx")
+	faceRecognitionModelName := getEnvOrDefault("FACE_RECOGNITION_MODEL_NAME", "arcface")
+	faceRecognitionThreshold := getEnvFloatOrDefault("FACE_RECOGNITION_THRESHOLD", 0.6)
+	faceRecognitionEnabled := getEnvBoolOrDefault("FACE_RECOGNITION_ENABLED", true)
+
 	cfg := Config{
-		RootDirectory:        absRoot,
-		DatabasePath:         dbPath,
-		MediaStoragePath:     absMediaStorage,
-		ThumbnailsPath:       absThumbnailsPath,
-		BannersPath:          absBannersPath,
-		ArchivesPath:         absArchivesPath,
-		ThumbnailMaxSize:     thumbMaxSize,
-		ThumbnailQueueSize:   queueSize,
-		NumThumbnailWorkers:  numWorkers,
-		FaceDNNNetConfigPath: faceDNNConfig,
-		FaceDNNNetModelPath:  faceDNNModel,
+		RootDirectory:            absRoot,
+		DatabasePath:             dbPath,
+		MediaStoragePath:         absMediaStorage,
+		ThumbnailsPath:           absThumbnailsPath,
+		BannersPath:              absBannersPath,
+		ArchivesPath:             absArchivesPath,
+		ThumbnailMaxSize:         thumbMaxSize,
+		ThumbnailQueueSize:       queueSize,
+		NumThumbnailWorkers:      numWorkers,
+		FaceDNNNetConfigPath:     faceDNNConfig,
+		FaceDNNNetModelPath:      faceDNNModel,
+		RetinaFaceModelPath:      retinaFaceModel,
+		FaceRecognitionModelPath: faceRecognitionModel,
+		FaceRecognitionModelName: faceRecognitionModelName,
+		FaceRecognitionThreshold: faceRecognitionThreshold,
+		FaceRecognitionEnabled:   faceRecognitionEnabled,
 	}
 
 	return cfg, nil

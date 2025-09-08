@@ -60,6 +60,20 @@ type FaceRepositoryInterface interface {
 	UntagFace(faceID uint) error
 }
 
+// FaceEmbeddingRepositoryInterface defines the methods for face embedding data operations
+type FaceEmbeddingRepositoryInterface interface {
+	Create(embedding *models.FaceEmbedding) error
+	GetByFaceID(faceID uint) (*models.FaceEmbedding, error)
+	GetByID(id uint) (*models.FaceEmbedding, error)
+	Update(embedding *models.FaceEmbedding) error
+	Delete(id uint) error
+	DeleteByFaceID(faceID uint) error
+	GetEmbeddingsByPersonID(personID uint) ([]models.FaceEmbedding, error)
+	GetUntaggedEmbeddings() ([]models.FaceEmbedding, error)
+	GetEmbeddingsByImagePath(imagePath string) ([]models.FaceEmbedding, error)
+	FindSimilarFaces(targetEmbedding []float32, threshold float32, limit int) ([]models.FaceEmbedding, error)
+}
+
 // UserRepository defines the methods for user data operations
 type UserRepository interface {
 	Create(user *models.User) error

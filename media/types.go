@@ -33,10 +33,28 @@ type Metadata struct {
 	TakenAt      *int64   `json:"taken_at,omitempty"`
 }
 
+// DetectionResult represents a detected face with enhanced information
 type DetectionResult struct {
 	X          int
 	Y          int
 	W          int
 	H          int
 	Confidence float32
+
+	// Enhanced face detection fields
+	QualityScore *float32  `json:"quality_score,omitempty"`
+	Landmarks    []Point2D `json:"landmarks,omitempty"`  // 5 facial landmarks (eyes, nose, mouth corners)
+	PoseYaw      *float32  `json:"pose_yaw,omitempty"`   // Yaw angle in degrees
+	PosePitch    *float32  `json:"pose_pitch,omitempty"` // Pitch angle in degrees
+	PoseRoll     *float32  `json:"pose_roll,omitempty"`  // Roll angle in degrees
+
+	// Face recognition fields
+	Embedding []float32 `json:"embedding,omitempty"`  // 128-dimensional face embedding
+	ModelName string    `json:"model_name,omitempty"` // Name of the recognition model used
+}
+
+// Point2D represents a 2D point with x,y coordinates
+type Point2D struct {
+	X float32 `json:"x"`
+	Y float32 `json:"y"`
 }

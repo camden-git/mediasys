@@ -55,8 +55,8 @@ func (p *Processor) GenerateThumbnail(originalImg image.Image, originalRelPath s
 			newWidth = int(math.Round(float64(origWidth) * (float64(maxSize) / float64(origHeight))))
 		}
 	}
-	newWidth = max(1, newWidth)
-	newHeight = max(1, newHeight)
+	newWidth = maxInt(1, newWidth)
+	newHeight = maxInt(1, newHeight)
 
 	thumb := imaging.Resize(originalImg, newWidth, newHeight, imaging.Lanczos)
 
