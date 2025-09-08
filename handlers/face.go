@@ -14,14 +14,16 @@ import (
 	"github.com/camden-git/mediasysbackend/config"
 	"github.com/camden-git/mediasysbackend/models"
 	"github.com/camden-git/mediasysbackend/repository"
+	"github.com/camden-git/mediasysbackend/services"
 	"github.com/go-chi/chi/v5"
 	"gorm.io/gorm"
 )
 
 type FaceHandler struct {
-	FaceRepo   repository.FaceRepositoryInterface
-	PersonRepo repository.PersonRepositoryInterface
-	Cfg        config.Config
+	FaceRepo               repository.FaceRepositoryInterface
+	PersonRepo             repository.PersonRepositoryInterface
+	Cfg                    config.Config
+	FaceRecognitionService *services.FaceRecognitionService
 }
 
 func (fh *FaceHandler) AddFace(w http.ResponseWriter, r *http.Request) {
@@ -297,4 +299,283 @@ func (fh *FaceHandler) SearchFacesByPerson(w http.ResponseWriter, r *http.Reques
 		imagePaths = []string{}
 	}
 	writeJSON(w, http.StatusOK, imagePaths)
+}
+
+// GetSimilarFaces finds faces similar to a given face ID
+func (fh *FaceHandler) GetSimilarFaces(w http.ResponseWriter, r *http.Request) {
+	if fh.FaceRecognitionService == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Face recognition service not available"})
+		return
+	}
+
+	idStr := chi.URLParam(r, "face_id")
+	faceID, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid face ID format"})
+		return
+	}
+
+	// Get limit from query parameter, default to 10
+	limitStr := r.URL.Query().Get("limit")
+	limit := 10
+	if limitStr != "" {
+		if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 {
+			limit = parsedLimit
+		}
+	}
+
+	similarFaces, err := fh.FaceRecognitionService.FindSimilarFaces(uint(faceID), limit)
+	if err != nil {
+		log.Printf("Error finding similar faces for face %d: %v", faceID, err)
+
+		// Check if the error is due to missing face embedding
+		if strings.Contains(err.Error(), "failed to get target face embedding") {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Face does not have an embedding. Face recognition requires embeddings to be generated for faces."})
+		} else {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to find similar faces"})
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, similarFaces)
+}
+
+// GetUntaggedFaces returns untagged faces with person suggestions
+func (fh *FaceHandler) GetUntaggedFaces(w http.ResponseWriter, r *http.Request) {
+	if fh.FaceRecognitionService == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Face recognition service not available"})
+		return
+	}
+
+	// Get limit from query parameter, default to 20
+	limitStr := r.URL.Query().Get("limit")
+	limit := 20
+	if limitStr != "" {
+		if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 {
+			limit = parsedLimit
+		}
+	}
+
+	untaggedFaces, err := fh.FaceRecognitionService.GetUntaggedFacesWithSuggestions(limit)
+	if err != nil {
+		log.Printf("Error getting untagged faces with suggestions: %v", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to get untagged faces"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, untaggedFaces)
+}
+
+// TagFace tags a face with a person and optionally auto-tags similar faces
+func (fh *FaceHandler) TagFace(w http.ResponseWriter, r *http.Request) {
+	if fh.FaceRecognitionService == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Face recognition service not available"})
+		return
+	}
+
+	idStr := chi.URLParam(r, "face_id")
+	faceID, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid face ID format"})
+		return
+	}
+
+	var req struct {
+		PersonID uint `json:"person_id"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body: " + err.Error()})
+		return
+	}
+
+	if req.PersonID == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "person_id is required and must be greater than 0"})
+		return
+	}
+
+	// Verify person exists
+	if _, err := fh.PersonRepo.GetByID(req.PersonID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Person not found"})
+		} else {
+			log.Printf("Error verifying person %d: %v", req.PersonID, err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to verify person"})
+		}
+		return
+	}
+
+	// Tag the face with auto-tagging of similar faces
+	err = fh.FaceRecognitionService.TagFaceWithPerson(uint(faceID), req.PersonID)
+	if err != nil {
+		log.Printf("Error tagging face %d with person %d: %v", faceID, req.PersonID, err)
+
+		// Check if the error is due to missing face embedding
+		if strings.Contains(err.Error(), "failed to get target face embedding") {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Face does not have an embedding. Face recognition requires embeddings to be generated for faces."})
+		} else {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to tag face"})
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"message": "Face tagged successfully"})
+}
+
+// AutoTagFace automatically tags a face based on similar faces
+func (fh *FaceHandler) AutoTagFace(w http.ResponseWriter, r *http.Request) {
+	if fh.FaceRecognitionService == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Face recognition service not available"})
+		return
+	}
+
+	idStr := chi.URLParam(r, "face_id")
+	faceID, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid face ID format"})
+		return
+	}
+
+	// Get person suggestion for the face
+	personID, personName, confidence, err := fh.FaceRecognitionService.SuggestPersonForFace(uint(faceID))
+	if err != nil {
+		log.Printf("Error suggesting person for face %d: %v", faceID, err)
+
+		// Check if the error is due to missing face embedding
+		if strings.Contains(err.Error(), "failed to get target face embedding") {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Face does not have an embedding. Face recognition requires embeddings to be generated for faces."})
+		} else {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to suggest person for face"})
+		}
+		return
+	}
+
+	if personID == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "No suitable person found for this face"})
+		return
+	}
+
+	// Tag the face with the suggested person
+	err = fh.FaceRecognitionService.TagFaceWithPerson(uint(faceID), *personID)
+	if err != nil {
+		log.Printf("Error auto-tagging face %d with person %d: %v", faceID, *personID, err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to auto-tag face"})
+		return
+	}
+
+	response := map[string]interface{}{
+		"message":    "Face auto-tagged successfully",
+		"person_id":  *personID,
+		"confidence": confidence,
+	}
+	if personName != nil {
+		response["person_name"] = *personName
+	}
+
+	writeJSON(w, http.StatusOK, response)
+}
+
+// DebugFaces returns debug information about faces in the database
+func (fh *FaceHandler) DebugFaces(w http.ResponseWriter, r *http.Request) {
+	if fh.FaceRecognitionService == nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"error": "Face recognition service not available",
+		})
+		return
+	}
+
+	// Get face 485 and its embedding
+	face485, err := fh.FaceRepo.GetByID(485)
+	if err != nil {
+		log.Printf("Error getting face 485: %v", err)
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"error": "Face 485 not found",
+		})
+		return
+	}
+
+	// Get the embedding for face 485
+	embedding485, err := fh.FaceRecognitionService.GetEmbeddingRepo().GetByFaceID(485)
+	if err != nil {
+		log.Printf("Error getting embedding for face 485: %v", err)
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"face_485":        face485,
+			"embedding_error": err.Error(),
+		})
+		return
+	}
+
+	// Get embeddings for the similar faces
+	embedding481, err := fh.FaceRecognitionService.GetEmbeddingRepo().GetByFaceID(481)
+	if err != nil {
+		log.Printf("Error getting embedding for face 481: %v", err)
+	}
+
+	embedding483, err := fh.FaceRecognitionService.GetEmbeddingRepo().GetByFaceID(483)
+	if err != nil {
+		log.Printf("Error getting embedding for face 483: %v", err)
+	}
+
+	// Calculate similarities manually
+	var similarities []map[string]interface{}
+
+	if embedding481 != nil {
+		similarity := fh.FaceRecognitionService.CalculateSimilarity(
+			embedding485.GetEmbedding(),
+			embedding481.GetEmbedding(),
+		)
+		similarities = append(similarities, map[string]interface{}{
+			"face_id":          481,
+			"similarity":       similarity,
+			"embedding_length": len(embedding481.GetEmbedding()),
+		})
+	}
+
+	if embedding483 != nil {
+		similarity := fh.FaceRecognitionService.CalculateSimilarity(
+			embedding485.GetEmbedding(),
+			embedding483.GetEmbedding(),
+		)
+		similarities = append(similarities, map[string]interface{}{
+			"face_id":          483,
+			"similarity":       similarity,
+			"embedding_length": len(embedding483.GetEmbedding()),
+		})
+	}
+
+	// Check if embeddings are identical
+	embedding485Vector := embedding485.GetEmbedding()
+	var embedding485Head, embedding481Head []float32
+	for i := 0; i < 10 && i < len(embedding485Vector); i++ {
+		embedding485Head = append(embedding485Head, embedding485Vector[i])
+	}
+	var identicalCount int
+	if embedding481 != nil {
+		embedding481Vector := embedding481.GetEmbedding()
+		for i := 0; i < 10 && i < len(embedding481Vector); i++ {
+			embedding481Head = append(embedding481Head, embedding481Vector[i])
+		}
+		if len(embedding485Vector) == len(embedding481Vector) {
+			identical := true
+			for i := 0; i < len(embedding485Vector); i++ {
+				if embedding485Vector[i] != embedding481Vector[i] {
+					identical = false
+					break
+				}
+			}
+			if identical {
+				identicalCount++
+			}
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"face_485":             face485,
+		"embedding_485_length": len(embedding485Vector),
+		"embedding_485_head":   embedding485Head,
+		"embedding_481_head":   embedding481Head,
+		"similarities":         similarities,
+		"identical_embeddings": identicalCount,
+		"threshold":            fh.FaceRecognitionService.GetSimilarityThreshold(),
+	})
 }

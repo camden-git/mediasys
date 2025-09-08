@@ -53,6 +53,7 @@ func AutoMigrateModels(db *gorm.DB) error {
 		&models.Person{},
 		&models.Alias{},
 		&models.Face{},
+		&models.FaceEmbedding{},
 		&models.Image{},
 		&models.Album{},
 		&models.User{},

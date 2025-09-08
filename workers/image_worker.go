@@ -14,6 +14,7 @@ import (
 	"github.com/camden-git/mediasysbackend/media"
 	"github.com/camden-git/mediasysbackend/repository"
 	"github.com/camden-git/mediasysbackend/utils"
+	"gocv.io/x/gocv"
 )
 
 // TaskType constants
@@ -89,7 +90,9 @@ func (ip *ImageProcessor) worker(id int, cfg config.Config) {
 	}
 	mediaProcessor := media.NewProcessor(mediaStore)
 
-	log.Printf("Worker %d: Loading DNN face detector...", id)
+	log.Printf("Worker %d: Loading face detectors...", id)
+
+	// Initialize DNN face detector (legacy)
 	faceDetector := media.NewDNNFaceDetector(cfg.FaceDNNNetConfigPath, cfg.FaceDNNNetModelPath)
 	defer func() {
 		if faceDetector != nil {
@@ -98,6 +101,33 @@ func (ip *ImageProcessor) worker(id int, cfg config.Config) {
 	}()
 	if faceDetector == nil || !faceDetector.Enabled {
 		log.Printf("Worker %d: DNN Face Detector disabled.", id)
+	}
+
+	// Initialize RetinaFace detector (preferred)
+	retinaFaceDetector := media.NewRetinaFaceDetector(cfg.RetinaFaceModelPath)
+	defer func() {
+		if retinaFaceDetector != nil {
+			retinaFaceDetector.Close()
+		}
+	}()
+	if retinaFaceDetector == nil || !retinaFaceDetector.Enabled {
+		log.Printf("Worker %d: RetinaFace Detector disabled.", id)
+	}
+
+	// Initialize face recognition model
+	var recognitionModel *media.FaceRecognitionModel
+	if cfg.FaceRecognitionEnabled {
+		recognitionModel = media.NewFaceRecognitionModel(cfg.FaceRecognitionModelPath, cfg.FaceRecognitionModelName)
+		defer func() {
+			if recognitionModel != nil && recognitionModel.Enabled {
+				recognitionModel.Close()
+			}
+		}()
+		if recognitionModel == nil || !recognitionModel.Enabled {
+			log.Printf("Worker %d: Face Recognition Model disabled or failed to load.", id)
+		} else {
+			log.Printf("Worker %d: Face Recognition Model enabled (%s).", id, cfg.FaceRecognitionModelName)
+		}
 	}
 
 	log.Printf("Image worker %d started", id)
@@ -144,7 +174,7 @@ func (ip *ImageProcessor) worker(id int, cfg config.Config) {
 			case TaskMetadata:
 				ip.processMetadataTask(job)
 			case TaskDetection:
-				ip.processDetectionTask(job, faceDetector)
+				ip.processDetectionTask(job, faceDetector, retinaFaceDetector, recognitionModel, cfg)
 			case TaskAlbumZip:
 				ip.processAlbumZipTask(job, mediaStore)
 			default:
@@ -223,7 +253,7 @@ func (ip *ImageProcessor) processMetadataTask(job ImageJob) {
 }
 
 // processDetectionTask performs detection and updates DB
-func (ip *ImageProcessor) processDetectionTask(job ImageJob, faceDetector *media.DNNFaceDetector) {
+func (ip *ImageProcessor) processDetectionTask(job ImageJob, faceDetector *media.DNNFaceDetector, retinaFaceDetector *media.RetinaFaceDetector, recognitionModel *media.FaceRecognitionModel, cfg config.Config) {
 	var taskErr error
 	var detections []media.DetectionResult
 
@@ -234,16 +264,34 @@ func (ip *ImageProcessor) processDetectionTask(job ImageJob, faceDetector *media
 		taskErr = fmt.Errorf("failed to stat original file: %w", statErr)
 		log.Printf("Worker: ERROR stating file for detection task %s: %v", job.OriginalRelativePath, taskErr)
 	} else {
-		if faceDetector != nil && faceDetector.Enabled {
+		// Try RetinaFace first (preferred), fall back to DNN if needed
+		if retinaFaceDetector != nil && retinaFaceDetector.Enabled {
+			img := gocv.IMRead(job.OriginalImagePath, gocv.IMReadColor)
+			if img.Empty() {
+				taskErr = fmt.Errorf("failed to read image file for RetinaFace: %s", job.OriginalImagePath)
+			} else {
+				defer img.Close()
+
+				// Use RetinaFace with face recognition if available
+				if recognitionModel != nil && recognitionModel.Enabled {
+					detections = retinaFaceDetector.DetectFacesAndExtractEmbeddings(img, recognitionModel)
+				} else {
+					detections = retinaFaceDetector.DetectFaces(img)
+				}
+
+				log.Printf("Worker: RetinaFace detection complete for %s: Found %d faces.", job.OriginalRelativePath, len(detections))
+			}
+		} else if faceDetector != nil && faceDetector.Enabled {
+			// Fall back to DNN detector
 			detections, taskErr = media.DetectFacesAndAnimals(job.OriginalImagePath, faceDetector)
 			if taskErr != nil {
-				log.Printf("Worker: ERROR during detection for %s: %v", job.OriginalRelativePath, taskErr)
+				log.Printf("Worker: ERROR during DNN detection for %s: %v", job.OriginalRelativePath, taskErr)
 			} else {
-				log.Printf("Worker: Detection complete for %s: Found %d objects.", job.OriginalRelativePath, len(detections))
+				log.Printf("Worker: DNN detection complete for %s: Found %d objects.", job.OriginalRelativePath, len(detections))
 			}
 		} else {
-			taskErr = fmt.Errorf("face detector not enabled or loaded")
-			log.Printf("Worker: Skipping detection for %s: detector disabled", job.OriginalRelativePath)
+			taskErr = fmt.Errorf("no face detector enabled or loaded")
+			log.Printf("Worker: Skipping detection for %s: no detector available", job.OriginalRelativePath)
 		}
 	}
 

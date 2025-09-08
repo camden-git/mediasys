@@ -128,10 +128,10 @@ func (d *DNNFaceDetector) DetectFaces(img gocv.Mat) []DetectionResult {
 			xMax := detectionsData.GetFloatAt(i, 5) * imgWidth
 			yMax := detectionsData.GetFloatAt(i, 6) * imgHeight
 
-			xMin = max(0, xMin)
-			yMin = max(0, yMin)
-			xMax = min(imgWidth, xMax)
-			yMax = min(imgHeight, yMax)
+			xMin = maxFloat32(0, xMin)
+			yMin = maxFloat32(0, yMin)
+			xMax = minFloat32(imgWidth, xMax)
+			yMax = minFloat32(imgHeight, yMax)
 
 			if xMax > xMin && yMax > yMin {
 				results = append(results, DetectionResult{
@@ -162,6 +162,31 @@ func DetectFacesAndAnimals(imagePath string, faceDetector *DNNFaceDetector) ([]D
 
 	detections := faceDetector.DetectFaces(img)
 	log.Printf("detection(dnn): found %d face(s) in %s", len(detections), imagePath)
+
+	return detections, nil
+}
+
+// DetectFacesWithRetinaFace detects faces using RetinaFace with optional face recognition
+func DetectFacesWithRetinaFace(imagePath string, retinaFaceDetector *RetinaFaceDetector, recognitionModel *FaceRecognitionModel) ([]DetectionResult, error) {
+	if retinaFaceDetector == nil || !retinaFaceDetector.Enabled {
+		log.Println("detection(retinaface): RetinaFace detector not provided or not enabled")
+		return nil, nil
+	}
+
+	img := gocv.IMRead(imagePath, gocv.IMReadColor)
+	if img.Empty() {
+		return nil, fmt.Errorf("failed to read image file for RetinaFace: %s", imagePath)
+	}
+	defer img.Close()
+
+	var detections []DetectionResult
+	if recognitionModel != nil && recognitionModel.Enabled {
+		detections = retinaFaceDetector.DetectFacesAndExtractEmbeddings(img, recognitionModel)
+		log.Printf("detection(retinaface): found %d face(s) with embeddings in %s", len(detections), imagePath)
+	} else {
+		detections = retinaFaceDetector.DetectFaces(img)
+		log.Printf("detection(retinaface): found %d face(s) in %s", len(detections), imagePath)
+	}
 
 	return detections, nil
 }

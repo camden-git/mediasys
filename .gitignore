@@ -10,5 +10,6 @@ test/*
 data
 data/*
 DNN_models/*
+face_models/*
 
 .idea/

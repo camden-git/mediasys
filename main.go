@@ -2,17 +2,19 @@ package main
 
 import (
 	"fmt"
-	"github.com/camden-git/mediasysbackend/media"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/camden-git/mediasysbackend/media"
+
 	"github.com/camden-git/mediasysbackend/config"
 	"github.com/camden-git/mediasysbackend/database"
 	"github.com/camden-git/mediasysbackend/handlers"
 	"github.com/camden-git/mediasysbackend/repository"
+	"github.com/camden-git/mediasysbackend/services"
 	"github.com/camden-git/mediasysbackend/workers"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -70,10 +72,19 @@ func main() {
 	albumRepo := repository.NewAlbumRepository(gormDB)
 	personRepo := repository.NewPersonRepository(gormDB)
 	faceRepo := repository.NewFaceRepository(gormDB)
+	faceEmbeddingRepo := repository.NewFaceEmbeddingRepository(gormDB)
 	imageRepo := repository.NewImageRepository(gormDB)
 	userRepo := repository.NewGormUserRepository(gormDB)
 	roleRepo := repository.NewGormRoleRepository(gormDB)
 	inviteCodeRepo := repository.NewGormInviteCodeRepository(gormDB)
+
+	// Initialize face recognition service
+	faceRecognitionService := services.NewFaceRecognitionService(
+		faceRepo,
+		personRepo,
+		faceEmbeddingRepo,
+		float32(cfg.FaceRecognitionThreshold),
+	)
 
 	imageProcessor := workers.NewImageProcessor(
 		cfg,
@@ -111,8 +122,14 @@ func main() {
 
 	albumHandler := &handlers.AlbumHandler{AlbumRepo: albumRepo, ImageRepo: imageRepo, Cfg: cfg, ThumbGen: imageProcessor, MediaProcessor: mediaProcessor}
 	personHandler := &handlers.PersonHandler{PersonRepo: personRepo}
-	faceHandler := &handlers.FaceHandler{FaceRepo: faceRepo, PersonRepo: personRepo, Cfg: cfg}
+	faceHandler := &handlers.FaceHandler{FaceRepo: faceRepo, PersonRepo: personRepo, Cfg: cfg, FaceRecognitionService: faceRecognitionService}
 	imagePreviewHandler := &handlers.ImagePreviewHandler{FaceRepo: faceRepo, Cfg: cfg}
+
+	debugHandler := &handlers.DebugHandler{
+		Cfg:            cfg,
+		ImageRepo:      imageRepo,
+		ImageProcessor: imageProcessor,
+	}
 	authHandler := handlers.NewAuthHandler(userRepo, inviteCodeRepo) // Pass inviteCodeRepo
 	permissionsHandler := handlers.NewPermissionsHandler()
 	adminUserHandler := handlers.NewAdminUserHandler(userRepo, roleRepo)
@@ -337,10 +354,14 @@ func main() {
 		})
 
 		r.Route("/faces", func(r chi.Router) {
+			r.Get("/untagged", faceHandler.GetUntaggedFaces)
 			r.Route("/{face_id}", func(r chi.Router) {
 				r.Get("/", faceHandler.GetFace)
 				r.Put("/", faceHandler.UpdateFace)
 				r.Delete("/", faceHandler.DeleteFace)
+				r.Get("/similar", faceHandler.GetSimilarFaces)
+				r.Post("/tag", faceHandler.TagFace)
+				r.Post("/auto-tag", faceHandler.AutoTagFace)
 			})
 		})
 
@@ -363,6 +384,15 @@ func main() {
 		r.Route("/debug", func(r chi.Router) {
 			// GET /debug/image_with_faces?path=relative/path/to/image.jpg
 			r.Get("/image_with_faces", imagePreviewHandler.ServeImageWithFaces)
+
+			// POST /debug/queue_detection?path=relative/path/to/image.jpg
+			r.Post("/queue_detection", debugHandler.QueueFaceDetection)
+
+			// GET /debug/detection_status?path=relative/path/to/image.jpg
+			r.Get("/detection_status", debugHandler.GetDetectionStatus)
+
+			// GET /debug/faces - debug face information
+			r.Get("/faces", faceHandler.DebugFaces)
 		})
 
 		r.Get("/*", handlers.DirectoryHandler(cfg, imageRepo, imageProcessor))

@@ -1,8 +1,10 @@
 package repository
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"path/filepath"
 	"time"
 
@@ -11,6 +13,14 @@ import (
 	"github.com/camden-git/mediasysbackend/models"
 	"gorm.io/gorm"
 )
+
+// minInt returns the minimum of two int values
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
 
 // ImageRepository handles database operations for Image entities
 type ImageRepository struct {
@@ -178,19 +188,58 @@ func (r *ImageRepository) UpdateDetectionResult(originalPath string, detections 
 			newFaces := make([]models.Face, len(detections))
 			faceCreatedAt := time.Now().Unix() // all faces in this batch get the same timestamp
 			for i, det := range detections {
+				// Convert landmarks to JSON string if available
+				var landmarksStr *string
+				if len(det.Landmarks) > 0 {
+					landmarksJSON, err := json.Marshal(det.Landmarks)
+					if err == nil {
+						landmarksStr = new(string)
+						*landmarksStr = string(landmarksJSON)
+					}
+				}
+
 				newFaces[i] = models.Face{
 					// PersonID is nil for untagged faces
-					ImagePath: cleanPath,
-					X1:        det.X,
-					Y1:        det.Y,
-					X2:        det.X + det.W,
-					Y2:        det.Y + det.H,
-					CreatedAt: faceCreatedAt,
-					UpdatedAt: faceCreatedAt,
+					ImagePath:           cleanPath,
+					X1:                  det.X,
+					Y1:                  det.Y,
+					X2:                  det.X + det.W,
+					Y2:                  det.Y + det.H,
+					DetectionConfidence: det.Confidence,
+					QualityScore:        det.QualityScore,
+					Landmarks:           landmarksStr,
+					PoseYaw:             det.PoseYaw,
+					PosePitch:           det.PosePitch,
+					PoseRoll:            det.PoseRoll,
+					CreatedAt:           faceCreatedAt,
+					UpdatedAt:           faceCreatedAt,
 				}
 			}
 			if err := tx.Create(&newFaces).Error; err != nil {
 				return fmt.Errorf("failed to add new detected faces for %s: %w", cleanPath, err)
+			}
+
+			// Create embeddings for faces that have them
+			for i, det := range detections {
+				if len(det.Embedding) > 0 {
+					log.Printf("repository: Creating embedding for face %d with %d values, first 5: %v", newFaces[i].ID, len(det.Embedding), det.Embedding[:minInt(5, len(det.Embedding))])
+
+					embedding := &models.FaceEmbedding{
+						FaceID:         newFaces[i].ID,
+						EmbeddingModel: det.ModelName,
+					}
+					embedding.SetEmbedding(det.Embedding)
+
+					// Debug: check the binary data
+					log.Printf("repository: Embedding binary data length: %d, first 20 bytes: %v", len(embedding.EmbeddingData), embedding.EmbeddingData[:minInt(20, len(embedding.EmbeddingData))])
+
+					if err := tx.Create(embedding).Error; err != nil {
+						return fmt.Errorf("failed to create face embedding for face ID %d: %w", newFaces[i].ID, err)
+					}
+					log.Printf("repository: Successfully created embedding record with ID %d", embedding.ID)
+				} else {
+					log.Printf("repository: No embedding data for face %d", newFaces[i].ID)
+				}
 			}
 		}
 
