@@ -16,6 +16,140 @@ import { ArrowDownIcon, BeakerIcon, CameraIcon, MapPinIcon, PhotoIcon, ShareIcon
 import { useFlash } from '../../hooks/useFlash.ts';
 import FlashMessageRender from '../elements/FlashMessageRender.tsx';
 
+// max payload size for a single Web Share operation
+const MAX_SHARE_CHUNK_BYTES = 40 * 1024 * 1024;
+
+type ShareProgress = { current: number; total: number; size: number } | null;
+
+function chunkImagesBySize(images: FileInfo[], maxBytes: number): FileInfo[][] {
+    const chunks: FileInfo[][] = [];
+    let currentChunk: FileInfo[] = [];
+    let currentSize = 0;
+
+    for (const image of images) {
+        if (currentSize + image.size > maxBytes) {
+            if (currentChunk.length > 0) chunks.push(currentChunk);
+            currentChunk = [image];
+            currentSize = image.size;
+        } else {
+            currentChunk.push(image);
+            currentSize += image.size;
+        }
+    }
+
+    if (currentChunk.length > 0) chunks.push(currentChunk);
+    return chunks;
+}
+
+interface DownloadDialogProps {
+    open: boolean;
+    onClose: (open: boolean) => void;
+    albumName?: string;
+    zipSize?: number;
+    onDownload: () => void;
+}
+
+const DownloadDialog: React.FC<DownloadDialogProps> = ({ open, onClose, albumName, zipSize, onDownload }) => (
+    <Dialog open={open} onClose={onClose}>
+        <DialogTitle>Download {albumName}</DialogTitle>
+        <DialogDescription>
+            A {zipSize ? bytesToString(zipSize) : ''} zip file containing all images in this album is available for
+            download. This download may take a long time as the images are in the highest quality. Individual photos can
+            be downloaded by opening an image and pressing the download icon in the top right.
+        </DialogDescription>
+        <DialogBody></DialogBody>
+        <DialogActions>
+            <Button plain onClick={() => onClose(false)}>
+                Cancel
+            </Button>
+            <Button onClick={onDownload}>Download</Button>
+        </DialogActions>
+    </Dialog>
+);
+
+interface ShareChunksDialogProps {
+    open: boolean;
+    onClose: (open: boolean) => void;
+    images: FileInfo[];
+    chunks: FileInfo[][];
+    currentIndex: number;
+    isSharing: boolean;
+    progress: ShareProgress;
+    onShareCurrent: () => Promise<void> | void;
+    onNext: () => void;
+}
+
+const ShareChunksDialog: React.FC<ShareChunksDialogProps> = ({
+    open,
+    onClose,
+    images,
+    chunks,
+    currentIndex,
+    isSharing,
+    progress,
+    onShareCurrent,
+    onNext,
+}) => (
+    <Dialog open={open} onClose={onClose}>
+        <span
+            className={
+                'mb-2 inline-flex items-center rounded-md bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700 ring-1 ring-indigo-700/10 ring-inset'
+            }
+        >
+            <BeakerIcon className='my-auto mr-1 size-4' /> Experimental feature
+        </span>
+        <DialogTitle>Share Album in Multiple Parts</DialogTitle>
+        <DialogDescription>
+            This album includes {images.length} high-quality photos, totaling{' '}
+            {bytesToString(images.reduce((sum, img) => sum + img.size, 0))}. Due to browser limitations, it will be
+            shared in {chunks.length} parts, each up to 40MiB. Press "Share" to open your device’s share sheet, where
+            you can send or save the images. After sharing each part, press "Next" to continue. This process may take
+            some time due to the large file sizes.
+        </DialogDescription>
+        <DialogBody>
+            <div className='space-y-4'>
+                <DescriptionList>
+                    <DescriptionItem term='Total Photos' details={images.length} />
+                    <DescriptionItem
+                        term='Total Size'
+                        details={bytesToString(images.reduce((sum, img) => sum + img.size, 0))}
+                    />
+                    <DescriptionItem term='Number of Parts' details={chunks.length} />
+                    <DescriptionItem term='Current Part' details={`${currentIndex + 1} of ${chunks.length}`} />
+                </DescriptionList>
+
+                {chunks[currentIndex] && (
+                    <div className='mt-4'>
+                        <h4 className='mb-2 text-sm font-medium text-gray-900 dark:text-white'>
+                            Part {currentIndex + 1} Details:
+                        </h4>
+                        <DescriptionList>
+                            <DescriptionItem term='Photos in this part' details={chunks[currentIndex].length} />
+                            <DescriptionItem
+                                term='Size of this part'
+                                details={bytesToString(chunks[currentIndex].reduce((sum, img) => sum + img.size, 0))}
+                            />
+                        </DescriptionList>
+                    </div>
+                )}
+            </div>
+        </DialogBody>
+        <DialogActions>
+            <Button plain onClick={() => onClose(false)}>
+                Cancel
+            </Button>
+            <Button onClick={onShareCurrent} disabled={isSharing}>
+                {isSharing
+                    ? progress
+                        ? `Processing ${progress.current}/${progress.total} (${(progress.size / (1024 * 1024)).toFixed(1)}MB)`
+                        : 'Sharing...'
+                    : `Share Part ${currentIndex + 1}`}
+            </Button>
+            {currentIndex < chunks.length - 1 && <Button onClick={onNext}>Next Part</Button>}
+        </DialogActions>
+    </Dialog>
+);
+
 const AlbumView: React.FC = () => {
     const { currentAlbum, directoryListing, isLoading, error } = useStoreState(
         (state: State<StoreModel>) => state.contentView,
@@ -28,7 +162,7 @@ const AlbumView: React.FC = () => {
     const [shareChunks, setShareChunks] = useState<FileInfo[][]>([]);
     const [currentChunkIndex, setCurrentChunkIndex] = useState(0);
     const [isSharing, setIsSharing] = useState(false);
-    const [shareProgress, setShareProgress] = useState<{ current: number; total: number; size: number } | null>(null);
+    const [shareProgress, setShareProgress] = useState<ShareProgress>(null);
 
     const imageFiles = useMemo(() => {
         if (!directoryListing?.files) {
@@ -45,6 +179,26 @@ const AlbumView: React.FC = () => {
         setSelectedImage(null);
     };
 
+    const selectedIndex = useMemo(() => {
+        if (!selectedImage) return -1;
+        return imageFiles.findIndex((f) => f.path === selectedImage.path);
+    }, [selectedImage, imageFiles]);
+
+    const canPrev = selectedIndex > 0;
+    const canNext = selectedIndex >= 0 && selectedIndex < imageFiles.length - 1;
+
+    const handlePrevImage = () => {
+        if (!canPrev) return;
+        const prev = imageFiles[selectedIndex - 1];
+        if (prev) setSelectedImage(prev);
+    };
+
+    const handleNextImage = () => {
+        if (!canNext) return;
+        const next = imageFiles[selectedIndex + 1];
+        if (next) setSelectedImage(next);
+    };
+
     const handleDownloadZip = () => {
         if (!currentAlbum?.zip_path) {
             return;
@@ -57,62 +211,6 @@ const AlbumView: React.FC = () => {
         link.click();
         document.body.removeChild(link);
         setDownloadModalOpen(false);
-    };
-
-    const handleShare = async () => {
-        if (!navigator.share) {
-            addFlash({
-                key: 'album',
-                type: 'error',
-                title: 'Failed to share',
-                message:
-                    'Your browser does not support the Web Share API. Please consider downloading the album zip instead.',
-            });
-            return;
-        }
-
-        if (!currentAlbum || imageFiles.length === 0) {
-            return;
-        }
-
-        // Create chunks of images that fit within 40MB each
-        const MAX_SIZE_BYTES = 40 * 1024 * 1024;
-        const chunks: FileInfo[][] = [];
-        let currentChunk: FileInfo[] = [];
-        let currentChunkSize = 0;
-
-        for (const image of imageFiles) {
-            if (currentChunkSize + image.size > MAX_SIZE_BYTES) {
-                // current chunk is full, start a new one
-                if (currentChunk.length > 0) {
-                    chunks.push(currentChunk);
-                }
-                currentChunk = [image];
-                currentChunkSize = image.size;
-            } else {
-                currentChunk.push(image);
-                currentChunkSize += image.size;
-            }
-        }
-
-        if (currentChunk.length > 0) {
-            chunks.push(currentChunk);
-        }
-
-        if (chunks.length === 0) {
-            console.warn('No images could be shared');
-            return;
-        }
-
-        // if only one chunk, share directly
-        if (chunks.length === 1) {
-            await shareChunk(chunks[0], 1, 1);
-            return;
-        }
-
-        setShareChunks(chunks);
-        setCurrentChunkIndex(0);
-        setShareChunksDialogOpen(true);
     };
 
     const shareChunk = async (chunk: FileInfo[], chunkNumber: number, totalChunks: number) => {
@@ -147,6 +245,39 @@ const AlbumView: React.FC = () => {
         }
     };
 
+    const handleShare = async () => {
+        if (!navigator.share) {
+            addFlash({
+                key: 'album',
+                type: 'error',
+                title: 'Failed to share',
+                message:
+                    'Your browser does not support the Web Share API. Please consider downloading the album zip instead.',
+            });
+            return;
+        }
+
+        if (!currentAlbum || imageFiles.length === 0) {
+            return;
+        }
+
+        const chunks = chunkImagesBySize(imageFiles, MAX_SHARE_CHUNK_BYTES);
+
+        if (chunks.length === 0) {
+            console.warn('No images could be shared');
+            return;
+        }
+
+        if (chunks.length === 1) {
+            await shareChunk(chunks[0], 1, 1);
+            return;
+        }
+
+        setShareChunks(chunks);
+        setCurrentChunkIndex(0);
+        setShareChunksDialogOpen(true);
+    };
+
     const handleShareNextChunk = async () => {
         if (currentChunkIndex < shareChunks.length - 1) {
             setCurrentChunkIndex(currentChunkIndex + 1);
@@ -176,7 +307,6 @@ const AlbumView: React.FC = () => {
                 <div className='mx-auto'>
                     <div className='relative'>
                         <div className='px-8 pt-48 pb-12 lg:py-24'>
-                            {/*<Logo className="h-8 fill-gray-950 dark:fill-white" />*/}
                             <h1 className='sr-only'>{currentAlbum?.name} overview</h1>
                             <Heading className={'truncate font-bold'} huge>
                                 {currentAlbum?.name}
@@ -216,100 +346,27 @@ const AlbumView: React.FC = () => {
                                             <ArrowDownIcon className='size-2 fill-white' />
                                             Download
                                         </button>
-                                        <Dialog open={downloadModalOpen} onClose={setDownloadModalOpen}>
-                                            <DialogTitle>Download {currentAlbum?.name}</DialogTitle>
-                                            <DialogDescription>
-                                                A {bytesToString(currentAlbum.zip_size)} zip file containing all images
-                                                in this album is available for download. This download may take a long
-                                                time as the images are in the highest quality. Individual photos can be
-                                                downloaded by opening an image and pressing the download icon in the top
-                                                right.
-                                            </DialogDescription>
-                                            <DialogBody></DialogBody>
-                                            <DialogActions>
-                                                <Button plain onClick={() => setDownloadModalOpen(false)}>
-                                                    Cancel
-                                                </Button>
-                                                <Button onClick={handleDownloadZip}>Download</Button>
-                                            </DialogActions>
-                                        </Dialog>
+                                        <DownloadDialog
+                                            open={downloadModalOpen}
+                                            onClose={setDownloadModalOpen}
+                                            albumName={currentAlbum?.name}
+                                            zipSize={currentAlbum.zip_size}
+                                            onDownload={handleDownloadZip}
+                                        />
                                     </>
                                 )}
 
-                                <Dialog open={shareChunksDialogOpen} onClose={setShareChunksDialogOpen}>
-                                    <span
-                                        className={
-                                            'mb-2 inline-flex items-center rounded-md bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700 ring-1 ring-indigo-700/10 ring-inset'
-                                        }
-                                    >
-                                        <BeakerIcon className='my-auto mr-1 size-4' /> Experimental feature
-                                    </span>
-                                    <DialogTitle>Share Album in Multiple Parts</DialogTitle>
-                                    <DialogDescription>
-                                        This album includes {imageFiles.length} high-quality photos, totaling{' '}
-                                        {bytesToString(imageFiles.reduce((sum, img) => sum + img.size, 0))}. Due to
-                                        browser limitations, it will be shared in {shareChunks.length} parts, each up to
-                                        40MiB. Press "Share" to open your device’s share sheet, where you can send or
-                                        save the images. After sharing each part, press "Next" to continue. This process
-                                        may take some time due to the large file sizes.
-                                    </DialogDescription>
-                                    <DialogBody>
-                                        <div className='space-y-4'>
-                                            <DescriptionList>
-                                                <DescriptionItem term='Total Photos' details={imageFiles.length} />
-                                                <DescriptionItem
-                                                    term='Total Size'
-                                                    details={bytesToString(
-                                                        imageFiles.reduce((sum, img) => sum + img.size, 0),
-                                                    )}
-                                                />
-                                                <DescriptionItem term='Number of Parts' details={shareChunks.length} />
-                                                <DescriptionItem
-                                                    term='Current Part'
-                                                    details={`${currentChunkIndex + 1} of ${shareChunks.length}`}
-                                                />
-                                            </DescriptionList>
-
-                                            {shareChunks[currentChunkIndex] && (
-                                                <div className='mt-4'>
-                                                    <h4 className='mb-2 text-sm font-medium text-gray-900 dark:text-white'>
-                                                        Part {currentChunkIndex + 1} Details:
-                                                    </h4>
-                                                    <DescriptionList>
-                                                        <DescriptionItem
-                                                            term='Photos in this part'
-                                                            details={shareChunks[currentChunkIndex].length}
-                                                        />
-                                                        <DescriptionItem
-                                                            term='Size of this part'
-                                                            details={bytesToString(
-                                                                shareChunks[currentChunkIndex].reduce(
-                                                                    (sum, img) => sum + img.size,
-                                                                    0,
-                                                                ),
-                                                            )}
-                                                        />
-                                                    </DescriptionList>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </DialogBody>
-                                    <DialogActions>
-                                        <Button plain onClick={() => setShareChunksDialogOpen(false)}>
-                                            Cancel
-                                        </Button>
-                                        <Button onClick={handleShareCurrentChunk} disabled={isSharing}>
-                                            {isSharing
-                                                ? shareProgress
-                                                    ? `Processing ${shareProgress.current}/${shareProgress.total} (${(shareProgress.size / (1024 * 1024)).toFixed(1)}MB)`
-                                                    : 'Sharing...'
-                                                : `Share Part ${currentChunkIndex + 1}`}
-                                        </Button>
-                                        {currentChunkIndex < shareChunks.length - 1 && (
-                                            <Button onClick={handleShareNextChunk}>Next Part</Button>
-                                        )}
-                                    </DialogActions>
-                                </Dialog>
+                                <ShareChunksDialog
+                                    open={shareChunksDialogOpen}
+                                    onClose={setShareChunksDialogOpen}
+                                    images={imageFiles}
+                                    chunks={shareChunks}
+                                    currentIndex={currentChunkIndex}
+                                    isSharing={isSharing}
+                                    progress={shareProgress}
+                                    onShareCurrent={handleShareCurrentChunk}
+                                    onNext={handleShareNextChunk}
+                                />
 
                                 {imageFiles.length > 0 && (
                                     <button
@@ -341,7 +398,14 @@ const AlbumView: React.FC = () => {
                                     onImageClick={handleImageClick}
                                 />
                             )}
-                            <ImageLightbox image={selectedImage} onClose={handleCloseLightbox} />
+                            <ImageLightbox
+                                image={selectedImage}
+                                onClose={handleCloseLightbox}
+                                onPrev={handlePrevImage}
+                                onNext={handleNextImage}
+                                canPrev={canPrev}
+                                canNext={canNext}
+                            />
                         </div>
                     </div>
                 </div>
