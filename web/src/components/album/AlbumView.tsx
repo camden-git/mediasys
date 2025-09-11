@@ -322,7 +322,15 @@ const AlbumView: React.FC = () => {
                                 <span className='hidden text-gray-950/25 sm:inline dark:text-white/25'>&middot;</span>
                                 <div className='flex items-center gap-1.5'>
                                     <CameraIcon className='size-4 text-gray-950/40' />
-                                    Camden Rush
+                                    {currentAlbum?.artists && currentAlbum.artists.length > 0
+                                        ? currentAlbum.artists
+                                              .map((u) =>
+                                                  u.first_name || u.last_name
+                                                      ? `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim()
+                                                      : u.username,
+                                              )
+                                              .join(', ')
+                                        : ''}
                                 </div>
                                 {currentAlbum?.location && (
                                     <>

@@ -13,6 +13,7 @@ import (
 	"github.com/camden-git/mediasysbackend/config"
 	"github.com/camden-git/mediasysbackend/database"
 	"github.com/camden-git/mediasysbackend/handlers"
+	"github.com/camden-git/mediasysbackend/realtime"
 	"github.com/camden-git/mediasysbackend/repository"
 	"github.com/camden-git/mediasysbackend/services"
 	"github.com/camden-git/mediasysbackend/workers"
@@ -67,6 +68,10 @@ func main() {
 	}
 	mediaProcessor := media.NewProcessor(mediaStore)
 
+	// Realtime hub for websocket updates
+	hub := realtime.NewHub()
+	go hub.Run()
+
 	log.Printf("Initializing image processor worker pool (Workers: %d, Queue Size: %d)...", cfg.NumThumbnailWorkers, cfg.ThumbnailQueueSize)
 
 	albumRepo := repository.NewAlbumRepository(gormDB)
@@ -93,6 +98,7 @@ func main() {
 		faceRepo,
 		cfg.ThumbnailQueueSize,
 		cfg.NumThumbnailWorkers,
+		hub,
 	)
 
 	log.Printf("Serving files from root: %s", cfg.RootDirectory)
@@ -120,7 +126,7 @@ func main() {
 	r.Use(middleware.Timeout(60 * time.Second))
 	r.Use(corsHandler.Handler)
 
-	albumHandler := &handlers.AlbumHandler{AlbumRepo: albumRepo, ImageRepo: imageRepo, Cfg: cfg, ThumbGen: imageProcessor, MediaProcessor: mediaProcessor}
+	albumHandler := &handlers.AlbumHandler{AlbumRepo: albumRepo, ImageRepo: imageRepo, UserRepo: userRepo, Cfg: cfg, ThumbGen: imageProcessor, MediaProcessor: mediaProcessor}
 	personHandler := &handlers.PersonHandler{PersonRepo: personRepo}
 	faceHandler := &handlers.FaceHandler{FaceRepo: faceRepo, PersonRepo: personRepo, Cfg: cfg, FaceRecognitionService: faceRecognitionService}
 	imagePreviewHandler := &handlers.ImagePreviewHandler{FaceRepo: faceRepo, Cfg: cfg}
@@ -135,7 +141,7 @@ func main() {
 	adminUserHandler := handlers.NewAdminUserHandler(userRepo, roleRepo)
 	adminRoleHandler := handlers.NewAdminRoleHandler(roleRepo)
 	adminInviteCodeHandler := handlers.NewAdminInviteCodeHandler(inviteCodeRepo)
-	adminAlbumHandler := handlers.NewAdminAlbumHandler(albumRepo, imageRepo, userRepo, roleRepo, cfg)
+	adminAlbumHandler := handlers.NewAdminAlbumHandler(albumRepo, imageRepo, userRepo, roleRepo, cfg, imageProcessor, hub)
 	adminAlbumUserHandler := handlers.NewAdminAlbumUserHandler(userRepo, albumRepo)
 	setupHandler := handlers.NewSetupHandler(gormDB, userRepo, roleRepo) // Initialize SetupHandler
 
@@ -291,11 +297,19 @@ func main() {
 
 					r.With(func(next http.Handler) http.Handler {
 						return handlers.RequireGlobalPermission("album.edit.general", next)
+					}).Post("/upload", adminAlbumHandler.UploadImages)
+
+					r.With(func(next http.Handler) http.Handler {
+						return handlers.RequireGlobalPermission("album.edit.general", next)
 					}).Post("/zip", albumHandler.RequestAlbumZipGeneration)
 
 					r.With(func(next http.Handler) http.Handler {
 						return handlers.RequireGlobalPermission("album.list", next)
 					}).Get("/zip", albumHandler.DownloadAlbumZipByID)
+
+					r.With(func(next http.Handler) http.Handler {
+						return handlers.RequireGlobalPermission("album.list", next)
+					}).Get("/uploaders", adminAlbumHandler.GetAlbumUploaders)
 
 					// Album user management routes
 					r.Route("/users", func(r chi.Router) {
@@ -396,6 +410,16 @@ func main() {
 		})
 
 		r.Get("/*", handlers.DirectoryHandler(cfg, imageRepo, imageProcessor))
+	})
+
+	// websocket endpoint for realtime updates (authenticated)
+	r.Get("/api/ws", func(w http.ResponseWriter, req *http.Request) {
+		if token := req.URL.Query().Get("token"); token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		handlers.AuthMiddleware(userRepo, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			hub.ServeWS(w, r)
+		})).ServeHTTP(w, req)
 	})
 
 	port := os.Getenv("PORT")

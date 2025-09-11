@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/camden-git/mediasysbackend/database"
@@ -64,6 +65,24 @@ func (r *ImageRepository) EnsureExists(originalPath string, modTime int64) (bool
 		return false, fmt.Errorf("failed to ensure image record for %s: %w", cleanPath, result.Error)
 	}
 
+	return result.RowsAffected > 0, nil
+}
+
+// EnsureExistsWithUploader creates a basic image record if it doesn't exist and sets the uploader
+func (r *ImageRepository) EnsureExistsWithUploader(originalPath string, modTime int64, uploadedBy *uint) (bool, error) {
+	cleanPath := filepath.ToSlash(originalPath)
+	image := models.Image{
+		OriginalPath:     cleanPath,
+		LastModified:     modTime,
+		MetadataStatus:   database.StatusPending,
+		ThumbnailStatus:  database.StatusPending,
+		DetectionStatus:  database.StatusPending,
+		UploadedByUserID: uploadedBy,
+	}
+	result := r.DB.Where(models.Image{OriginalPath: cleanPath}).FirstOrCreate(&image)
+	if result.Error != nil {
+		return false, fmt.Errorf("failed to ensure image record for %s: %w", cleanPath, result.Error)
+	}
 	return result.RowsAffected > 0, nil
 }
 
@@ -299,4 +318,30 @@ func (r *ImageRepository) GetImagesByPaths(originalPaths []string) ([]models.Ima
 		return nil, fmt.Errorf("failed to get images by paths: %w", err)
 	}
 	return images, nil
+}
+
+// GetDistinctUploaderIDsByFolderPrefix returns distinct uploader user IDs for images under a given path prefix
+func (r *ImageRepository) GetDistinctUploaderIDsByFolderPrefix(prefix string) ([]uint, error) {
+	type row struct{ UploadedByUserID *uint }
+	var rows []row
+	like := filepath.ToSlash(prefix)
+	if !strings.HasSuffix(like, "/") {
+		like += "/"
+	}
+	like += "%"
+	err := r.DB.Model(&models.Image{}).
+		Select("uploaded_by_user_id").
+		Where("original_path LIKE ? AND uploaded_by_user_id IS NOT NULL", like).
+		Distinct().
+		Find(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to query distinct uploaders for prefix %s: %w", prefix, err)
+	}
+	ids := make([]uint, 0, len(rows))
+	for _, r := range rows {
+		if r.UploadedByUserID != nil {
+			ids = append(ids, *r.UploadedByUserID)
+		}
+	}
+	return ids, nil
 }

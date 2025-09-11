@@ -8,6 +8,8 @@ type Image struct {
 	OriginalPath string `gorm:"primaryKey" json:"original_path"` // path relative to ROOT_DIRECTORY
 	LastModified int64  `gorm:"not null" json:"last_modified"`
 
+	UploadedByUserID *uint `gorm:"index" json:"uploaded_by_user_id,omitempty"`
+
 	Width        *int     `gorm:"" json:"width,omitempty"`         // Nullable
 	Height       *int     `gorm:"" json:"height,omitempty"`        // Nullable
 	TakenAt      *int64   `gorm:"index" json:"taken_at,omitempty"` // Nullable, Unix timestamp

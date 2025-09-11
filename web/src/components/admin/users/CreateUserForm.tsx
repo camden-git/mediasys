@@ -14,6 +14,8 @@ import { useRoles } from '../../../api/swr/useRoles';
 const UserCreationSchema = Yup.object().shape({
     username: Yup.string().required('Username is required.'),
     password: Yup.string().required('Password is required.').min(8, 'Password must be at least 8 characters.'),
+    first_name: Yup.string().required('First name is required.'),
+    last_name: Yup.string().required('Last name is required.'),
     role_ids: Yup.array().of(Yup.number()),
 });
 
@@ -33,6 +35,8 @@ const CreateUserForm: React.FC<CreateUserFormProps> = ({ isOpen, onClose }) => {
         username: '',
         password: '',
         role_ids: [],
+        first_name: '',
+        last_name: '',
     };
 
     if (!isOpen) return null;
@@ -78,6 +82,20 @@ const CreateUserForm: React.FC<CreateUserFormProps> = ({ isOpen, onClose }) => {
                         <DialogDescription>Create a new user account and assign roles.</DialogDescription>
                         <DialogBody>
                             <FieldGroup>
+                                <FormikFieldComponent
+                                    name='first_name'
+                                    label='First Name'
+                                    type='text'
+                                    disabled={isSubmitting}
+                                    required
+                                />
+                                <FormikFieldComponent
+                                    name='last_name'
+                                    label='Last Name'
+                                    type='text'
+                                    disabled={isSubmitting}
+                                    required
+                                />
                                 <FormikFieldComponent
                                     name='username'
                                     label='Username'

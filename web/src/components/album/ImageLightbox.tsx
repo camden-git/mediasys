@@ -89,6 +89,11 @@ const ImageLightbox: React.FC<ImageLightboxProps> = ({
                 }
                 return;
             }
+            if (event.key.toLowerCase() === 'i') {
+                event.preventDefault();
+                setIsPanelOpen((prev) => !prev);
+                return;
+            }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
@@ -200,7 +205,7 @@ const ImageLightbox: React.FC<ImageLightboxProps> = ({
                                     <XMarkIcon className='h-6 w-6' />
                                 </IconButton>
                             </div>
-                            <div className='relative inline-block max-h-screen max-w-full p-4'>
+                            <div className='relative box-border inline-block h-full max-w-full p-4'>
                                 {!isImageLoaded && (
                                     <div className='absolute inset-0 flex items-center justify-center rounded bg-black/5'>
                                         <svg
@@ -240,7 +245,7 @@ const ImageLightbox: React.FC<ImageLightboxProps> = ({
                                     alt={image.name}
                                     width={image?.width}
                                     height={image?.height}
-                                    className='block max-h-screen max-w-full object-contain'
+                                    className='block max-h-full max-w-full object-contain'
                                 />
                             </div>
                         </motion.div>

@@ -12,6 +12,7 @@ import (
 
 	"github.com/camden-git/mediasysbackend/config"
 	"github.com/camden-git/mediasysbackend/media"
+	"github.com/camden-git/mediasysbackend/realtime"
 	"github.com/camden-git/mediasysbackend/repository"
 	"github.com/camden-git/mediasysbackend/utils"
 	"gocv.io/x/gocv"
@@ -43,6 +44,7 @@ type ImageProcessor struct {
 	StopChan  chan struct{}
 	Pending   map[string]bool
 	Mutex     sync.Mutex
+	Hub       *realtime.Hub
 }
 
 func NewImageProcessor(
@@ -51,6 +53,7 @@ func NewImageProcessor(
 	albumRepo repository.AlbumRepositoryInterface,
 	faceRepo repository.FaceRepositoryInterface,
 	queueSize, numWorkers int,
+	hub *realtime.Hub,
 ) *ImageProcessor {
 	if numWorkers <= 0 {
 		numWorkers = 1
@@ -66,6 +69,7 @@ func NewImageProcessor(
 		FaceRepo:  faceRepo,
 		StopChan:  make(chan struct{}),
 		Pending:   make(map[string]bool),
+		Hub:       hub,
 	}
 	proc.Wg.Add(numWorkers)
 	for i := 0; i < numWorkers; i++ {
@@ -146,6 +150,15 @@ func (ip *ImageProcessor) worker(id int, cfg config.Config) {
 			var entityPath string
 
 			log.Printf("Worker %d: Received job type '%s' for: %s", id, job.TaskType, entityPath)
+			if ip.Hub != nil {
+				ip.Hub.Broadcast(realtime.Event{
+					Type:      "task",
+					Path:      job.OriginalRelativePath,
+					Task:      job.TaskType,
+					Status:    "processing",
+					Timestamp: time.Now().Unix(),
+				})
+			}
 
 			if job.TaskType == TaskAlbumZip {
 				err = ip.AlbumRepo.MarkZipProcessing(uint(job.AlbumID))
@@ -162,6 +175,9 @@ func (ip *ImageProcessor) worker(id int, cfg config.Config) {
 
 			if err != nil {
 				log.Printf("Worker %d: ERROR marking %s processing for %s: %v. Skipping job.", id, job.TaskType, entityPath, err)
+				if ip.Hub != nil {
+					ip.Hub.Broadcast(realtime.Event{Type: "task", Path: job.OriginalRelativePath, Task: job.TaskType, Status: "error", Error: err.Error(), Timestamp: time.Now().Unix()})
+				}
 				ip.Mutex.Lock()
 				delete(ip.Pending, pendingKey)
 				ip.Mutex.Unlock()
@@ -179,6 +195,16 @@ func (ip *ImageProcessor) worker(id int, cfg config.Config) {
 				ip.processAlbumZipTask(job, mediaStore)
 			default:
 				log.Printf("Worker %d: ERROR unknown task type '%s'", id, job.TaskType)
+			}
+
+			if ip.Hub != nil {
+				ip.Hub.Broadcast(realtime.Event{
+					Type:      "task",
+					Path:      job.OriginalRelativePath,
+					Task:      job.TaskType,
+					Status:    "done",
+					Timestamp: time.Now().Unix(),
+				})
 			}
 
 			ip.Mutex.Lock()

@@ -29,6 +29,8 @@ type UserCreatePayload struct {
 	Password          string   `json:"password"`
 	RoleIDs           []uint   `json:"role_ids"`
 	GlobalPermissions []string `json:"global_permissions"`
+	FirstName         string   `json:"first_name"`
+	LastName          string   `json:"last_name"`
 }
 
 type UserUpdatePayload struct {
@@ -36,12 +38,16 @@ type UserUpdatePayload struct {
 	Password          *string   `json:"password,omitempty"`
 	RoleIDs           *[]uint   `json:"role_ids,omitempty"`
 	GlobalPermissions *[]string `json:"global_permissions,omitempty"`
+	FirstName         *string   `json:"first_name,omitempty"`
+	LastName          *string   `json:"last_name,omitempty"`
 }
 
 // UserResponseDTO is a simplified User model for API responses
 type UserResponseDTO struct {
 	ID                uint                         `json:"id"`
 	Username          string                       `json:"username"`
+	FirstName         string                       `json:"first_name"`
+	LastName          string                       `json:"last_name"`
 	Roles             []models.Role                `json:"roles"`
 	GlobalPermissions []string                     `json:"global_permissions"`
 	AlbumPermissions  []models.UserAlbumPermission `json:"album_permissions"`
@@ -63,6 +69,8 @@ func toUserResponseDTO(user *models.User, userAlbumPerms []models.UserAlbumPermi
 	return UserResponseDTO{
 		ID:                user.ID,
 		Username:          user.Username,
+		FirstName:         user.FirstName,
+		LastName:          user.LastName,
 		Roles:             roles,
 		GlobalPermissions: user.GlobalPermissions,
 		AlbumPermissions:  userAlbumPerms,
@@ -161,8 +169,8 @@ func (h *AdminUserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if payload.Username == "" || payload.Password == "" {
-		http.Error(w, "Username and password are required", http.StatusBadRequest)
+	if payload.Username == "" || payload.Password == "" || payload.FirstName == "" || payload.LastName == "" {
+		http.Error(w, "Username, password, first_name, and last_name are required", http.StatusBadRequest)
 		return
 	}
 
@@ -183,6 +191,8 @@ func (h *AdminUserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		Username:          payload.Username,
 		PasswordHash:      string(hashedPassword),
 		GlobalPermissions: payload.GlobalPermissions,
+		FirstName:         payload.FirstName,
+		LastName:          payload.LastName,
 	}
 
 	if len(payload.RoleIDs) > 0 {
@@ -292,6 +302,13 @@ func (h *AdminUserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 			newRoles = append(newRoles, role)
 		}
 		user.Roles = newRoles
+	}
+
+	if payload.FirstName != nil {
+		user.FirstName = *payload.FirstName
+	}
+	if payload.LastName != nil {
+		user.LastName = *payload.LastName
 	}
 
 	if err := h.UserRepo.Update(user); err != nil {

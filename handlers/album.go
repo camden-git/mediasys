@@ -36,6 +36,7 @@ func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 type AlbumHandler struct {
 	AlbumRepo      repository.AlbumRepositoryInterface
 	ImageRepo      repository.ImageRepositoryInterface
+	UserRepo       repository.UserRepository
 	Cfg            config.Config
 	ThumbGen       *workers.ImageProcessor
 	MediaProcessor *media.Processor
@@ -165,7 +166,29 @@ func (ah *AlbumHandler) GetAlbum(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	writeJSON(w, http.StatusOK, album)
+
+	// Build artists list from uploaders
+	var artists []map[string]interface{}
+	if ah.ImageRepo != nil && ah.UserRepo != nil {
+		if ids, err := ah.ImageRepo.GetDistinctUploaderIDsByFolderPrefix(album.FolderPath); err == nil {
+			for _, id := range ids {
+				if u, err := ah.UserRepo.GetByID(id); err == nil && u != nil {
+					artists = append(artists, map[string]interface{}{
+						"id":         u.ID,
+						"username":   u.Username,
+						"first_name": u.FirstName,
+						"last_name":  u.LastName,
+					})
+				}
+			}
+		}
+	}
+
+	type albumWithArtists struct {
+		*models.Album
+		Artists []map[string]interface{} `json:"artists,omitempty"`
+	}
+	writeJSON(w, http.StatusOK, albumWithArtists{Album: album, Artists: artists})
 }
 
 func (ah *AlbumHandler) GetAlbumContents(w http.ResponseWriter, r *http.Request) {

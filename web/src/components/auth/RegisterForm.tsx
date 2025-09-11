@@ -5,6 +5,8 @@ import { useNavigate } from 'react-router-dom';
 export const RegisterForm: React.FC = () => {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
+    const [firstName, setFirstName] = useState('');
+    const [lastName, setLastName] = useState('');
     const [inviteCode, setInviteCode] = useState('');
     const [isRegistering, setIsRegistering] = useState(false);
     const [registrationError, setRegistrationError] = useState<string | null>(null);
@@ -25,7 +27,7 @@ export const RegisterForm: React.FC = () => {
         setRegistrationError(null);
         setRegistrationSuccess(false);
         try {
-            await register({ username, password, invite_code: inviteCode });
+            await register({ username, password, invite_code: inviteCode, first_name: firstName, last_name: lastName });
             setRegistrationSuccess(true);
         } catch (err: any) {
             setRegistrationError(err.message || 'Registration failed. Please try again.');
@@ -47,6 +49,28 @@ export const RegisterForm: React.FC = () => {
         <form onSubmit={handleSubmit}>
             <h2>Register</h2>
             {registrationError && <p style={{ color: 'red' }}>{registrationError}</p>}
+            <div>
+                <label htmlFor='first_name'>First Name:</label>
+                <input
+                    type='text'
+                    id='first_name'
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    required
+                    disabled={isRegistering}
+                />
+            </div>
+            <div>
+                <label htmlFor='last_name'>Last Name:</label>
+                <input
+                    type='text'
+                    id='last_name'
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    required
+                    disabled={isRegistering}
+                />
+            </div>
             <div>
                 <label htmlFor='username'>Username:</label>
                 <input
