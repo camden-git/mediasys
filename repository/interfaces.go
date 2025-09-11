@@ -39,6 +39,7 @@ type PersonRepositoryInterface interface {
 type ImageRepositoryInterface interface {
 	GetByPath(originalPath string) (*models.Image, error)
 	EnsureExists(originalPath string, modTime int64) (bool, error)
+	EnsureExistsWithUploader(originalPath string, modTime int64, uploadedBy *uint) (bool, error)
 	MarkTaskProcessing(originalPath, taskStatusColumn string) error
 	UpdateThumbnailResult(originalPath string, thumbPath *string, modTime int64, taskErr error) error
 	UpdateMetadataResult(originalPath string, meta *media.Metadata, modTime int64, taskErr error) error
@@ -46,6 +47,7 @@ type ImageRepositoryInterface interface {
 	Delete(originalPath string) error
 	GetImagesRequiringProcessing() ([]models.Image, error)
 	GetImagesByPaths(originalPaths []string) ([]models.Image, error)
+	GetDistinctUploaderIDsByFolderPrefix(prefix string) ([]uint, error)
 }
 
 // FaceRepositoryInterface defines the methods for face data operations
@@ -119,7 +121,7 @@ type RoleRepository interface {
 	CreateRoleAlbumPermission(rap *models.RoleAlbumPermission) error
 	GetRoleAlbumPermission(roleID, albumID uint) (*models.RoleAlbumPermission, error)
 	UpdateRoleAlbumPermission(rap *models.RoleAlbumPermission) error
-	DeleteRoleAlbumPermission(roleID, albumID uint) error
+	DeleteRoleAlbumPermission(roleID uint, albumID uint) error
 	GetRoleAlbumPermissions(roleID uint) ([]models.RoleAlbumPermission, error)
 
 	// user-Role Management

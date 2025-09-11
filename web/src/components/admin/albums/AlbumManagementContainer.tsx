@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import LoadingSpinner from '../../elements/LoadingSpinner';
 import { Dialog, DialogActions, DialogDescription, DialogTitle } from '../../elements/Dialog';
 import { Can } from '../../elements/Can';
-import { PlusIcon, PencilIcon, TrashIcon, EyeIcon } from '@heroicons/react/20/solid';
+import { PlusIcon, PencilIcon, TrashIcon } from '@heroicons/react/20/solid';
 import { formatDistanceToNow } from 'date-fns';
 import PageContentBlock from '../../elements/PageContentBlock.tsx';
 
@@ -115,17 +115,9 @@ const AlbumManagementContainer: React.FC = () => {
                             </TableCell>
                             <TableCell>
                                 <div className='flex space-x-2'>
-                                    <Can permission='album.view'>
-                                        <Link
-                                            to={`/admin/albums/${album.id}`}
-                                            className='text-blue-600 hover:text-blue-900'
-                                        >
-                                            <EyeIcon className='h-4 w-4' />
-                                        </Link>
-                                    </Can>
                                     <Can permission='album.edit.general'>
                                         <Link
-                                            to={`/admin/albums/${album.id}/edit`}
+                                            to={`/admin/albums/view/${album.id}`}
                                             className='text-gray-600 hover:text-gray-900'
                                         >
                                             <PencilIcon className='h-4 w-4' />

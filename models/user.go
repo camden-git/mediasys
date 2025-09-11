@@ -10,6 +10,8 @@ import (
 type User struct {
 	ID                uint     `json:"id" gorm:"primaryKey"`
 	Username          string   `json:"username" gorm:"uniqueIndex;not null"`
+	FirstName         string   `json:"first_name"`
+	LastName          string   `json:"last_name"`
 	PasswordHash      string   `json:"-" gorm:"not null"`                            // "-" means don't include in JSON responses
 	GlobalPermissions []string `json:"global_permissions" gorm:"serializer:json"`    // Use JSON serializer
 	Roles             []*Role  `json:"roles,omitempty" gorm:"many2many:user_roles;"` // Roles assigned to the user

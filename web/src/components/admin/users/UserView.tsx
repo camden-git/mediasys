@@ -51,6 +51,11 @@ const UserView: React.FC = () => {
                     <DescriptionTerm>ID</DescriptionTerm>
                     <DescriptionDetails>{user.id}</DescriptionDetails>
 
+                    <DescriptionTerm>Name</DescriptionTerm>
+                    <DescriptionDetails>
+                        {user.first_name} {user.last_name}
+                    </DescriptionDetails>
+
                     <DescriptionTerm>Username</DescriptionTerm>
                     <DescriptionDetails>{user.username}</DescriptionDetails>
 

@@ -61,6 +61,21 @@ export const uploadAlbumBanner = async (id: number, file: File): Promise<AdminAl
     return response.data;
 };
 
+export const uploadAlbumImages = async (
+    id: number,
+    files: Array<{ file: File; relativePath?: string }>,
+): Promise<{ uploaded: number }> => {
+    const formData = new FormData();
+    for (const item of files) {
+        if (item.relativePath) {
+            formData.append('relative_path', item.relativePath);
+        }
+        formData.append('files', item.file, item.relativePath || item.file.name);
+    }
+    const resp = await http.post(`/admin/albums/${id}/upload`, formData);
+    return resp.data;
+};
+
 export const requestAlbumZip = async (id: number): Promise<{ message: string }> => {
     const response = await http.post(`/admin/albums/${id}/zip`);
     return response.data;

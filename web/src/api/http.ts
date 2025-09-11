@@ -7,7 +7,6 @@ const http: AxiosInstance = axios.create({
     timeout: 20000,
     headers: {
         Accept: 'application/json',
-        'Content-Type': 'application/json',
     },
 });
 
@@ -25,6 +24,16 @@ http.interceptors.request.use((req) => {
     // Construct the full URL like the original fetch implementation
     if (req.url && !req.url.startsWith('http')) {
         req.url = `${import.meta.env.VITE_API_URL}${req.url}`;
+    }
+
+    // Ensure multipart form-data requests are not forced to JSON
+    if (req.data instanceof FormData) {
+        // Let the browser set the proper multipart boundary
+        if (req.headers && 'Content-Type' in req.headers) {
+            delete (req.headers as any)['Content-Type'];
+        }
+    } else if (!req.headers['Content-Type']) {
+        req.headers['Content-Type'] = 'application/json';
     }
 
     return req;

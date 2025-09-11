@@ -15,6 +15,7 @@ export interface Album {
     created_at: number;
     updated_at: number;
     is_hidden?: boolean;
+    artists?: { id: number; username: string; first_name?: string; last_name?: string }[];
 }
 
 export interface FileInfo {
@@ -62,6 +63,8 @@ export interface Role {
 export interface User {
     id: number;
     username: string;
+    first_name: string;
+    last_name: string;
     roles?: Role[]; // Optional, might be just role IDs or full Role objects
     global_permissions?: string[];
     // album_permissions: UserAlbumPermission[]; // Likely fetched on demand
@@ -80,6 +83,8 @@ export interface RegisterPayload {
     username: string;
     password: string;
     invite_code: string;
+    first_name: string;
+    last_name: string;
 }
 
 // Response from login or /me endpoint
@@ -207,6 +212,8 @@ export interface UserCreatePayload {
     password?: string;
     role_ids: number[];
     global_permissions?: string[];
+    first_name: string;
+    last_name: string;
 }
 
 export interface UserUpdatePayload {
@@ -214,4 +221,6 @@ export interface UserUpdatePayload {
     password?: string;
     role_ids?: number[];
     global_permissions?: string[];
+    first_name?: string;
+    last_name?: string;
 }

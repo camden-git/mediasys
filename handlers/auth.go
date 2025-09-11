@@ -87,6 +87,8 @@ type RegisterPayload struct {
 	Username   string `json:"username"`
 	Password   string `json:"password"`
 	InviteCode string `json:"invite_code"`
+	FirstName  string `json:"first_name"`
+	LastName   string `json:"last_name"`
 }
 
 // Register handles new user registration using an invitation code
@@ -97,8 +99,8 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if payload.Username == "" || payload.Password == "" || payload.InviteCode == "" {
-		http.Error(w, "Username, password, and invite code are required", http.StatusBadRequest)
+	if payload.Username == "" || payload.Password == "" || payload.InviteCode == "" || payload.FirstName == "" || payload.LastName == "" {
+		http.Error(w, "Username, password, first_name, last_name, and invite code are required", http.StatusBadRequest)
 		return
 	}
 
@@ -115,6 +117,8 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 	newUser := &models.User{
 		Username:          payload.Username,
+		FirstName:         payload.FirstName,
+		LastName:          payload.LastName,
 		GlobalPermissions: []string{},
 	}
 	if err := newUser.SetPassword(payload.Password); err != nil {

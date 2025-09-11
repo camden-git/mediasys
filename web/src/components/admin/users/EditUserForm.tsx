@@ -13,6 +13,8 @@ import { useFlash } from '../../../hooks/useFlash';
 const UserUpdateSchema = Yup.object().shape({
     username: Yup.string().required('Username is required.'),
     password: Yup.string().min(8, 'Password must be at least 8 characters if provided.'),
+    first_name: Yup.string().optional(),
+    last_name: Yup.string().optional(),
     role_ids: Yup.array().of(Yup.number()),
 });
 
@@ -38,6 +40,8 @@ const EditUserForm: React.FC<EditUserFormProps> = ({ isOpen, onClose, user }) =>
     const initialValues: UserUpdatePayload = {
         username: user.username,
         role_ids: user.roles?.map((r) => r.id) || [],
+        first_name: user.first_name,
+        last_name: user.last_name,
     };
 
     if (!isOpen) return null;
@@ -77,11 +81,37 @@ const EditUserForm: React.FC<EditUserFormProps> = ({ isOpen, onClose, user }) =>
             >
                 {({ values, handleChange, handleBlur }) => (
                     <Form>
-                        <DialogTitle>Edit User: {user.username}</DialogTitle>
+                        <DialogTitle>Edit User: {user.first_name} {user.last_name} ({user.username})</DialogTitle>
                         <DialogDescription>Update the user's details and assigned roles.</DialogDescription>
                         <DialogBody>
                             {formMessage && <p style={{ color: 'red', marginBottom: '1rem' }}>{formMessage}</p>}
                             <FieldGroup>
+                                <Field>
+                                    <Label htmlFor='first_name'>First Name</Label>
+                                    <Input
+                                        id='first_name'
+                                        name='first_name'
+                                        type='text'
+                                        value={values.first_name}
+                                        onChange={handleChange}
+                                        onBlur={handleBlur}
+                                        disabled={isSubmitting}
+                                    />
+                                    <ErrorMessage name='first_name' component={FieldErrorMessage} />
+                                </Field>
+                                <Field>
+                                    <Label htmlFor='last_name'>Last Name</Label>
+                                    <Input
+                                        id='last_name'
+                                        name='last_name'
+                                        type='text'
+                                        value={values.last_name}
+                                        onChange={handleChange}
+                                        onBlur={handleBlur}
+                                        disabled={isSubmitting}
+                                    />
+                                    <ErrorMessage name='last_name' component={FieldErrorMessage} />
+                                </Field>
                                 <Field>
                                     <Label htmlFor='username'>Username</Label>
                                     <Input

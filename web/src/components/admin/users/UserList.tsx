@@ -54,6 +54,7 @@ const UserList: React.FC = () => {
                             <Table>
                                 <TableHead>
                                     <TableRow>
+                                        <TableHeader>Name</TableHeader>
                                         <TableHeader>Username</TableHeader>
                                         <TableHeader>Roles</TableHeader>
                                         <TableHeader>Created At</TableHeader>
@@ -65,6 +66,7 @@ const UserList: React.FC = () => {
                                 <TableBody className='divide-y divide-gray-200 dark:divide-zinc-800'>
                                     {users.map((user) => (
                                         <TableRow key={user.id}>
+                                            <TableCell>{`${user.first_name} ${user.last_name}`.trim()}</TableCell>
                                             <TableCell>{user.username}</TableCell>
                                             <TableCell>
                                                 {user.roles?.map((role) => role.name).join(', ') || 'No roles'}

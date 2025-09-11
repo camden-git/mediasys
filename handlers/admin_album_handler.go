@@ -3,16 +3,21 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/camden-git/mediasysbackend/config"
+	"github.com/camden-git/mediasysbackend/media"
 	"github.com/camden-git/mediasysbackend/models"
+	"github.com/camden-git/mediasysbackend/realtime"
 	"github.com/camden-git/mediasysbackend/repository"
+	"github.com/camden-git/mediasysbackend/workers"
 	"github.com/go-chi/chi/v5"
 	"gorm.io/gorm"
 )
@@ -23,6 +28,8 @@ type AdminAlbumHandler struct {
 	UserRepo  repository.UserRepository
 	RoleRepo  repository.RoleRepository
 	Cfg       config.Config
+	ImgProc   *workers.ImageProcessor
+	Hub       *realtime.Hub
 }
 
 func NewAdminAlbumHandler(
@@ -31,6 +38,8 @@ func NewAdminAlbumHandler(
 	userRepo repository.UserRepository,
 	roleRepo repository.RoleRepository,
 	cfg config.Config,
+	imgProc *workers.ImageProcessor,
+	hub *realtime.Hub,
 ) *AdminAlbumHandler {
 	return &AdminAlbumHandler{
 		AlbumRepo: albumRepo,
@@ -38,7 +47,175 @@ func NewAdminAlbumHandler(
 		UserRepo:  userRepo,
 		RoleRepo:  roleRepo,
 		Cfg:       cfg,
+		ImgProc:   imgProc,
+		Hub:       hub,
 	}
+}
+
+// UploadImages handles multipart folder or multiple file uploads into the album's folder and queues processing
+func (h *AdminAlbumHandler) UploadImages(w http.ResponseWriter, r *http.Request) {
+	albumIDStr := chi.URLParam(r, "id")
+	albumID, err := strconv.ParseUint(albumIDStr, 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid album ID"})
+		return
+	}
+
+	album, err := h.AlbumRepo.GetByID(uint(albumID))
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album not found"})
+		} else {
+			log.Printf("Error fetching album %d for upload: %v", albumID, err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to fetch album"})
+		}
+		return
+	}
+
+	if h.ImgProc == nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Image processor not configured"})
+		return
+	}
+
+	reader, err := r.MultipartReader()
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid multipart form: " + err.Error()})
+		return
+	}
+
+	albumBase := filepath.Join(h.Cfg.RootDirectory, album.FolderPath)
+	if err := os.MkdirAll(albumBase, 0755); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to ensure album folder"})
+		return
+	}
+
+	var relPathsQueue []string
+	saved := 0
+	for {
+		part, err := reader.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			log.Printf("UploadImages: error reading part: %v", err)
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Malformed upload data"})
+			return
+		}
+
+		field := part.FormName()
+		if field == "relative_path" {
+			data, _ := io.ReadAll(part)
+			rp := strings.TrimSpace(string(data))
+			rp = filepath.Clean(rp)
+			rp = filepath.ToSlash(rp)
+			// prevent path escape
+			rp = strings.TrimPrefix(rp, "./")
+			rp = strings.TrimPrefix(rp, "/")
+			relPathsQueue = append(relPathsQueue, rp)
+			continue
+		}
+
+		if field != "files" {
+			// ignore unknown fields
+			continue
+		}
+
+		filename := part.FileName()
+		rel := filename
+		if len(relPathsQueue) > 0 {
+			rel = relPathsQueue[0]
+			relPathsQueue = relPathsQueue[1:]
+		}
+		if rel == "" {
+			rel = filename
+		}
+		rel = filepath.Clean(rel)
+		rel = filepath.ToSlash(rel)
+		rel = strings.TrimPrefix(rel, "./")
+		rel = strings.TrimPrefix(rel, "/")
+		// strip top-level folder (e.g., `todo/`) from webkitRelativePath so files land at album root
+		if idx := strings.Index(rel, "/"); idx >= 0 {
+			rel = rel[idx+1:]
+		}
+
+		destPath := filepath.Join(albumBase, rel)
+		// security: ensure inside albumBase
+		if !strings.HasPrefix(filepath.Clean(destPath), filepath.Clean(albumBase)) {
+			log.Printf("UploadImages: blocked path traversal: %s", destPath)
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+			log.Printf("UploadImages: mkdir error for %s: %v", destPath, err)
+			continue
+		}
+
+		out, err := os.Create(destPath)
+		if err != nil {
+			log.Printf("UploadImages: create error for %s: %v", destPath, err)
+			// broadcast error
+			if h.Hub != nil {
+				relFromRoot, _ := filepath.Rel(h.Cfg.RootDirectory, destPath)
+				h.Hub.Broadcast(realtime.Event{Type: "upload", Path: filepath.ToSlash(relFromRoot), Status: "error", Error: err.Error(), Timestamp: time.Now().Unix()})
+			}
+			continue
+		}
+		// compute db key before copy for consistent events
+		relFromRoot, err := filepath.Rel(h.Cfg.RootDirectory, destPath)
+		if err == nil && h.Hub != nil {
+			h.Hub.Broadcast(realtime.Event{Type: "upload", Path: filepath.ToSlash(relFromRoot), Status: "uploading", Timestamp: time.Now().Unix()})
+		}
+
+		if _, err := io.Copy(out, part); err != nil {
+			log.Printf("UploadImages: write error for %s: %v", destPath, err)
+			out.Close()
+			if h.Hub != nil && relFromRoot != "" {
+				h.Hub.Broadcast(realtime.Event{Type: "upload", Path: filepath.ToSlash(relFromRoot), Status: "error", Error: err.Error(), Timestamp: time.Now().Unix()})
+			}
+			continue
+		}
+		out.Close()
+
+		// Ensure DB record and queue processing if raster image
+		// Compute DB key relative to root
+		relFromRoot, err = filepath.Rel(h.Cfg.RootDirectory, destPath)
+		if err != nil {
+			log.Printf("UploadImages: failed to compute relative path for %s: %v", destPath, err)
+			continue
+		}
+		relDBKey := filepath.ToSlash(relFromRoot)
+
+		if h.Hub != nil {
+			h.Hub.Broadcast(realtime.Event{Type: "upload", Path: relDBKey, Status: "uploaded", Timestamp: time.Now().Unix()})
+		}
+
+		info, err := os.Stat(destPath)
+		if err != nil {
+			log.Printf("UploadImages: stat error for %s: %v", destPath, err)
+			continue
+		}
+
+		// Only queue tasks for raster images
+		if media.IsRasterImage(destPath) {
+			var uploadedBy *uint
+			if user, ok := r.Context().Value(UserContextKey).(*models.User); ok && user != nil {
+				uploadedBy = &user.ID
+			}
+			if _, err := h.ImageRepo.EnsureExistsWithUploader(relDBKey, info.ModTime().Unix(), uploadedBy); err != nil {
+				log.Printf("UploadImages: EnsureExists error for %s: %v", relDBKey, err)
+			}
+			baseJob := workers.ImageJob{OriginalImagePath: destPath, OriginalRelativePath: relDBKey, ModTimeUnix: info.ModTime().Unix()}
+			// Queue tasks
+			for _, task := range []string{workers.TaskThumbnail, workers.TaskMetadata, workers.TaskDetection} {
+				job := baseJob
+				job.TaskType = task
+				h.ImgProc.QueueJob(job)
+			}
+		}
+
+		saved++
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"uploaded": saved})
 }
 
 // AdminAlbumResponse represents the admin view of an album with additional fields
@@ -60,6 +237,12 @@ type AdminAlbumResponse struct {
 	UpdatedAt          int64   `json:"updated_at"`
 	IsHidden           bool    `json:"is_hidden"`
 	Location           *string `json:"location,omitempty"`
+	Artists            []struct {
+		ID        uint   `json:"id"`
+		Username  string `json:"username"`
+		FirstName string `json:"first_name"`
+		LastName  string `json:"last_name"`
+	} `json:"artists,omitempty"`
 }
 
 // convertAlbumToAdminResponse converts a models.Album to AdminAlbumResponse
@@ -123,6 +306,19 @@ func (h *AdminAlbumHandler) GetAlbum(w http.ResponseWriter, r *http.Request) {
 	}
 
 	adminAlbum := convertAlbumToAdminResponse(album)
+	// populate artists with names
+	if ids, err := h.ImageRepo.GetDistinctUploaderIDsByFolderPrefix(album.FolderPath); err == nil && len(ids) > 0 {
+		for _, id := range ids {
+			if u, err := h.UserRepo.GetByID(id); err == nil && u != nil {
+				adminAlbum.Artists = append(adminAlbum.Artists, struct {
+					ID        uint   `json:"id"`
+					Username  string `json:"username"`
+					FirstName string `json:"first_name"`
+					LastName  string `json:"last_name"`
+				}{ID: u.ID, Username: u.Username, FirstName: u.FirstName, LastName: u.LastName})
+			}
+		}
+	}
 	writeJSON(w, http.StatusOK, adminAlbum)
 }
 
@@ -343,4 +539,70 @@ func (h *AdminAlbumHandler) DeleteAlbum(w http.ResponseWriter, r *http.Request) 
 	}
 
 	writeJSON(w, http.StatusNoContent, nil)
+}
+
+// GetAlbumUploaders returns distinct users who uploaded images within the album's folder
+func (h *AdminAlbumHandler) GetAlbumUploaders(w http.ResponseWriter, r *http.Request) {
+	albumIDStr := chi.URLParam(r, "id")
+	albumID, err := strconv.ParseUint(albumIDStr, 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid album ID"})
+		return
+	}
+
+	album, err := h.AlbumRepo.GetByID(uint(albumID))
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album not found"})
+		} else {
+			log.Printf("Error fetching album %d for uploaders: %v", albumID, err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to fetch album"})
+		}
+		return
+	}
+
+	// Query distinct uploader IDs from images table where path is under album folder
+	type row struct{ UploadedByUserID *uint }
+	var rows []row
+	likePrefix := album.FolderPath + "/%"
+	if err := h.ImageRepo.(*repository.ImageRepository).DB.Model(&models.Image{}).
+		Select("uploaded_by_user_id").
+		Where("original_path LIKE ? AND uploaded_by_user_id IS NOT NULL", likePrefix).
+		Distinct().
+		Find(&rows).Error; err != nil {
+		log.Printf("Error querying uploaders for album %d: %v", album.ID, err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to fetch uploaders"})
+		return
+	}
+
+	uploaderIDs := make([]uint, 0, len(rows))
+	for _, rrow := range rows {
+		if rrow.UploadedByUserID != nil {
+			uploaderIDs = append(uploaderIDs, *rrow.UploadedByUserID)
+		}
+	}
+	// Deduplicate (Distinct should already, but ensure)
+	idSeen := map[uint]bool{}
+	dedup := make([]uint, 0, len(uploaderIDs))
+	for _, id := range uploaderIDs {
+		if !idSeen[id] {
+			idSeen[id] = true
+			dedup = append(dedup, id)
+		}
+	}
+
+	type UserLite struct {
+		ID       uint   `json:"id"`
+		Username string `json:"username"`
+	}
+
+	users := make([]UserLite, 0, len(dedup))
+	for _, id := range dedup {
+		u, err := h.UserRepo.GetByID(id)
+		if err == nil && u != nil {
+			users = append(users, UserLite{ID: u.ID, Username: u.Username})
+		}
+	}
+
+	writeJSON(w, http.StatusOK, users)
 }
