@@ -45,12 +45,16 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	user, err := h.UserRepo.GetByUsername(payload.Username)
 	if err != nil {
-		http.Error(w, "Invalid username or password", http.StatusUnauthorized)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{"message": "No account matching those credentials could be found."})
 		return
 	}
 
 	if !user.CheckPassword(payload.Password) {
-		http.Error(w, "Invalid username or password", http.StatusUnauthorized)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{"message": "No account matching those credentials could be found."})
 		return
 	}
 

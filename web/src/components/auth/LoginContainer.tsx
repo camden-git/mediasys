@@ -8,25 +8,45 @@ import { Checkbox, CheckboxField } from '../elements/Checkbox.tsx';
 import { Strong, Text, TextLink } from '../elements/Text.tsx';
 import { Button } from '../elements/Button.tsx';
 import { Logo } from '../elements/Logo.tsx';
+import FlashMessageRender from '../elements/FlashMessageRender.tsx';
+import { useFlash } from '../../hooks/useFlash';
 
 export const LoginContainer: React.FC = () => {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [isLoading, setIsLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
+    const [, setError] = useState<string | null>(null);
 
     const login = useStoreActions((actions: any) => actions.auth.login);
     const isAuthenticated = useStoreState((state: any) => state.auth.isAuthenticated);
     const navigate = useNavigate();
+    const { clearFlashes, addFlash } = useFlash();
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsLoading(true);
         setError(null);
+        clearFlashes('auth:login');
         try {
             await login({ username, password });
         } catch (err: any) {
-            setError(err.message || 'Login failed. Please try again.');
+            const status = err?.status;
+            if (status === 401) {
+                addFlash({
+                    key: 'auth:login',
+                    type: 'error',
+                    title: 'Authentication failed',
+                    message: 'No account matching those credentials could be found.',
+                });
+            } else {
+                addFlash({
+                    key: 'auth:login',
+                    type: 'error',
+                    title: 'Error',
+                    message: err?.message || 'Login failed. Please try again.',
+                });
+            }
+            setError(null);
         } finally {
             setIsLoading(false);
         }
@@ -42,7 +62,7 @@ export const LoginContainer: React.FC = () => {
         <form onSubmit={handleSubmit} className='grid w-full max-w-sm grid-cols-1 gap-8'>
             <Logo className='h-6 text-zinc-950 dark:text-white forced-colors:text-[CanvasText]' />
             <Heading>Sign in to your account</Heading>
-            {error && <p style={{ color: 'red' }}>{error}</p>}
+            <FlashMessageRender byKey={'auth:login'} />
 
             <Field>
                 <Label>Email</Label>

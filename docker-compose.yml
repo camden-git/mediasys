@@ -1,0 +1,39 @@
+version: "3.8"
+
+services:
+  mediasysbackend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mediasysbackend:local
+    container_name: mediasysbackend
+    ports:
+      - "8080:8080"
+    environment:
+      ROOT_DIRECTORY: /data
+      MEDIA_STORAGE_PATH: /data/media_storage
+      DATABASE_PATH: /data/db/images.db
+      THUMBNAILS_SUBDIR: thumbnails
+      BANNERS_SUBDIR: album_banners
+      ARCHIVES_SUBDIR: album_archives
+      FACE_DNN_CONFIG_PATH: /data/models/deploy.prototxt
+      FACE_DNN_MODEL_PATH: /data/models/res10_300x300_ssd_iter_140000_fp16.caffemodel
+      RETINAFACE_MODEL_PATH: /data/models/retinaface.onnx
+      FACE_RECOGNITION_MODEL_PATH: /data/models/arcface.onnx
+      FACE_RECOGNITION_MODEL_NAME: arcface
+      FACE_RECOGNITION_ENABLED: "true"
+      PORT: "8080"
+    volumes:
+      # Map your host folders here
+      - ./data:/data
+      # Or, individually:
+      # - /path/to/your/media:/data
+      # - /path/to/your/models:/data/models
+      # - /path/to/your/db:/data/db
+    # Uncomment to enable NVIDIA GPU if available (requires nvidia-container-runtime)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - capabilities: ["gpu"]
+    # runtime: nvidia
