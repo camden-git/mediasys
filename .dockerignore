@@ -1,0 +1,31 @@
+# Build and VCS
+.git
+.gitignore
+Dockerfile
+readme.md
+LICENSE
+
+# Go
+**/*.test
+build
+bin
+dist
+vendor
+
+# Local data
+*.db
+data
+generated_thumbnails
+media_storage
+thumbnails.db
+
+# Editor/OS
+*.swp
+*.swo
+*.DS_Store
+.idea
+.vscode
+
+# Web frontend
+web/node_modules
+web/dist

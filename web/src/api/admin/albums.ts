@@ -76,6 +76,58 @@ export const uploadAlbumImages = async (
     return resp.data;
 };
 
+export interface UploadAlbumImagesBatchOptions {
+    batchSize?: number; // number of files per request
+    concurrency?: number; // number of parallel requests
+    requestTimeoutMs?: number; // per-request timeout; default disables timeout for large uploads
+}
+
+export const uploadAlbumImagesBatched = async (
+    id: number,
+    files: Array<{ file: File; relativePath?: string }>,
+    options: UploadAlbumImagesBatchOptions = {},
+): Promise<{ uploaded: number }> => {
+    const batchSize = options.batchSize ?? 5;
+    const concurrency = Math.max(1, options.concurrency ?? 3);
+    const requestTimeoutMs = options.requestTimeoutMs ?? 0; // 0 = no timeout
+
+    const batches: Array<Array<{ file: File; relativePath?: string }>> = [];
+    for (let i = 0; i < files.length; i += batchSize) {
+        batches.push(files.slice(i, i + batchSize));
+    }
+
+    let uploadedTotal = 0;
+    let nextBatchIndex = 0;
+
+    const runOne = async () => {
+        while (true) {
+            const myIndex = nextBatchIndex++;
+            if (myIndex >= batches.length) return;
+            const batch = batches[myIndex];
+
+            const formData = new FormData();
+            for (const item of batch) {
+                if (item.relativePath) {
+                    formData.append('relative_path', item.relativePath);
+                }
+                formData.append('files', item.file, item.relativePath || item.file.name);
+            }
+            const resp = await http.post(`/admin/albums/${id}/upload`, formData, {
+                timeout: requestTimeoutMs,
+            });
+            uploadedTotal += resp.data?.uploaded ?? 0;
+        }
+    };
+
+    const workers: Promise<void>[] = [];
+    for (let i = 0; i < concurrency; i++) {
+        workers.push(runOne());
+    }
+    await Promise.all(workers);
+
+    return { uploaded: uploadedTotal };
+};
+
 export const requestAlbumZip = async (id: number): Promise<{ message: string }> => {
     const response = await http.post(`/admin/albums/${id}/zip`);
     return response.data;

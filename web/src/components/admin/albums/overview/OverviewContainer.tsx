@@ -4,7 +4,7 @@ import { getBannerUrl } from '../../../../api.ts';
 import { Heading } from '../../../elements/Heading.tsx';
 import { CameraIcon, MapPinIcon, PhotoIcon } from '@heroicons/react/16/solid';
 import { Button } from '../../../elements/Button';
-import { uploadAlbumImages } from '../../../../api/admin/albums';
+import { uploadAlbumImagesBatched } from '../../../../api/admin/albums';
 
 const OverviewContainer: React.FC = () => {
     const album = useStoreState((state) => state.albumContext.data!);
@@ -19,15 +19,15 @@ const OverviewContainer: React.FC = () => {
     const [items, setItems] = React.useState<Record<string, ItemState>>({});
     const [isUploading, setIsUploading] = React.useState(false);
     const fileInputRef = React.useRef<HTMLInputElement>(null);
-    const apiUrl = (import.meta as any).env.VITE_API_URL as string;
+    const apiUrl = (import.meta as any).env.VITE_API_URL as string | undefined;
     const authToken = localStorage.getItem('authToken');
 
     React.useEffect(() => {
         try {
-            const httpUrl = new URL(apiUrl);
-            const wsProtocol = httpUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+            const base = apiUrl && apiUrl.startsWith('http') ? new URL(apiUrl) : new URL(window.location.href);
+            const wsProtocol = base.protocol === 'https:' ? 'wss:' : 'ws:';
             const tokenQuery = authToken ? `?token=${encodeURIComponent(authToken)}` : '';
-            const wsUrl = `${wsProtocol}//${httpUrl.host}/api/ws${tokenQuery}`;
+            const wsUrl = `${wsProtocol}//${base.host}/api/ws${tokenQuery}`;
             const ws = new WebSocket(wsUrl);
             ws.onmessage = (e) => {
                 try {
@@ -67,21 +67,26 @@ const OverviewContainer: React.FC = () => {
                         next[rel] = current;
                         return next;
                     });
-                } catch {}
+                } catch (err) {
+                    if ((import.meta as any).env.DEV) console.warn('Failed to parse websocket message', err);
+                }
             };
             return () => ws.close();
-        } catch {
-            // ignore bad URL
+        } catch (err) {
+            if ((import.meta as any).env.DEV) console.warn('Invalid websocket base URL', apiUrl, err);
         }
-    }, [apiUrl]);
+    }, [apiUrl, authToken]);
 
     const handleFolderChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files;
         if (!files || files.length === 0) return;
         setIsUploading(true);
         try {
-            const items = Array.from(files).map((f) => ({ file: f, relativePath: (f as any).webkitRelativePath || f.name }));
-            await uploadAlbumImages(album.id, items);
+            const items = Array.from(files).map((f) => ({
+                file: f,
+                relativePath: (f as any).webkitRelativePath || f.name,
+            }));
+            await uploadAlbumImagesBatched(album.id, items, { batchSize:    5, concurrency: 3, requestTimeoutMs: 0 });
         } finally {
             setIsUploading(false);
             if (fileInputRef.current) fileInputRef.current.value = '';
@@ -119,11 +124,12 @@ const OverviewContainer: React.FC = () => {
                             {album.artists && album.artists.length > 0 && (
                                 <div className='flex items-center gap-1.5'>
                                     <CameraIcon className='size-4 text-gray-950/40' />
-                                    {album.artists.map((u) =>
-                                        u.first_name || u.last_name
-                                            ? `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim()
-                                            : u.username,
-                                    )
+                                    {album.artists
+                                        .map((u) =>
+                                            u.first_name || u.last_name
+                                                ? `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim()
+                                                : u.username,
+                                        )
                                         .join(', ')}
                                 </div>
                             )}
@@ -183,12 +189,25 @@ const OverviewContainer: React.FC = () => {
                                     metadata: 'Extracting metadata',
                                     detection: 'Detecting faces',
                                 };
-                                const currentLabel = it.currentTask ? labelMap[it.currentTask] || it.currentTask : doneCount === totalTasks ? 'Completed' : it.uploaded ? 'Queued for processing' : '';
+                                let currentLabel = '';
+                                if (it.currentTask) {
+                                    currentLabel = labelMap[it.currentTask] || it.currentTask;
+                                } else if (doneCount === totalTasks) {
+                                    currentLabel = 'Completed';
+                                } else if (it.uploaded) {
+                                    currentLabel = 'Queued for processing';
+                                }
                                 return (
                                     <div key={it.path} className='mb-3 last:mb-0'>
                                         <div className='mb-1 flex items-center justify-between gap-2'>
-                                            <div className='truncate font-mono'>{it.path.replace(album.folder_path + '/', '')}</div>
-                                            <div className={`text-[10px] ${hadError ? 'text-red-600' : 'text-gray-500'}`}>{hadError ? 'Error' : currentLabel}</div>
+                                            <div className='truncate font-mono'>
+                                                {it.path.replace(album.folder_path + '/', '')}
+                                            </div>
+                                            <div
+                                                className={`text-[10px] ${hadError ? 'text-red-600' : 'text-gray-500'}`}
+                                            >
+                                                {hadError ? 'Error' : currentLabel}
+                                            </div>
                                         </div>
                                         <div className='h-2 w-full overflow-hidden rounded bg-gray-200'>
                                             <div
