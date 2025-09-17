@@ -4,6 +4,8 @@ import (
 	"image"
 	"log"
 	"math"
+    "os"
+    "strconv"
 
 	"gocv.io/x/gocv"
 )
@@ -92,26 +94,41 @@ func NewRetinaFaceDetector(modelPath string) *RetinaFaceDetector {
 		return &RetinaFaceDetector{Enabled: false}
 	}
 
-	log.Printf("detection(retinaface): successfully loaded RetinaFace model")
+    log.Printf("detection(retinaface): successfully loaded RetinaFace model")
 
-	// Try to use CUDA if available
-	cudaBackendErr := net.SetPreferableBackend(gocv.NetBackendCUDA)
-	cudaTargetErr := net.SetPreferableTarget(gocv.NetTargetCUDA)
+    cudaEnabled := true
+    if val := os.Getenv("CUDA_ENABLED"); val != "" {
+        if parsed, err := strconv.ParseBool(val); err == nil {
+            cudaEnabled = parsed
+        } else {
+            log.Printf("detection(retinaface): Invalid CUDA_ENABLED value '%s'; defaulting to true", val)
+        }
+    }
 
-	if cudaBackendErr == nil && cudaTargetErr == nil {
-		log.Println("detection(retinaface): Set backend/target to CUDA")
-	} else {
-		if cudaBackendErr != nil {
-			log.Printf("detection(retinaface): CUDA Backend not available: %v. Using default backend.", cudaBackendErr)
-		}
-		if cudaTargetErr != nil {
-			log.Printf("detection(retinaface): CUDA Target not available: %v. Using default target.", cudaTargetErr)
-		}
+    if cudaEnabled {
+        // Try to use CUDA if available
+        cudaBackendErr := net.SetPreferableBackend(gocv.NetBackendCUDA)
+        cudaTargetErr := net.SetPreferableTarget(gocv.NetTargetCUDA)
 
-		net.SetPreferableBackend(gocv.NetBackendDefault)
-		net.SetPreferableTarget(gocv.NetTargetCPU)
-		log.Println("detection(retinaface): Set backend/target to CPU (Default)")
-	}
+        if cudaBackendErr == nil && cudaTargetErr == nil {
+            log.Println("detection(retinaface): Set backend/target to CUDA")
+        } else {
+            if cudaBackendErr != nil {
+                log.Printf("detection(retinaface): CUDA Backend not available: %v. Using default backend.", cudaBackendErr)
+            }
+            if cudaTargetErr != nil {
+                log.Printf("detection(retinaface): CUDA Target not available: %v. Using default target.", cudaTargetErr)
+            }
+
+            net.SetPreferableBackend(gocv.NetBackendDefault)
+            net.SetPreferableTarget(gocv.NetTargetCPU)
+            log.Println("detection(retinaface): Set backend/target to CPU (Default)")
+        }
+    } else {
+        net.SetPreferableBackend(gocv.NetBackendDefault)
+        net.SetPreferableTarget(gocv.NetTargetCPU)
+        log.Println("detection(retinaface): CUDA disabled via env; set backend/target to CPU")
+    }
 
 	return &RetinaFaceDetector{
 		Net:           net,
