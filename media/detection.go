@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"image"
 	"log"
+    "os"
+    "strconv"
 
 	"gocv.io/x/gocv"
 )
@@ -41,25 +43,40 @@ func NewDNNFaceDetector(configPath, modelPath string) *DNNFaceDetector {
 		log.Printf("detection(dnn): ERROR loading network model: config=%s, model=%s", configPath, modelPath)
 		return &DNNFaceDetector{Enabled: false}
 	}
-	log.Printf("detection(dnn): successfully loaded face detection model")
+    log.Printf("detection(dnn): successfully loaded face detection model")
 
-	cudaBackendErr := net.SetPreferableBackend(gocv.NetBackendCUDA)
-	cudaTargetErr := net.SetPreferableTarget(gocv.NetTargetCUDA)
+    cudaEnabled := true
+    if val := os.Getenv("CUDA_ENABLED"); val != "" {
+        if parsed, err := strconv.ParseBool(val); err == nil {
+            cudaEnabled = parsed
+        } else {
+            log.Printf("detection(dnn): Invalid CUDA_ENABLED value '%s'; defaulting to true", val)
+        }
+    }
 
-	if cudaBackendErr == nil && cudaTargetErr == nil {
-		log.Println("detection(dnn): Set backend/target to CUDA")
-	} else {
-		if cudaBackendErr != nil {
-			log.Printf("detection(dnn): CUDA Backend not available or failed: %v. Using default backend.", cudaBackendErr)
-		}
-		if cudaTargetErr != nil {
-			log.Printf("detection(dnn): CUDA Target not available or failed: %v. Using default target.", cudaTargetErr)
-		}
+    if cudaEnabled {
+        cudaBackendErr := net.SetPreferableBackend(gocv.NetBackendCUDA)
+        cudaTargetErr := net.SetPreferableTarget(gocv.NetTargetCUDA)
 
-		net.SetPreferableBackend(gocv.NetBackendDefault) // or gocv.NetBackendOpenCV
-		net.SetPreferableTarget(gocv.NetTargetCPU)
-		log.Println("detection(dnn): Set backend/target to CPU (Default)")
-	}
+        if cudaBackendErr == nil && cudaTargetErr == nil {
+            log.Println("detection(dnn): Set backend/target to CUDA")
+        } else {
+            if cudaBackendErr != nil {
+                log.Printf("detection(dnn): CUDA Backend not available or failed: %v. Using default backend.", cudaBackendErr)
+            }
+            if cudaTargetErr != nil {
+                log.Printf("detection(dnn): CUDA Target not available or failed: %v. Using default target.", cudaTargetErr)
+            }
+
+            net.SetPreferableBackend(gocv.NetBackendDefault) // or gocv.NetBackendOpenCV
+            net.SetPreferableTarget(gocv.NetTargetCPU)
+            log.Println("detection(dnn): Set backend/target to CPU (Default)")
+        }
+    } else {
+        net.SetPreferableBackend(gocv.NetBackendDefault)
+        net.SetPreferableTarget(gocv.NetTargetCPU)
+        log.Println("detection(dnn): CUDA disabled via env; set backend/target to CPU")
+    }
 
 	return &DNNFaceDetector{
 		Net:           net,

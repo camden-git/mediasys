@@ -5,6 +5,7 @@ import (
 	"log"
 	"math"
 	"os"
+    "strconv"
 
 	"gocv.io/x/gocv"
 )
@@ -44,26 +45,41 @@ func NewFaceRecognitionModel(modelPath string, modelName string) *FaceRecognitio
 		return &FaceRecognitionModel{Enabled: false}
 	}
 
-	log.Printf("recognition: successfully loaded %s model", modelName)
+    log.Printf("recognition: successfully loaded %s model", modelName)
 
-	// Try to use CUDA if available
-	cudaBackendErr := net.SetPreferableBackend(gocv.NetBackendCUDA)
-	cudaTargetErr := net.SetPreferableTarget(gocv.NetTargetCUDA)
+    cudaEnabled := true
+    if val := os.Getenv("CUDA_ENABLED"); val != "" {
+        if parsed, err := strconv.ParseBool(val); err == nil {
+            cudaEnabled = parsed
+        } else {
+            log.Printf("recognition: Invalid CUDA_ENABLED value '%s'; defaulting to true", val)
+        }
+    }
 
-	if cudaBackendErr == nil && cudaTargetErr == nil {
-		log.Printf("recognition: Set backend/target to CUDA for %s", modelName)
-	} else {
-		if cudaBackendErr != nil {
-			log.Printf("recognition: CUDA Backend not available for %s: %v. Using default backend.", modelName, cudaBackendErr)
-		}
-		if cudaTargetErr != nil {
-			log.Printf("recognition: CUDA Target not available for %s: %v. Using default target.", modelName, cudaTargetErr)
-		}
+    if cudaEnabled {
+        // Try to use CUDA if available
+        cudaBackendErr := net.SetPreferableBackend(gocv.NetBackendCUDA)
+        cudaTargetErr := net.SetPreferableTarget(gocv.NetTargetCUDA)
 
-		net.SetPreferableBackend(gocv.NetBackendDefault)
-		net.SetPreferableTarget(gocv.NetTargetCPU)
-		log.Printf("recognition: Set backend/target to CPU (Default) for %s", modelName)
-	}
+        if cudaBackendErr == nil && cudaTargetErr == nil {
+            log.Printf("recognition: Set backend/target to CUDA for %s", modelName)
+        } else {
+            if cudaBackendErr != nil {
+                log.Printf("recognition: CUDA Backend not available for %s: %v. Using default backend.", modelName, cudaBackendErr)
+            }
+            if cudaTargetErr != nil {
+                log.Printf("recognition: CUDA Target not available for %s: %v. Using default target.", modelName, cudaTargetErr)
+            }
+
+            net.SetPreferableBackend(gocv.NetBackendDefault)
+            net.SetPreferableTarget(gocv.NetTargetCPU)
+            log.Printf("recognition: Set backend/target to CPU (Default) for %s", modelName)
+        }
+    } else {
+        net.SetPreferableBackend(gocv.NetBackendDefault)
+        net.SetPreferableTarget(gocv.NetTargetCPU)
+        log.Printf("recognition: CUDA disabled via env; set backend/target to CPU for %s", modelName)
+    }
 
 	// Set model-specific parameters
 	var inputSizeW, inputSizeH int
