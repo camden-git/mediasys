@@ -606,3 +606,136 @@ func (h *AdminAlbumHandler) GetAlbumUploaders(w http.ResponseWriter, r *http.Req
 
 	writeJSON(w, http.StatusOK, users)
 }
+
+// ListAlbumImages lists files within the album folder for admin, including metadata and thumbnail info
+func (h *AdminAlbumHandler) ListAlbumImages(w http.ResponseWriter, r *http.Request) {
+	albumIDStr := chi.URLParam(r, "id")
+	albumID, err := strconv.ParseUint(albumIDStr, 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid album ID"})
+		return
+	}
+
+	album, err := h.AlbumRepo.GetByID(uint(albumID))
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album not found"})
+		} else {
+			log.Printf("Error getting album %d for image listing: %v", albumID, err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve album"})
+		}
+		return
+	}
+
+	albumFullPath := filepath.Join(h.Cfg.RootDirectory, album.FolderPath)
+	albumFullPath = filepath.Clean(albumFullPath)
+	if !strings.HasPrefix(albumFullPath, h.Cfg.RootDirectory) {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Album configuration error"})
+		return
+	}
+
+	files, err := listDirectoryContents(albumFullPath, "/"+album.FolderPath, h.Cfg, h.ImageRepo, h.ImgProc, album.SortOrder)
+	if err != nil {
+		if os.IsNotExist(err) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album folder not found on disk: " + album.FolderPath})
+		} else if os.IsPermission(err) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "Permission denied accessing album folder"})
+		} else {
+			log.Printf("Error listing contents for album %d (%s): %v", album.ID, album.FolderPath, err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to list album contents"})
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, DirectoryListing{Path: "/" + album.FolderPath, Files: files})
+}
+
+// DeleteAlbumImage deletes a single image file within an album and removes DB records and generated assets
+func (h *AdminAlbumHandler) DeleteAlbumImage(w http.ResponseWriter, r *http.Request) {
+	albumIDStr := chi.URLParam(r, "id")
+	albumID, err := strconv.ParseUint(albumIDStr, 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid album ID"})
+		return
+	}
+
+	album, err := h.AlbumRepo.GetByID(uint(albumID))
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album not found"})
+		} else {
+			log.Printf("Error getting album %d for image delete: %v", albumID, err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve album"})
+		}
+		return
+	}
+
+	relPath := r.URL.Query().Get("path")
+	if relPath == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Missing 'path' query parameter"})
+		return
+	}
+	// Normalize to forward slashes and strip any leading slash
+	relPath = filepath.ToSlash(strings.TrimPrefix(relPath, "/"))
+	// Security: ensure the path is under the album folder
+	if !(relPath == album.FolderPath || strings.HasPrefix(relPath, album.FolderPath+"/")) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "Image path is not within the specified album"})
+		return
+	}
+
+	// Try to get image DB record to find generated thumbnail path
+	var existingThumbPath *string
+	if img, err := h.ImageRepo.GetByPath(relPath); err == nil && img != nil {
+		existingThumbPath = img.ThumbnailPath
+	}
+
+	// Delete the original file from disk
+	fullPath := filepath.Join(h.Cfg.RootDirectory, relPath)
+	if err := os.Remove(fullPath); err != nil && !os.IsNotExist(err) {
+		log.Printf("Error deleting original image '%s': %v", fullPath, err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to delete original image"})
+		return
+	}
+
+	// Best-effort delete of generated thumbnail asset if known
+	if existingThumbPath != nil && *existingThumbPath != "" {
+		thumbFull := filepath.Join(h.Cfg.MediaStoragePath, filepath.FromSlash(*existingThumbPath))
+		if err := os.Remove(thumbFull); err != nil && !os.IsNotExist(err) {
+			log.Printf("Warning: failed to delete thumbnail asset '%s': %v", thumbFull, err)
+		}
+	}
+
+	// Delete DB records: image row, faces and embeddings for this image using GORM and a transaction
+	if repo, ok := h.ImageRepo.(*repository.ImageRepository); ok && repo != nil {
+		if err := repo.DB.Transaction(func(tx *gorm.DB) error {
+			var faceIDs []uint
+			if err := tx.Model(&models.Face{}).Where("image_path = ?", relPath).Pluck("id", &faceIDs).Error; err != nil {
+				return err
+			}
+			if len(faceIDs) > 0 {
+				if err := tx.Where("face_id IN ?", faceIDs).Delete(&models.FaceEmbedding{}).Error; err != nil {
+					return err
+				}
+			}
+			if err := tx.Where("image_path = ?", relPath).Delete(&models.Face{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("original_path = ?", relPath).Delete(&models.Image{}).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+			return nil
+		}); err != nil {
+			log.Printf("Error deleting image and related records for %s: %v", relPath, err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to delete image record"})
+			return
+		}
+	} else {
+		if err := h.ImageRepo.Delete(relPath); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Printf("Error deleting image DB record %s: %v", relPath, err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to delete image record"})
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusNoContent, nil)
+}

@@ -136,7 +136,7 @@ func main() {
 		ImageRepo:      imageRepo,
 		ImageProcessor: imageProcessor,
 	}
-	authHandler := handlers.NewAuthHandler(userRepo, inviteCodeRepo) // Pass inviteCodeRepo
+	authHandler := handlers.NewAuthHandler(userRepo, inviteCodeRepo, cfg)
 	permissionsHandler := handlers.NewPermissionsHandler()
 	adminUserHandler := handlers.NewAdminUserHandler(userRepo, roleRepo)
 	adminRoleHandler := handlers.NewAdminRoleHandler(roleRepo)
@@ -300,6 +300,14 @@ func main() {
 					}).Post("/upload", adminAlbumHandler.UploadImages)
 
 					r.With(func(next http.Handler) http.Handler {
+						return handlers.RequireGlobalPermission("album.list", next)
+					}).Get("/images", adminAlbumHandler.ListAlbumImages)
+
+					r.With(func(next http.Handler) http.Handler {
+						return handlers.RequireGlobalPermission("album.edit.general", next)
+					}).Delete("/images", adminAlbumHandler.DeleteAlbumImage)
+
+					r.With(func(next http.Handler) http.Handler {
 						return handlers.RequireGlobalPermission("album.edit.general", next)
 					}).Post("/zip", albumHandler.RequestAlbumZipGeneration)
 
@@ -345,6 +353,12 @@ func main() {
 				r.Get("/", albumHandler.GetAlbum)
 				r.Get("/contents", albumHandler.GetAlbumContents)
 				r.Get("/zip", albumHandler.DownloadAlbumZip)
+			})
+		})
+
+		r.Route("/share", func(r chi.Router) {
+			r.Route("/albums", func(r chi.Router) {
+				r.Get("/{album_identifier}", albumHandler.ShareAlbumHTML)
 			})
 		})
 

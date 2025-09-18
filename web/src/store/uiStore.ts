@@ -30,11 +30,14 @@ const uiStore: UIStore = {
     clearAndAddHttpError: action((state, { error, key }) => {
         state.flashes = state.flashes.filter((flash) => flash.key !== key);
 
+        const errorsArr = (error as any)?.errors as Array<{ detail?: string }> | undefined;
+        const detail = Array.isArray(errorsArr) && errorsArr[0]?.detail ? errorsArr[0].detail : undefined;
+
         state.flashes.push({
             key,
             type: 'error',
             title: 'Error',
-            message: error.message || 'An error occurred',
+            message: detail || error.message || 'An error occurred',
         });
     }),
 };

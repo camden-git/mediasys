@@ -93,7 +93,7 @@ export const CreateInviteCodeForm: React.FC = () => {
                     {({ isSubmitting: formikSubmitting }) => (
                         <Form>
                             <DialogTitle>Create Invite Code</DialogTitle>
-                            <DialogDescription>Invite codes are required for users to register</DialogDescription>
+                            <DialogDescription>Invite codes are 6-digit PINs required for users to register.</DialogDescription>
                             <DialogBody>
                                 <FieldGroup>
                                     <FormikFieldComponent

@@ -54,6 +54,10 @@ type Config struct {
 	// face recognition settings
 	FaceRecognitionThreshold float64 // similarity threshold for face matching
 	FaceRecognitionEnabled   bool    // whether to enable face recognition
+
+	// Cloudflare Turnstile
+	TurnstileSiteKey   string
+	TurnstileSecretKey string
 }
 
 func getEnvOrDefault(key, defaultValue string) string {
@@ -145,6 +149,10 @@ func LoadConfig() (Config, error) {
 	faceRecognitionThreshold := getEnvFloatOrDefault("FACE_RECOGNITION_THRESHOLD", 0.6)
 	faceRecognitionEnabled := getEnvBoolOrDefault("FACE_RECOGNITION_ENABLED", true)
 
+	// Cloudflare Turnstile
+	turnstileSiteKey := getEnvOrDefault("TURNSTILE_SITE_KEY", "")
+	turnstileSecretKey := getEnvOrDefault("TURNSTILE_SECRET_KEY", "")
+
 	cfg := Config{
 		RootDirectory:            absRoot,
 		DatabasePath:             dbPath,
@@ -162,6 +170,8 @@ func LoadConfig() (Config, error) {
 		FaceRecognitionModelName: faceRecognitionModelName,
 		FaceRecognitionThreshold: faceRecognitionThreshold,
 		FaceRecognitionEnabled:   faceRecognitionEnabled,
+		TurnstileSiteKey:         turnstileSiteKey,
+		TurnstileSecretKey:       turnstileSecretKey,
 	}
 
 	return cfg, nil

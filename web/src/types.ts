@@ -76,6 +76,7 @@ export interface User {
 export interface LoginPayload {
     username: string;
     password: string;
+    turnstile_token?: string;
 }
 
 // For register API

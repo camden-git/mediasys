@@ -59,7 +59,16 @@ const CreateAlbumForm: React.FC = () => {
                     setSubmitting(false);
                 }}
             >
-                {({ values, handleChange, handleBlur, setFieldValue, isSubmitting, errors, touched }) => (
+                {({
+                    values,
+                    handleChange,
+                    handleBlur,
+                    setFieldValue,
+                    setFieldTouched,
+                    isSubmitting,
+                    errors,
+                    touched,
+                }) => (
                     <Form className='space-y-6'>
                         <FieldGroup>
                             <Field>
@@ -165,10 +174,9 @@ const CreateAlbumForm: React.FC = () => {
                                 <div className='flex items-center space-x-2'>
                                     <Checkbox
                                         id='is_hidden'
-                                        name='is_hidden'
                                         checked={values.is_hidden}
-                                        onChange={handleChange}
-                                        onBlur={handleBlur}
+                                        onChange={(checked: boolean) => setFieldValue('is_hidden', checked)}
+                                        onBlur={() => setFieldTouched('is_hidden', true)}
                                     />
                                     <Label htmlFor='is_hidden'>Hide this album from regular users</Label>
                                 </div>

@@ -22,6 +22,7 @@ services:
       FACE_RECOGNITION_MODEL_PATH: /data/models/arcface.onnx
       FACE_RECOGNITION_MODEL_NAME: arcface
       FACE_RECOGNITION_ENABLED: "true"
+      CUDA_ENABLED: "false"
       PORT: "8080"
     volumes:
       # Map your host folders here
@@ -37,3 +38,4 @@ services:
     #       devices:
     #         - capabilities: ["gpu"]
     # runtime: nvidia
+
