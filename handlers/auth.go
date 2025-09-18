@@ -3,9 +3,13 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
+	"github.com/camden-git/mediasysbackend/config"
 	"github.com/camden-git/mediasysbackend/models"
 	"github.com/camden-git/mediasysbackend/repository"
 	"github.com/golang-jwt/jwt/v5"
@@ -19,15 +23,17 @@ const jwtExpirationHours = 24
 type AuthHandler struct {
 	UserRepo       repository.UserRepository
 	InviteCodeRepo repository.InviteCodeRepository
+	Cfg            config.Config
 }
 
-func NewAuthHandler(userRepo repository.UserRepository, inviteCodeRepo repository.InviteCodeRepository) *AuthHandler {
-	return &AuthHandler{UserRepo: userRepo, InviteCodeRepo: inviteCodeRepo}
+func NewAuthHandler(userRepo repository.UserRepository, inviteCodeRepo repository.InviteCodeRepository, cfg config.Config) *AuthHandler {
+	return &AuthHandler{UserRepo: userRepo, InviteCodeRepo: inviteCodeRepo, Cfg: cfg}
 }
 
 type LoginPayload struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
+	Username       string `json:"username"`
+	Password       string `json:"password"`
+	TurnstileToken string `json:"turnstile_token"`
 }
 
 type LoginResponse struct {
@@ -39,22 +45,37 @@ type LoginResponse struct {
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var payload LoginPayload
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		WriteAPIError(w, http.StatusBadRequest, "InvalidPayloadException", "Invalid request payload")
 		return
+	}
+
+	// If Turnstile is configured, verify the token before proceeding
+	if strings.TrimSpace(h.Cfg.TurnstileSecretKey) != "" {
+		if strings.TrimSpace(payload.TurnstileToken) == "" {
+			WriteAPIError(w, http.StatusBadRequest, "TurnstileVerificationException", "Turnstile verification token is required")
+			return
+		}
+
+		clientIP := getClientIP(r)
+		ok, verr := verifyTurnstile(h.Cfg.TurnstileSecretKey, payload.TurnstileToken, clientIP)
+		if verr != nil {
+			WriteAPIError(w, http.StatusBadGateway, "TurnstileVerificationException", "Failed to verify Turnstile token")
+			return
+		}
+		if !ok {
+			WriteAPIError(w, http.StatusForbidden, "TurnstileVerificationException", "Turnstile verification failed")
+			return
+		}
 	}
 
 	user, err := h.UserRepo.GetByUsername(payload.Username)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnauthorized)
-		json.NewEncoder(w).Encode(map[string]string{"message": "No account matching those credentials could be found."})
+		WriteAPIError(w, http.StatusUnauthorized, "DisplayException", "No account matching those credentials could be found.")
 		return
 	}
 
 	if !user.CheckPassword(payload.Password) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnauthorized)
-		json.NewEncoder(w).Encode(map[string]string{"message": "No account matching those credentials could be found."})
+		WriteAPIError(w, http.StatusUnauthorized, "DisplayException", "No account matching those credentials could be found.")
 		return
 	}
 
@@ -69,7 +90,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	tokenString, err := token.SignedString(jwtKey)
 	if err != nil {
-		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
+		WriteAPIError(w, http.StatusInternalServerError, "TokenGenerationException", "Failed to generate token")
 		return
 	}
 
@@ -87,6 +108,59 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+// verifyTurnstile verifies a Cloudflare Turnstile token using the secret key
+func verifyTurnstile(secret, responseToken, remoteIP string) (bool, error) {
+	form := url.Values{}
+	form.Set("secret", secret)
+	form.Set("response", responseToken)
+	if strings.TrimSpace(remoteIP) != "" {
+		form.Set("remoteip", remoteIP)
+	}
+
+	resp, err := http.PostForm("https://challenges.cloudflare.com/turnstile/v0/siteverify", form)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return false, err
+	}
+	var parsed struct {
+		Success bool `json:"success"`
+		// ErrorCodes []string `json:"error-codes"` // optional
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return false, err
+	}
+	return parsed.Success, nil
+}
+
+// getClientIP attempts to determine the client's IP address, respecting common proxy headers
+func getClientIP(r *http.Request) string {
+	// Try CF-Connecting-IP first (Cloudflare)
+	if ip := strings.TrimSpace(r.Header.Get("CF-Connecting-IP")); ip != "" {
+		return ip
+	}
+	// Then X-Forwarded-For (first IP)
+	if xff := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); xff != "" {
+		parts := strings.Split(xff, ",")
+		if len(parts) > 0 {
+			return strings.TrimSpace(parts[0])
+		}
+	}
+	// Then X-Real-IP
+	if ip := strings.TrimSpace(r.Header.Get("X-Real-IP")); ip != "" {
+		return ip
+	}
+	// Fallback to RemoteAddr (strip port if present)
+	hostPort := strings.TrimSpace(r.RemoteAddr)
+	if idx := strings.LastIndex(hostPort, ":"); idx != -1 {
+		return hostPort[:idx]
+	}
+	return hostPort
+}
+
 type RegisterPayload struct {
 	Username   string `json:"username"`
 	Password   string `json:"password"`
@@ -99,23 +173,23 @@ type RegisterPayload struct {
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	var payload RegisterPayload
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		http.Error(w, "Invalid request payload: "+err.Error(), http.StatusBadRequest)
+		WriteAPIError(w, http.StatusBadRequest, "InvalidPayloadException", "Invalid request payload: "+err.Error())
 		return
 	}
 
 	if payload.Username == "" || payload.Password == "" || payload.InviteCode == "" || payload.FirstName == "" || payload.LastName == "" {
-		http.Error(w, "Username, password, first_name, last_name, and invite code are required", http.StatusBadRequest)
+		WriteAPIError(w, http.StatusBadRequest, "ValidationException", "Username, password, first_name, last_name, and invite code are required")
 		return
 	}
 
 	inviteCode, err := h.InviteCodeRepo.GetByCode(payload.InviteCode)
 	if err != nil {
-		http.Error(w, "Invalid or expired invite code", http.StatusForbidden)
+		WriteAPIError(w, http.StatusForbidden, "InviteCodeException", "Invalid or expired invite code")
 		return
 	}
 
 	if !inviteCode.IsValid() {
-		http.Error(w, "Invite code is not valid (expired, inactive, or max uses reached)", http.StatusForbidden)
+		WriteAPIError(w, http.StatusForbidden, "InviteCodeException", "Invite code is not valid (expired, inactive, or max uses reached)")
 		return
 	}
 
@@ -126,12 +200,12 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		GlobalPermissions: []string{},
 	}
 	if err := newUser.SetPassword(payload.Password); err != nil {
-		http.Error(w, "Failed to hash password: "+err.Error(), http.StatusInternalServerError)
+		WriteAPIError(w, http.StatusInternalServerError, "HashingException", "Failed to hash password: "+err.Error())
 		return
 	}
 
 	if err := h.UserRepo.Create(newUser); err != nil {
-		http.Error(w, "Failed to create user: "+err.Error(), http.StatusInternalServerError)
+		WriteAPIError(w, http.StatusInternalServerError, "PersistenceException", "Failed to create user: "+err.Error())
 		return
 	}
 

@@ -1,9 +1,11 @@
 package models
 
 import (
+	"crypto/rand"
+	"fmt"
+	"math/big"
 	"time"
 
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -24,9 +26,36 @@ type InviteCode struct {
 // BeforeCreate generates a unique code if not provided
 func (ic *InviteCode) BeforeCreate(tx *gorm.DB) (err error) {
 	if ic.Code == "" {
-		ic.Code = uuid.New().String()
+		// Attempt to generate a unique 6-digit PIN, retrying a few times in the unlikely event of collisions
+		const maxAttempts = 10
+		for attempt := 0; attempt < maxAttempts; attempt++ {
+			code, genErr := generateSixDigitPIN()
+			if genErr != nil {
+				return genErr
+			}
+			var existing InviteCode
+			findErr := tx.Where("code = ?", code).Select("id").First(&existing).Error
+			if findErr == gorm.ErrRecordNotFound {
+				ic.Code = code
+				return nil
+			}
+			if findErr != nil {
+				return findErr
+			}
+			// if found, loop to try another code
+		}
+		return fmt.Errorf("failed to generate unique invite code after %d attempts", maxAttempts)
 	}
-	return
+	return nil
+}
+
+func generateSixDigitPIN() (string, error) {
+	// Securely generate a number in [0, 1_000_000)
+	n, err := rand.Int(rand.Reader, big.NewInt(1000000))
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%06d", n.Int64()), nil
 }
 
 // IsValid checks if the invite code can still be used

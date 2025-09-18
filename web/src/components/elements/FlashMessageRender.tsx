@@ -24,7 +24,7 @@ const FlashMessageRender: React.FC<FlashMessageRenderProps> = ({ byKey }) => {
                 {filteredFlashes.map((flash, index) => (
                     <Fragment key={`${flash.key}-${index}`}>
                         {index > 0 && <div className='mt-2'></div>}
-                        <Notification type={flash.type} title={'flash message'}>
+                        <Notification type={flash.type} title={flash.title}>
                             {flash.message}
                         </Notification>
                     </Fragment>

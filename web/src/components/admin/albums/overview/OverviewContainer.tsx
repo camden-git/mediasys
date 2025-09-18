@@ -4,7 +4,12 @@ import { getBannerUrl } from '../../../../api.ts';
 import { Heading } from '../../../elements/Heading.tsx';
 import { CameraIcon, MapPinIcon, PhotoIcon } from '@heroicons/react/16/solid';
 import { Button } from '../../../elements/Button';
-import { uploadAlbumImagesBatched } from '../../../../api/admin/albums';
+import { deleteAlbumImage, listAlbumImages, uploadAlbumImagesBatched } from '../../../../api/admin/albums';
+import AdvancedImageGrid from '../../../album/AdvancedImageGrid.tsx';
+import { FileInfo } from '../../../../types.ts';
+import { ListBulletIcon, RectangleStackIcon, Squares2X2Icon, TrashIcon } from '@heroicons/react/20/solid';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../../elements/Table';
+import { getThumbnailUrl } from '../../../../api.ts';
 
 const OverviewContainer: React.FC = () => {
     const album = useStoreState((state) => state.albumContext.data!);
@@ -93,6 +98,173 @@ const OverviewContainer: React.FC = () => {
         }
     };
 
+    const [listing, setListing] = React.useState<{ path: string; files: FileInfo[] } | null>(null);
+    const [isLoadingImages, setIsLoadingImages] = React.useState(false);
+    type ViewMode = 'cascading' | 'grid' | 'table';
+    const [viewMode, setViewMode] = React.useState<ViewMode>('cascading');
+    const [scale, setScale] = React.useState<number>(180); // affects row height or tile size
+
+    const fetchImages = React.useCallback(async () => {
+        setIsLoadingImages(true);
+        try {
+            const res = await listAlbumImages(album.id);
+            // Only keep raster images
+            setListing({ path: res.path, files: res.files.filter((f) => !f.is_dir) });
+        } finally {
+            setIsLoadingImages(false);
+        }
+    }, [album.id]);
+
+    React.useEffect(() => {
+        fetchImages();
+    }, [fetchImages]);
+
+    const handleDeleteImage = async (image: FileInfo) => {
+        const fullPath = image.path.startsWith('/') ? image.path.slice(1) : image.path;
+        await deleteAlbumImage(album.id, fullPath);
+        await fetchImages();
+    };
+
+    const Toolbar = () => (
+        <div className='flex flex-wrap items-center justify-between gap-3 rounded border bg-white px-3 py-2'>
+            <div className='flex items-center gap-1'>
+                <button
+                    type='button'
+                    onClick={() => setViewMode('cascading')}
+                    className={`inline-flex items-center gap-1 rounded px-2 py-1 text-sm ${viewMode === 'cascading' ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-100'}`}
+                    title='Cascading layout'
+                >
+                    <RectangleStackIcon className='h-4 w-4' />
+                    Cascading
+                </button>
+                <button
+                    type='button'
+                    onClick={() => setViewMode('grid')}
+                    className={`inline-flex items-center gap-1 rounded px-2 py-1 text-sm ${viewMode === 'grid' ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-100'}`}
+                    title='Grid layout'
+                >
+                    <Squares2X2Icon className='h-4 w-4' />
+                    Grid
+                </button>
+                <button
+                    type='button'
+                    onClick={() => setViewMode('table')}
+                    className={`inline-flex items-center gap-1 rounded px-2 py-1 text-sm ${viewMode === 'table' ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-100'}`}
+                    title='Table layout'
+                >
+                    <ListBulletIcon className='h-4 w-4' />
+                    Table
+                </button>
+            </div>
+            <div className='flex items-center gap-2'>
+                <span className='text-xs text-gray-500'>Scale</span>
+                <input
+                    type='range'
+                    min={100}
+                    max={320}
+                    step={10}
+                    value={scale}
+                    onChange={(e) => setScale(parseInt(e.target.value, 10))}
+                    className='h-2 w-44 cursor-pointer appearance-none rounded-lg bg-gray-200'
+                />
+                <span className='w-10 text-right text-xs text-gray-600'>{scale}px</span>
+            </div>
+        </div>
+    );
+
+    const renderContent = () => {
+        if (isLoadingImages) return <div className='py-6 text-sm text-gray-500'>Loading images…</div>;
+        const images = listing?.files ?? [];
+        if (images.length === 0) return <div className='py-6 text-sm text-gray-500'>No photos in this album yet.</div>;
+
+        if (viewMode === 'cascading') {
+            return (
+                <AdvancedImageGrid images={images} targetRowHeight={scale} boxSpacing={6} onImageClick={() => {}} />
+            );
+        }
+
+        if (viewMode === 'grid') {
+            const tile = Math.max(80, Math.min(480, scale));
+            return (
+                <div
+                    className='grid gap-3'
+                    style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${Math.round(tile)}px, 1fr))` }}
+                >
+                    {images.map((img) => {
+                        const backgroundImage = img.thumbnail_path ? `url(${getThumbnailUrl(img.thumbnail_path)})` : undefined;
+                        return (
+                            <div key={img.path} className='group relative overflow-hidden rounded border bg-gray-100'>
+                                <div
+                                    className='h-full w-full bg-cover bg-center'
+                                    style={{ height: `${tile}px`, backgroundImage }}
+                                />
+                                <div className='pointer-events-none absolute inset-0 bg-black/0 transition group-hover:bg-black/20' />
+                                <button
+                                    onClick={() => handleDeleteImage(img)}
+                                    className='absolute right-2 top-2 hidden rounded bg-white/90 p-1 text-red-600 shadow group-hover:block'
+                                    title={`Delete ${img.name}`}
+                                >
+                                    <TrashIcon className='h-4 w-4' />
+                                </button>
+                                <div className='truncate px-2 py-1 text-xs text-gray-700'>{img.name}</div>
+                            </div>
+                        );
+                    })}
+                </div>
+            );
+        }
+
+        // table view
+        return (
+            <Table striped bleed className='rounded-lg'>
+                <TableHead>
+                    <TableRow>
+                        <TableHeader className='w-16'>Preview</TableHeader>
+                        <TableHeader>Name</TableHeader>
+                        <TableHeader className='w-24'>Dimensions</TableHeader>
+                        <TableHeader className='w-28'>Size</TableHeader>
+                        <TableHeader className='w-32'>Modified</TableHeader>
+                        <TableHeader className='w-24'>Actions</TableHeader>
+                    </TableRow>
+                </TableHead>
+                <TableBody>
+                    {images.map((img) => {
+                        const thumb = img.thumbnail_path ? getThumbnailUrl(img.thumbnail_path) : undefined;
+                        return (
+                            <TableRow key={img.path}>
+                                <TableCell>
+                                    <div className='flex h-14 w-20 items-center justify-center rounded border bg-gray-100'>
+                                        {thumb && (
+                                            <img
+                                                src={thumb}
+                                                alt={img.name}
+                                                className='max-h-full max-w-full object-contain'
+                                            />
+                                        )}
+                                    </div>
+                                </TableCell>
+                                <TableCell className='max-w-[28rem] truncate'>{img.name}</TableCell>
+                                <TableCell>
+                                    {img.width && img.height ? `${img.width}×${img.height}` : '—'}
+                                </TableCell>
+                                <TableCell>{(img.size / 1024).toFixed(0)} KB</TableCell>
+                                <TableCell>{new Date(img.mod_time * 1000).toLocaleString()}</TableCell>
+                                <TableCell>
+                                    <button
+                                        onClick={() => handleDeleteImage(img)}
+                                        className='inline-flex items-center gap-1 rounded border px-2 py-1 text-xs text-red-600 hover:bg-red-50'
+                                    >
+                                        <TrashIcon className='h-4 w-4' /> Delete
+                                    </button>
+                                </TableCell>
+                            </TableRow>
+                        );
+                    })}
+                </TableBody>
+            </Table>
+        );
+    };
+
     return (
         <div className='relative mx-auto'>
             <div className='absolute inset-x-0 top-0 -z-10 h-80 overflow-hidden rounded-t-2xl mask-b-from-60% sm:h-88 md:h-112 lg:h-128'>
@@ -153,7 +325,7 @@ const OverviewContainer: React.FC = () => {
                             type='file'
                             className='hidden'
                             multiple
-                            // @ts-ignore - nonstandard directory selection for Chromium-based browsers
+    // @ts-ignore - nonstandard directory selection for Chromium-based browsers
                             webkitdirectory=''
                             onChange={handleFolderChange}
                         />
@@ -218,6 +390,16 @@ const OverviewContainer: React.FC = () => {
                                     </div>
                                 );
                             })}
+                    </div>
+
+                    <div className='mt-8 rounded-lg bg-white shadow'>
+                        <div className='border-b border-gray-200 px-6 py-4'>
+                            <h2 className='text-lg font-medium text-gray-900'>Photos</h2>
+                        </div>
+                        <div className='px-6 py-4 space-y-4'>
+                            <Toolbar />
+                            {renderContent()}
+                        </div>
                     </div>
                 </div>
             </div>

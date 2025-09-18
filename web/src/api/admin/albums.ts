@@ -1,5 +1,5 @@
 import http from '../http';
-import { Album } from '../../types';
+import { Album, DirectoryListing } from '../../types';
 import { User } from '../../types';
 
 export interface AdminAlbumResponse extends Album {
@@ -126,6 +126,16 @@ export const uploadAlbumImagesBatched = async (
     await Promise.all(workers);
 
     return { uploaded: uploadedTotal };
+};
+
+export const listAlbumImages = async (id: number): Promise<DirectoryListing> => {
+    const resp = await http.get(`/admin/albums/${id}/images`);
+    return resp.data;
+};
+
+export const deleteAlbumImage = async (id: number, imagePath: string): Promise<void> => {
+    // imagePath should be full relative path (e.g., "album/folder/IMG_1234.jpg")
+    await http.delete(`/admin/albums/${id}/images`, { params: { path: imagePath } });
 };
 
 export const requestAlbumZip = async (id: number): Promise<{ message: string }> => {

@@ -38,19 +38,62 @@ const apiClient = async (url: string, options: RequestInit = {}): Promise<Respon
 
     if (!response.ok) {
         let errorMessage = `HTTP error! status: ${response.status}`;
+        let standardizedErrors: Array<{ code: string; status: string; detail: string }> | null = null;
+
+        // Attempt to parse JSON error body
         try {
-            const errorBody = await response.json();
-            if (errorBody && errorBody.message) {
-                errorMessage = errorBody.message;
-            } else if (typeof errorBody === 'string') {
-                errorMessage = errorBody;
+            const errorBody = await response.clone().json();
+            if (errorBody) {
+                if (Array.isArray(errorBody.errors)) {
+                    standardizedErrors = errorBody.errors;
+                    if (standardizedErrors && standardizedErrors.length > 0) {
+                        const first = standardizedErrors[0];
+                        if (first?.detail) {
+                            errorMessage = first.detail;
+                        }
+                    }
+                } else if (typeof errorBody.detail === 'string') {
+                    errorMessage = errorBody.detail;
+                } else if (typeof errorBody.message === 'string') {
+                    errorMessage = errorBody.message;
+                }
             }
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        } catch (e) {
-            // ignore if error body is not JSON or empty
+        } catch (_jsonErr) {
+            // Fallback: try text body
+            try {
+                const text = await response.text();
+                if (text) {
+                    try {
+                        const parsed = JSON.parse(text);
+                        if (parsed && Array.isArray(parsed.errors)) {
+                            standardizedErrors = parsed.errors;
+                            if (standardizedErrors && standardizedErrors.length > 0) {
+                                const first = standardizedErrors[0];
+                                if (first?.detail) {
+                                    errorMessage = first.detail;
+                                }
+                            }
+                        } else if (parsed?.detail) {
+                            errorMessage = parsed.detail;
+                        } else if (parsed?.message) {
+                            errorMessage = parsed.message;
+                        } else {
+                            errorMessage = text;
+                        }
+                    } catch {
+                        errorMessage = text;
+                    }
+                }
+            } catch {
+                // ignore
+            }
         }
+
         const error = new Error(errorMessage);
         (error as any).status = response.status;
+        if (standardizedErrors) {
+            (error as any).errors = standardizedErrors;
+        }
         throw error;
     }
     return response;
