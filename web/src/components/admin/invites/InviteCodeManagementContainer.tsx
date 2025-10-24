@@ -1,7 +1,5 @@
 import React, { useEffect } from 'react';
 import { CreateInviteCodeForm } from './CreateInviteCodeForm.tsx';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../elements/Table.tsx';
-import { AdminInviteCodeResponse } from '../../../types.ts';
 import { Heading } from '../../elements/Heading.tsx';
 import PageContentBlock from '../../elements/PageContentBlock.tsx';
 import { Can } from '../../elements/Can.tsx';
@@ -10,6 +8,8 @@ import { useInviteCodes } from '../../../api/swr/useInviteCodes';
 import { useFlash } from '../../../hooks/useFlash';
 import FlashMessageRender from '../../elements/FlashMessageRender.tsx';
 import { Text, TextLink } from '../../elements/Text.tsx';
+import {Table, TableBody, TableHead, TableHeader, TableRow} from "../../elements/Table.tsx";
+import InviteCodeRow from "./InviteCodeRow.tsx";
 
 const InviteCodeManagementContainer: React.FC = () => {
     const { data: inviteCodes, error, isValidating } = useInviteCodes();
@@ -56,15 +56,8 @@ const InviteCodeManagementContainer: React.FC = () => {
                         </TableRow>
                     </TableHead>
                     <TableBody>
-                        {inviteCodes.map((inviteCode: AdminInviteCodeResponse) => (
-                            <TableRow key={inviteCode.id}>
-                                <TableCell className='font-medium'>{inviteCode.code}</TableCell>
-                                <TableCell>
-                                    {inviteCode.uses} / {inviteCode.max_uses ? inviteCode.max_uses : 'Unlimited'}
-                                </TableCell>
-                                <TableCell className='text-zinc-500'>{inviteCode.expires_at}</TableCell>
-                                <TableCell className='text-zinc-500'>{inviteCode.created_at}</TableCell>
-                            </TableRow>
+                        {inviteCodes.map((inviteCode) => (
+                            <InviteCodeRow key={inviteCode.id} inviteCode={inviteCode} />
                         ))}
                     </TableBody>
                 </Table>

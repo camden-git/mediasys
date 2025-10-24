@@ -100,15 +100,19 @@ func (ah *AlbumHandler) CreateAlbum(w http.ResponseWriter, r *http.Request) {
 	fullPath := filepath.Join(ah.Cfg.RootDirectory, folderPathForDB)
 	stat, err := os.Stat(fullPath)
 	if os.IsNotExist(err) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "folder_path does not exist: " + folderPathForDB})
-		return
-	}
-	if err != nil {
+		// create the directory if it doesn't exist
+		err = os.MkdirAll(fullPath, 0755)
+		if err != nil {
+			log.Printf("Error creating folder path %s during album creation: %v", fullPath, err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Could not create folder_path"})
+			return
+		}
+		log.Printf("Created folder path: %s", fullPath)
+	} else if err != nil {
 		log.Printf("Error stating folder path %s during album creation: %v", fullPath, err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Could not verify folder_path"})
 		return
-	}
-	if !stat.IsDir() {
+	} else if !stat.IsDir() {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "folder_path is not a directory: " + folderPathForDB})
 		return
 	}
@@ -313,8 +317,23 @@ func (ah *AlbumHandler) GetAlbumContents(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Pass ah.ImageRepo to listDirectoryContents, as it expects an ImageRepositoryInterface
-	fileInfos, err := listDirectoryContents(albumFullPath, "/"+album.FolderPath, ah.Cfg, ah.ImageRepo, ah.ThumbGen, album.SortOrder)
+    defaultLimit := 120
+    q := r.URL.Query()
+    offset := 0
+    limit := defaultLimit
+    if o := q.Get("offset"); o != "" {
+        if v, convErr := strconv.Atoi(o); convErr == nil && v >= 0 {
+            offset = v
+        }
+    }
+    if l := q.Get("limit"); l != "" {
+        if v, convErr := strconv.Atoi(l); convErr == nil && v > 0 {
+            limit = v
+        }
+    }
+
+    // Pass ah.ImageRepo to listDirectoryContents, as it expects an ImageRepositoryInterface
+    fileInfos, totalCount, err := listDirectoryContents(albumFullPath, "/"+album.FolderPath, ah.Cfg, ah.ImageRepo, ah.ThumbGen, album.SortOrder, offset, limit)
 	if err != nil {
 		if os.IsNotExist(err) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album folder not found on disk: " + album.FolderPath})
@@ -329,7 +348,11 @@ func (ah *AlbumHandler) GetAlbumContents(w http.ResponseWriter, r *http.Request)
 
 	listing := DirectoryListing{
 		Path:  "/" + album.FolderPath,
-		Files: fileInfos,
+        Files: fileInfos,
+        Total: totalCount,
+        Offset: offset,
+        Limit: limit,
+        HasMore: offset+len(fileInfos) < totalCount,
 		// Parent: "/api/albums",
 	}
 	writeJSON(w, http.StatusOK, listing)

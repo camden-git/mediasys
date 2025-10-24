@@ -131,10 +131,11 @@ func (d *DNNFaceDetector) DetectFaces(img gocv.Mat) []DetectionResult {
 		return results // No detections found
 	}
 
-	// reshape the Mat to 2D: [N, 7] for easier access with GetFloatAt(row, col)
-	detections2D := detectionsMat.Reshape(1, numDetections*sizes[3])
-	detectionsData := detections2D.Reshape(1, numDetections)
-	defer detectionsData.Close()
+    // reshape the Mat to 2D: [N, 7] for easier access with GetFloatAt(row, col)
+    detections2D := detectionsMat.Reshape(1, numDetections*sizes[3])
+    defer detections2D.Close()
+    detectionsData := detections2D.Reshape(1, numDetections)
+    defer detectionsData.Close()
 
 	for i := 0; i < numDetections; i++ {
 		confidence := detectionsData.GetFloatAt(i, 2)

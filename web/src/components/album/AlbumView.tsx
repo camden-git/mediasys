@@ -1,20 +1,21 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useStoreState, State } from 'easy-peasy';
+import { useStoreActions, Actions } from 'easy-peasy';
 import { StoreModel } from '../../store';
 import LoadingSpinner from '../elements/LoadingSpinner.tsx';
 import ErrorMessage from '../elements/ErrorMessage.tsx';
 import { Heading } from '../elements/Heading.tsx';
-import { Button } from '../elements/Button.tsx';
 import AdvancedImageGrid from './AdvancedImageGrid.tsx';
 import { getAlbumDownloadUrl, getBannerUrl, getOriginalImageUrl } from '../../api.ts';
 import { FileInfo } from '../../types.ts';
 import ImageLightbox from './ImageLightbox.tsx';
-import { Dialog, DialogActions, DialogBody, DialogDescription, DialogTitle } from '../elements/Dialog.tsx';
-import { DescriptionList, DescriptionItem } from '../elements/DescriptionList.tsx';
-import { bytesToString } from '../../lib/formatters.ts';
-import { ArrowDownIcon, BeakerIcon, CameraIcon, MapPinIcon, PhotoIcon, ShareIcon } from '@heroicons/react/16/solid';
+//
+//
+import { ArrowDownIcon, CameraIcon, MapPinIcon, PhotoIcon, ShareIcon } from '@heroicons/react/16/solid';
 import { useFlash } from '../../hooks/useFlash.ts';
 import FlashMessageRender from '../elements/FlashMessageRender.tsx';
+import DownloadDialog from './DownloadDialog.tsx';
+import ShareChunksDialog from './ShareChunksDialog.tsx';
 
 // max payload size for a single Web Share operation
 const MAX_SHARE_CHUNK_BYTES = 40 * 1024 * 1024;
@@ -41,118 +42,14 @@ function chunkImagesBySize(images: FileInfo[], maxBytes: number): FileInfo[][] {
     return chunks;
 }
 
-interface DownloadDialogProps {
-    open: boolean;
-    onClose: (open: boolean) => void;
-    albumName?: string;
-    zipSize?: number;
-    onDownload: () => void;
-}
-
-const DownloadDialog: React.FC<DownloadDialogProps> = ({ open, onClose, albumName, zipSize, onDownload }) => (
-    <Dialog open={open} onClose={onClose}>
-        <DialogTitle>Download {albumName}</DialogTitle>
-        <DialogDescription>
-            A {zipSize ? bytesToString(zipSize) : ''} zip file containing all images in this album is available for
-            download. This download may take a long time as the images are in the highest quality. Individual photos can
-            be downloaded by opening an image and pressing the download icon in the top right.
-        </DialogDescription>
-        <DialogBody></DialogBody>
-        <DialogActions>
-            <Button plain onClick={() => onClose(false)}>
-                Cancel
-            </Button>
-            <Button onClick={onDownload}>Download</Button>
-        </DialogActions>
-    </Dialog>
-);
-
-interface ShareChunksDialogProps {
-    open: boolean;
-    onClose: (open: boolean) => void;
-    images: FileInfo[];
-    chunks: FileInfo[][];
-    currentIndex: number;
-    isSharing: boolean;
-    progress: ShareProgress;
-    onShareCurrent: () => Promise<void> | void;
-    onNext: () => void;
-}
-
-const ShareChunksDialog: React.FC<ShareChunksDialogProps> = ({
-    open,
-    onClose,
-    images,
-    chunks,
-    currentIndex,
-    isSharing,
-    progress,
-    onShareCurrent,
-    onNext,
-}) => (
-    <Dialog open={open} onClose={onClose}>
-        <span
-            className={
-                'mb-2 inline-flex items-center rounded-md bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700 ring-1 ring-indigo-700/10 ring-inset'
-            }
-        >
-            <BeakerIcon className='my-auto mr-1 size-4' /> Experimental feature
-        </span>
-        <DialogTitle>Share Album in Multiple Parts</DialogTitle>
-        <DialogDescription>
-            This album includes {images.length} high-quality photos, totaling{' '}
-            {bytesToString(images.reduce((sum, img) => sum + img.size, 0))}. Due to browser limitations, it will be
-            shared in {chunks.length} parts, each up to 40MiB. Press "Share" to open your device’s share sheet, where
-            you can send or save the images. After sharing each part, press "Next" to continue. This process may take
-            some time due to the large file sizes.
-        </DialogDescription>
-        <DialogBody>
-            <div className='space-y-4'>
-                <DescriptionList>
-                    <DescriptionItem term='Total Photos' details={images.length} />
-                    <DescriptionItem
-                        term='Total Size'
-                        details={bytesToString(images.reduce((sum, img) => sum + img.size, 0))}
-                    />
-                    <DescriptionItem term='Number of Parts' details={chunks.length} />
-                    <DescriptionItem term='Current Part' details={`${currentIndex + 1} of ${chunks.length}`} />
-                </DescriptionList>
-
-                {chunks[currentIndex] && (
-                    <div className='mt-4'>
-                        <h4 className='mb-2 text-sm font-medium text-gray-900 dark:text-white'>
-                            Part {currentIndex + 1} Details:
-                        </h4>
-                        <DescriptionList>
-                            <DescriptionItem term='Photos in this part' details={chunks[currentIndex].length} />
-                            <DescriptionItem
-                                term='Size of this part'
-                                details={bytesToString(chunks[currentIndex].reduce((sum, img) => sum + img.size, 0))}
-                            />
-                        </DescriptionList>
-                    </div>
-                )}
-            </div>
-        </DialogBody>
-        <DialogActions>
-            <Button plain onClick={() => onClose(false)}>
-                Cancel
-            </Button>
-            <Button onClick={onShareCurrent} disabled={isSharing}>
-                {isSharing
-                    ? progress
-                        ? `Processing ${progress.current}/${progress.total} (${(progress.size / (1024 * 1024)).toFixed(1)}MB)`
-                        : 'Sharing...'
-                    : `Share Part ${currentIndex + 1}`}
-            </Button>
-            {currentIndex < chunks.length - 1 && <Button onClick={onNext}>Next Part</Button>}
-        </DialogActions>
-    </Dialog>
-);
+// Dialog components moved to separate files for clarity
 
 const AlbumView: React.FC = () => {
     const { currentAlbum, directoryListing, isLoading, error } = useStoreState(
         (state: State<StoreModel>) => state.contentView,
+    );
+    const fetchMoreAlbumContents = useStoreActions(
+        (actions: Actions<StoreModel>) => actions.contentView.fetchMoreAlbumContents,
     );
     const { addFlash } = useFlash();
 
@@ -164,12 +61,77 @@ const AlbumView: React.FC = () => {
     const [isSharing, setIsSharing] = useState(false);
     const [shareProgress, setShareProgress] = useState<ShareProgress>(null);
 
+    const sentinelRef = useRef<HTMLDivElement | null>(null);
+    const isFetchingMoreRef = useRef(false);
+    const hasUserScrolledRef = useRef(false);
+    const prefillCountRef = useRef(0);
+
     const imageFiles = useMemo(() => {
         if (!directoryListing?.files) {
             return [];
         }
         return directoryListing.files.filter((file) => !file.is_dir && file.thumbnail_path);
     }, [directoryListing]);
+
+    const canLoadMore = useMemo(() => {
+        if (!directoryListing) return false;
+        return Boolean(directoryListing.has_more);
+    }, [directoryListing]);
+
+    const loadMore = useCallback(async () => {
+        if (!currentAlbum || isFetchingMoreRef.current || !canLoadMore) return;
+        isFetchingMoreRef.current = true;
+        try {
+            await fetchMoreAlbumContents({ identifier: currentAlbum.slug ?? String(currentAlbum.id), limit: 50 });
+        } finally {
+            isFetchingMoreRef.current = false;
+        }
+    }, [currentAlbum, fetchMoreAlbumContents, canLoadMore]);
+
+    useEffect(() => {
+        const onScroll = () => {
+            if (window.scrollY > 0) {
+                hasUserScrolledRef.current = true;
+            }
+        };
+        window.addEventListener('scroll', onScroll, { passive: true });
+        return () => window.removeEventListener('scroll', onScroll);
+    }, []);
+
+    // reset guards when album changes
+    useEffect(() => {
+        prefillCountRef.current = 0;
+        hasUserScrolledRef.current = false;
+    }, [currentAlbum?.id, currentAlbum?.slug]);
+
+    useEffect(() => {
+        if (!sentinelRef.current) return;
+        const el = sentinelRef.current;
+        const observer = new IntersectionObserver(
+            (entries) => {
+                const entry = entries[0];
+                // start fetching before fully visible to pre-load
+                if (entry.isIntersecting && hasUserScrolledRef.current) {
+                    void loadMore();
+                }
+            },
+            { rootMargin: '0px 0px 300px 0px', threshold: 0.01 },
+        );
+        observer.observe(el);
+        return () => observer.disconnect();
+    }, [loadMore]);
+
+    // if page content doesn't fill the viewport, prefetch at most once without requiring scroll
+    useEffect(() => {
+        if (!canLoadMore) return;
+        const docEl = document.documentElement;
+        const viewportH = window.innerHeight || 0;
+        const contentH = docEl.scrollHeight || 0;
+        if (contentH <= viewportH + 40 && prefillCountRef.current < 1) {
+            prefillCountRef.current += 1;
+            void loadMore();
+        }
+    }, [imageFiles.length, canLoadMore, loadMore]);
 
     const handleImageClick = (image: FileInfo) => {
         setSelectedImage(image);
@@ -317,7 +279,7 @@ const AlbumView: React.FC = () => {
                             <div className='mt-6 flex flex-wrap items-center gap-x-4 gap-y-3 text-sm/7 font-semibold text-gray-950 sm:gap-3'>
                                 <div className='flex items-center gap-1.5'>
                                     <PhotoIcon className='size-4 text-gray-950/40' />
-                                    {directoryListing?.files.length} photos
+                                    {directoryListing?.total ?? directoryListing?.files.length ?? 0} photos
                                 </div>
                                 <span className='hidden text-gray-950/25 sm:inline dark:text-white/25'>&middot;</span>
                                 <div className='flex items-center gap-1.5'>
@@ -406,6 +368,8 @@ const AlbumView: React.FC = () => {
                                     onImageClick={handleImageClick}
                                 />
                             )}
+                            {/* Sentinel for infinite scroll */}
+                            {canLoadMore && imageFiles.length > 0 && <div ref={sentinelRef} className='h-1 w-full' />}
                             <ImageLightbox
                                 image={selectedImage}
                                 onClose={handleCloseLightbox}

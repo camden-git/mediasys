@@ -1,6 +1,7 @@
 import React from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useStoreState } from '../../store/hooks';
+import LoadingSpinner from '../elements/LoadingSpinner';
 
 // Using Record<string, unknown> for props type as it's currently empty
 // but might have props added later. This satisfies ESLint's no-empty-interface rule.
@@ -14,7 +15,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = () => {
     if (isInitializing) {
         // You might want to return a loading spinner or null here
         // while checking auth status
-        return null; // Or <LoadingSpinner />;
+        return <LoadingSpinner />;
     }
 
     if (!isAuthenticated) {
@@ -25,7 +26,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = () => {
         return <Navigate to='/auth/login' state={{ from: location }} replace />;
     }
 
-    return <Outlet />; // Render the child route component
+    return <Outlet />;
 };
 
 export default ProtectedRoute;

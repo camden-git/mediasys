@@ -358,15 +358,19 @@ func (h *AdminAlbumHandler) CreateAlbum(w http.ResponseWriter, r *http.Request) 
 	fullPath := filepath.Join(h.Cfg.RootDirectory, folderPathForDB)
 	stat, err := os.Stat(fullPath)
 	if os.IsNotExist(err) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "folder_path does not exist: " + folderPathForDB})
-		return
-	}
-	if err != nil {
+		// create the directory if it doesn't exist
+		err = os.MkdirAll(fullPath, 0755)
+		if err != nil {
+			log.Printf("Error creating folder path %s during album creation: %v", fullPath, err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Could not create folder_path"})
+			return
+		}
+		log.Printf("Created folder path: %s", fullPath)
+	} else if err != nil {
 		log.Printf("Error stating folder path %s during album creation: %v", fullPath, err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Could not verify folder_path"})
 		return
-	}
-	if !stat.IsDir() {
+	} else if !stat.IsDir() {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "folder_path is not a directory: " + folderPathForDB})
 		return
 	}
@@ -634,7 +638,7 @@ func (h *AdminAlbumHandler) ListAlbumImages(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	files, err := listDirectoryContents(albumFullPath, "/"+album.FolderPath, h.Cfg, h.ImageRepo, h.ImgProc, album.SortOrder)
+    files, totalCount, err := listDirectoryContents(albumFullPath, "/"+album.FolderPath, h.Cfg, h.ImageRepo, h.ImgProc, album.SortOrder, -1, -1)
 	if err != nil {
 		if os.IsNotExist(err) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album folder not found on disk: " + album.FolderPath})
@@ -647,7 +651,7 @@ func (h *AdminAlbumHandler) ListAlbumImages(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	writeJSON(w, http.StatusOK, DirectoryListing{Path: "/" + album.FolderPath, Files: files})
+    writeJSON(w, http.StatusOK, DirectoryListing{Path: "/" + album.FolderPath, Files: files, Total: totalCount, Offset: 0, Limit: len(files), HasMore: false})
 }
 
 // DeleteAlbumImage deletes a single image file within an album and removes DB records and generated assets

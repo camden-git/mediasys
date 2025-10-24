@@ -50,6 +50,10 @@ type DirectoryListing struct {
 	Path   string     `json:"path"`
 	Files  []FileInfo `json:"files"`
 	Parent string     `json:"parent,omitempty"`
+    Total  int        `json:"total,omitempty"`
+    Offset int        `json:"offset,omitempty"`
+    Limit  int        `json:"limit,omitempty"`
+    HasMore bool      `json:"has_more,omitempty"`
 }
 
 const thumbnailApiPrefix = "/thumbnails/"
@@ -58,6 +62,8 @@ type entryInfo struct {
 	entry fs.DirEntry
 	info  fs.FileInfo
 	err   error
+	imageInfo *models.Image
+	takenAt   *int64
 }
 
 // DirectoryHandler now accepts repositories
@@ -132,7 +138,7 @@ func serveFileOrDirectory(w http.ResponseWriter, r *http.Request, cfg config.Con
 		return
 	}
 
-	fileInfos, err := listDirectoryContents(cleanedFullPath, requestedPath, cfg, imgRepo, imgProc, database.DefaultSortOrder)
+    fileInfos, totalCount, err := listDirectoryContents(cleanedFullPath, requestedPath, cfg, imgRepo, imgProc, database.DefaultSortOrder, -1, -1)
 	if err != nil {
 		if os.IsPermission(err) {
 			http.Error(w, "Forbidden", http.StatusForbidden)
@@ -143,10 +149,14 @@ func serveFileOrDirectory(w http.ResponseWriter, r *http.Request, cfg config.Con
 		return
 	}
 
-	listing := DirectoryListing{
-		Path:  requestedPath,
-		Files: fileInfos,
-	}
+    listing := DirectoryListing{
+        Path:   requestedPath,
+        Files:  fileInfos,
+        Total:  totalCount,
+        Offset: 0,
+        Limit:  len(fileInfos),
+        HasMore: false,
+    }
 
 	if requestedPath != "/" && requestedPath != "" {
 		parent := filepath.ToSlash(filepath.Dir(strings.TrimSuffix(requestedPath, "/")))
@@ -169,20 +179,40 @@ func serveFileOrDirectory(w http.ResponseWriter, r *http.Request, cfg config.Con
 	}
 }
 
-func listDirectoryContents(baseDirFullPath string, requestPathPrefix string, cfg config.Config, imgRepo repository.ImageRepositoryInterface, imgProc *workers.ImageProcessor, sortOrder string) ([]FileInfo, error) {
+func listDirectoryContents(baseDirFullPath string, requestPathPrefix string, cfg config.Config, imgRepo repository.ImageRepositoryInterface, imgProc *workers.ImageProcessor, sortOrder string, offset int, limit int) ([]FileInfo, int, error) {
 	dirEntries, err := os.ReadDir(baseDirFullPath)
 	if err != nil {
-		return nil, fmt.Errorf("reading directory %s: %w", baseDirFullPath, err)
+        return nil, 0, fmt.Errorf("reading directory %s: %w", baseDirFullPath, err)
 	}
 
 	entriesWithInfo := make([]entryInfo, 0, len(dirEntries))
 	for _, entry := range dirEntries {
 		entryFullPath := filepath.Join(baseDirFullPath, entry.Name())
 		info, statErr := os.Stat(entryFullPath)
+
+		var imgInfo *models.Image
+		var taken *int64
+		// preload minimal metadata required for sorting if needed
+		if statErr == nil && info != nil && !info.IsDir() && media.IsRasterImage(entry.Name()) {
+			// compute DB key relative to root
+			relFromRoot, relErr := filepath.Rel(cfg.RootDirectory, entryFullPath)
+			if relErr == nil {
+				dbKey := filepath.ToSlash(relFromRoot)
+				if imgRepo != nil {
+					if ii, getErr := imgRepo.GetByPath(dbKey); getErr == nil && ii != nil {
+						imgInfo = ii
+						taken = ii.TakenAt
+					}
+				}
+			}
+		}
+
 		entriesWithInfo = append(entriesWithInfo, entryInfo{
-			entry: entry,
-			info:  info, // can be nil on error
-			err:   statErr,
+			entry:     entry,
+			info:      info, // can be nil on error
+			err:       statErr,
+			imageInfo: imgInfo,
+			takenAt:   taken,
 		})
 	}
 
@@ -205,13 +235,36 @@ func listDirectoryContents(baseDirFullPath string, requestPathPrefix string, cfg
 
 		switch sortOrder {
 		case database.SortDateDesc:
-			// sort by ModTime descending (newest first)
-			return ei.info.ModTime().After(ej.info.ModTime())
+			// sort by TakenAt (shot time) descending when available, else by ModTime
+			var ti, tj int64
+			if ei.takenAt != nil {
+				ti = *ei.takenAt
+			} else {
+				ti = ei.info.ModTime().Unix()
+			}
+			if ej.takenAt != nil {
+				tj = *ej.takenAt
+			} else {
+				tj = ej.info.ModTime().Unix()
+			}
+			return ti > tj
 		case database.SortDateAsc:
-			// sort by ModTime ascending (oldest first)
-			return ei.info.ModTime().Before(ej.info.ModTime())
+			// sort by TakenAt (shot time) ascending when available, else by ModTime
+			var ti, tj int64
+			if ei.takenAt != nil {
+				ti = *ei.takenAt
+			} else {
+				ti = ei.info.ModTime().Unix()
+			}
+			if ej.takenAt != nil {
+				tj = *ej.takenAt
+			} else {
+				tj = ej.info.ModTime().Unix()
+			}
+			return ti < tj
 		case database.SortFilenameNat:
-			return natsort.Compare(ei.entry.Name(), ej.entry.Name())
+			// natural sort, case-insensitive
+			return natsort.Compare(strings.ToLower(ei.entry.Name()), strings.ToLower(ej.entry.Name()))
 		case database.SortFilenameAsc:
 			fallthrough
 		default:
@@ -220,11 +273,28 @@ func listDirectoryContents(baseDirFullPath string, requestPathPrefix string, cfg
 		}
 	})
 
-	fileInfos := make([]FileInfo, 0, len(entriesWithInfo))
-	for _, ei := range entriesWithInfo {
+    totalCount := len(entriesWithInfo)
+
+    start := offset
+    if start < 0 {
+        start = 0
+    }
+    end := totalCount
+    if limit > 0 {
+        if start+limit < end {
+            end = start + limit
+        }
+    }
+    if start > end {
+        start = end
+    }
+    window := entriesWithInfo[start:end]
+
+    fileInfos := make([]FileInfo, 0, len(window))
+    for _, ei := range window {
 		// skip entries that had stat errors
 		if ei.err != nil {
-			log.Printf("Error stating directory entry %s: %v. Skipping.", filepath.Join(baseDirFullPath, ei.entry.Name()), ei.err)
+            log.Printf("Error stating directory entry %s: %v. Skipping.", filepath.Join(baseDirFullPath, ei.entry.Name()), ei.err)
 			continue
 		}
 
@@ -261,10 +331,16 @@ func listDirectoryContents(baseDirFullPath string, requestPathPrefix string, cfg
 			}
 			dbKeyPath := filepath.ToSlash(relPathFromRoot)
 
-			var imageInfo *models.Image
-			var recordExists = true
+		var imageInfo *models.Image
+		var recordExists = true
 
+		// Reuse preloaded image info if available to avoid duplicate DB lookups
+		if ei.imageInfo != nil {
+			imageInfo = ei.imageInfo
+			err = nil
+		} else {
 			imageInfo, err = imgRepo.GetByPath(dbKeyPath)
+		}
 
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				recordExists = false
@@ -397,5 +473,5 @@ func listDirectoryContents(baseDirFullPath string, requestPathPrefix string, cfg
 		fileInfos = append(fileInfos, apiFileInfo)
 	}
 
-	return fileInfos, nil
+    return fileInfos, totalCount, nil
 }

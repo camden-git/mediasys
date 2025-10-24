@@ -1,15 +1,24 @@
 import React, { useState } from 'react';
-import { useStoreActions } from '../../../store/hooks';
-import { InviteCodeCreatePayload } from '../../../types';
-import { Button } from '../../elements/Button.tsx';
-import { Dialog, DialogActions, DialogBody, DialogTitle, DialogDescription } from '../../elements/Dialog.tsx';
-import { FieldGroup } from '../../elements/Fieldset.tsx';
-import FormikFieldComponent from '../../elements/FormikField.tsx';
 import { Formik, Form } from 'formik';
 import * as Yup from 'yup';
-import { createInviteCode } from '../../../api/admin/inviteCodes';
+import { Button } from '../../elements/Button.tsx';
+import { Dialog, DialogActions, DialogBody, DialogDescription, DialogTitle } from '../../elements/Dialog.tsx';
+import { FieldGroup } from '../../elements/Fieldset.tsx';
+import FormikFieldComponent from '../../elements/FormikField.tsx';
 import { useFlash } from '../../../hooks/useFlash';
 import { useInviteCodes } from '../../../api/swr/useInviteCodes';
+import { createInviteCode } from '../../../api/admin/inviteCodes';
+import { InviteCodeCreatePayload } from '../../../types';
+
+interface CreateInviteCodeFormValues {
+    expiresAt: string;
+    maxUses: string;
+}
+
+const createInviteCodeInitialValues: CreateInviteCodeFormValues = {
+    expiresAt: '',
+    maxUses: '',
+};
 
 const CreateInviteCodeSchema = Yup.object().shape({
     expiresAt: Yup.string()
@@ -31,21 +40,15 @@ const CreateInviteCodeSchema = Yup.object().shape({
 export const CreateInviteCodeForm: React.FC = () => {
     const [isOpen, setIsOpen] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
-
     const { addFlash, clearFlashes } = useFlash();
     const { mutate } = useInviteCodes();
-    useStoreActions((actions) => actions.inviteCodes.appendInviteCode);
-    const initialValues = {
-        expiresAt: '',
-        maxUses: '',
-    };
 
     return (
         <>
             <Button onClick={() => setIsOpen(true)}>Create</Button>
             <Dialog open={isOpen} onClose={() => setIsOpen(false)}>
-                <Formik
-                    initialValues={initialValues}
+                <Formik<CreateInviteCodeFormValues>
+                    initialValues={createInviteCodeInitialValues}
                     validationSchema={CreateInviteCodeSchema}
                     onSubmit={async (values, { resetForm }) => {
                         setIsSubmitting(true);
@@ -72,17 +75,13 @@ export const CreateInviteCodeForm: React.FC = () => {
                                 if (!currentData) return [newInviteCode];
                                 return [newInviteCode, ...currentData];
                             }, false);
-                            addFlash({
-                                key: 'invite-codes',
-                                type: 'success',
-                                message: 'Invite code created successfully!',
-                            });
                             resetForm();
                             setIsOpen(false);
                         } catch (error: any) {
                             addFlash({
                                 key: 'invite-codes',
                                 type: 'error',
+                                title: 'Error',
                                 message: error.message || 'Failed to create invite code.',
                             });
                         } finally {
@@ -93,7 +92,9 @@ export const CreateInviteCodeForm: React.FC = () => {
                     {({ isSubmitting: formikSubmitting }) => (
                         <Form>
                             <DialogTitle>Create Invite Code</DialogTitle>
-                            <DialogDescription>Invite codes are 6-digit PINs required for users to register.</DialogDescription>
+                            <DialogDescription>
+                                Invite codes are 6-digit PINs required for users to register.
+                            </DialogDescription>
                             <DialogBody>
                                 <FieldGroup>
                                     <FormikFieldComponent
