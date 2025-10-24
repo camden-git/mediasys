@@ -120,7 +120,9 @@ func (ip *ImageProcessor) worker(id int, cfg config.Config) {
 
 	// Initialize face recognition model
 	var recognitionModel *media.FaceRecognitionModel
+	log.Printf("Worker %d: FACE_RECOGNITION_ENABLED config value: %v", id, cfg.FaceRecognitionEnabled)
 	if cfg.FaceRecognitionEnabled {
+		log.Printf("Worker %d: Initializing face recognition model...", id)
 		recognitionModel = media.NewFaceRecognitionModel(cfg.FaceRecognitionModelPath, cfg.FaceRecognitionModelName)
 		defer func() {
 			if recognitionModel != nil && recognitionModel.Enabled {
@@ -132,6 +134,8 @@ func (ip *ImageProcessor) worker(id int, cfg config.Config) {
 		} else {
 			log.Printf("Worker %d: Face Recognition Model enabled (%s).", id, cfg.FaceRecognitionModelName)
 		}
+	} else {
+		log.Printf("Worker %d: Face Recognition is DISABLED via config.", id)
 	}
 
 	log.Printf("Image worker %d started", id)
@@ -300,8 +304,10 @@ func (ip *ImageProcessor) processDetectionTask(job ImageJob, faceDetector *media
 
 				// Use RetinaFace with face recognition if available
 				if recognitionModel != nil && recognitionModel.Enabled {
+					log.Printf("Worker: Using RetinaFace WITH face recognition for %s", job.OriginalRelativePath)
 					detections = retinaFaceDetector.DetectFacesAndExtractEmbeddings(img, recognitionModel)
 				} else {
+					log.Printf("Worker: Using RetinaFace WITHOUT face recognition for %s (recognitionModel: %v)", job.OriginalRelativePath, recognitionModel != nil)
 					detections = retinaFaceDetector.DetectFaces(img)
 				}
 

@@ -165,14 +165,19 @@ func (r *RetinaFaceDetector) DetectFaces(img gocv.Mat) []DetectionResult {
 
 	r.Net.SetInput(blob, "input")
 
-	// Use output names as seen in the log: bbox, confidence, landmark
-	outputNames := []string{"bbox", "confidence", "landmark"}
-	outputs := r.Net.ForwardLayers(outputNames)
-	if len(outputs) < 3 {
-		log.Printf("detection(retinaface): Expected 3 outputs (boxes, scores, landmarks), got %d", len(outputs))
-		return nil
-	}
-	// Debug: print output shapes and first few values
+    // Use output names as seen in the log: bbox, confidence, landmark
+    outputNames := []string{"bbox", "confidence", "landmark"}
+    outputs := r.Net.ForwardLayers(outputNames)
+    defer func() {
+        for _, mat := range outputs {
+            mat.Close()
+        }
+    }()
+    if len(outputs) < 3 {
+        log.Printf("detection(retinaface): Expected 3 outputs (boxes, scores, landmarks), got %d", len(outputs))
+        return nil
+    }
+    // Debug: print output shapes and first few values
 	for idx, out := range outputs {
 		shape := out.Size()
 		log.Printf("detection(retinaface): Output %d shape: %v", idx, shape)
@@ -185,11 +190,6 @@ func (r *RetinaFaceDetector) DetectFaces(img gocv.Mat) []DetectionResult {
 		flat.Close()
 		log.Printf("detection(retinaface): Output %d first values: %v", idx, vals)
 	}
-	defer func() {
-		for _, mat := range outputs {
-			mat.Close()
-		}
-	}()
 	boxes := outputs[0]
 	scores := outputs[1]
 	landmarks := outputs[2]
@@ -210,6 +210,19 @@ func (r *RetinaFaceDetector) parseRetinaFaceOutput(boxes, scores, landmarks gocv
 	numDetections := boxes.Size()[1]
 	log.Printf("detection(retinaface): Debug - Processing %d detections", numDetections)
 
+	// Reshape 3D tensors to 2D for easier access
+	// boxes: [1, N, 4] -> [N, 4]
+	boxes2D := boxes.Reshape(1, numDetections)
+	defer boxes2D.Close()
+	
+	// scores: [1, N, 2] -> [N, 2] 
+	scores2D := scores.Reshape(1, numDetections)
+	defer scores2D.Close()
+	
+	// landmarks: [1, N, 10] -> [N, 10]
+	landmarks2D := landmarks.Reshape(1, numDetections)
+	defer landmarks2D.Close()
+
 	// Generate priors for 640x640
 	priors := GenerateRetinaFacePriors(640, 640)
 	if len(priors) != numDetections {
@@ -223,7 +236,7 @@ func (r *RetinaFaceDetector) parseRetinaFaceOutput(boxes, scores, landmarks gocv
 	for _, threshold := range thresholds {
 		count := 0
 		for i := 0; i < numDetections; i++ {
-			scoreFace := scores.GetFloatAt(0, i*2+1)
+			scoreFace := scores2D.GetFloatAt(i, 1) // 2D access: [detection, class] where class 1 is face
 			if scoreFace > threshold {
 				count++
 			}
@@ -234,11 +247,11 @@ func (r *RetinaFaceDetector) parseRetinaFaceOutput(boxes, scores, landmarks gocv
 	// Debug: Print first 10 scores and their corresponding decoded boxes
 	log.Printf("detection(retinaface): Debug - First 10 detections (score, DECODED box coordinates):")
 	for i := 0; i < minInt(10, numDetections); i++ {
-		scoreFace := scores.GetFloatAt(0, i*2+1)
+		scoreFace := scores2D.GetFloatAt(i, 1) // 2D access: [detection, class] where class 1 is face
 		// Get raw box
 		var rawBox [4]float32
 		for j := 0; j < 4; j++ {
-			rawBox[j] = boxes.GetFloatAt(0, i*4+j)
+			rawBox[j] = boxes2D.GetFloatAt(i, j) // 2D access: [detection, coord]
 		}
 		decoded := DecodeBox(rawBox, priors[i], variances)
 		log.Printf("detection(retinaface): Debug - Detection %d: score=%.4f, decoded_box=[%.3f,%.3f,%.3f,%.3f]",
@@ -250,14 +263,14 @@ func (r *RetinaFaceDetector) parseRetinaFaceOutput(boxes, scores, landmarks gocv
 	log.Printf("detection(retinaface): Debug - Using threshold %.3f for debugging", debugThreshold)
 
 	for i := 0; i < numDetections; i++ {
-		scoreFace := scores.GetFloatAt(0, i*2+1)
+		scoreFace := scores2D.GetFloatAt(i, 1) // 2D access: [detection, class] where class 1 is face
 		if scoreFace < debugThreshold {
 			continue
 		}
 		// Get and decode box
 		var rawBox [4]float32
 		for j := 0; j < 4; j++ {
-			rawBox[j] = boxes.GetFloatAt(0, i*4+j)
+			rawBox[j] = boxes2D.GetFloatAt(i, j) // 2D access: [detection, coord]
 		}
 		decoded := DecodeBox(rawBox, priors[i], variances)
 		x1 := decoded[0] * imgWidth
@@ -279,8 +292,8 @@ func (r *RetinaFaceDetector) parseRetinaFaceOutput(boxes, scores, landmarks gocv
 		// Landmarks (5 points, still need to decode if model outputs encoded landmarks)
 		var pts []Point2D
 		for j := 0; j < 5; j++ {
-			lx := landmarks.GetFloatAt(0, i*10+j*2+0) * imgWidth
-			ly := landmarks.GetFloatAt(0, i*10+j*2+1) * imgHeight
+			lx := landmarks2D.GetFloatAt(i, j*2+0) * imgWidth // 2D access: [detection, landmark_coord]
+			ly := landmarks2D.GetFloatAt(i, j*2+1) * imgHeight
 			pts = append(pts, Point2D{X: lx, Y: ly})
 		}
 		faceArea := float32((x2 - x1) * (y2 - y1))
@@ -406,8 +419,9 @@ func (r *RetinaFaceDetector) DetectFacesAndExtractEmbeddings(img gocv.Mat, recog
 
 			log.Printf("detection(retinaface): Extracting embedding for face %d at [%d,%d,%d,%d]", i, detections[i].X, detections[i].Y, detections[i].W, detections[i].H)
 
-			// Extract embedding
-			embedding := recognitionModel.ExtractEmbedding(faceRegion)
+				// Extract embedding
+				embedding := recognitionModel.ExtractEmbedding(faceRegion)
+				faceRegion.Close()
 			if embedding != nil {
 				detections[i].Embedding = embedding
 				detections[i].ModelName = recognitionModel.ModelName

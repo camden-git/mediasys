@@ -52,6 +52,7 @@ export interface ContentViewModel {
     currentIdentifier: string | null;
     currentAlbum: Album | null;
     directoryListing: DirectoryListing | null;
+    loadedCount?: number;
     setCurrentAlbum: Action<ContentViewModel, Album | null>;
     setDirectoryListing: Action<ContentViewModel, DirectoryListing | null>;
     clearViewData: Action<ContentViewModel>;
@@ -62,6 +63,7 @@ export interface ContentViewModel {
     setError: Action<ContentViewModel, string | null>;
 
     fetchAlbumDataAndContents: Thunk<ContentViewModel, string>;
+    fetchMoreAlbumContents: Thunk<ContentViewModel, { identifier: string; limit?: number }>;
 }
 
 const contentViewModel: ContentViewModel = {
@@ -79,11 +81,13 @@ const contentViewModel: ContentViewModel = {
     }),
     setDirectoryListing: action((state, payload) => {
         state.directoryListing = payload;
+        state.loadedCount = payload?.files?.length ?? 0;
     }),
     clearViewData: action((state) => {
         state.currentIdentifier = null;
         state.currentAlbum = null;
         state.directoryListing = null;
+        state.loadedCount = 0;
         state.isLoading = false;
         state.error = null;
     }),
@@ -101,7 +105,7 @@ const contentViewModel: ContentViewModel = {
         try {
             const [albumDetails, albumContents] = await Promise.all([
                 getAlbumDetails(identifier),
-                getAlbumContents(identifier),
+                getAlbumContents(identifier, { offset: 0, limit: 50 }),
             ]);
 
             actions.setCurrentAlbum(albumDetails);
@@ -112,6 +116,27 @@ const contentViewModel: ContentViewModel = {
             actions.clearViewData();
         } finally {
             actions.setIsLoading(false);
+        }
+    }),
+    fetchMoreAlbumContents: thunk(async (actions, { identifier, limit }, { getState }) => {
+        // append next page, respecting existing listing
+        const pageLimit = limit ?? 50;
+        const state = getState();
+        const offset = state.directoryListing?.files?.length ?? 0;
+        try {
+            const next = await getAlbumContents(identifier, { offset, limit: pageLimit });
+            const merged: DirectoryListing = {
+                path: next.path,
+                files: [...(state.directoryListing?.files ?? []), ...(next.files ?? [])],
+                parent: next.parent ?? state.directoryListing?.parent,
+                total: next.total ?? state.directoryListing?.total,
+                offset: 0,
+                limit: (state.directoryListing?.limit ?? pageLimit) + (next.limit ?? pageLimit),
+                has_more: next.has_more,
+            } as DirectoryListing;
+            actions.setDirectoryListing(merged);
+        } catch (error) {
+            console.error('Failed to fetch more album contents', error);
         }
     }),
 };

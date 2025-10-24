@@ -47,6 +47,10 @@ export interface DirectoryListing {
     path: string;
     files: FileInfo[];
     parent?: string;
+    total?: number;
+    offset?: number;
+    limit?: number;
+    has_more?: boolean;
 }
 
 // Corresponds to backend models.Role (simplified for frontend)

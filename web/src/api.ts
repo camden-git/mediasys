@@ -110,9 +110,13 @@ export const getAlbumDetails = async (identifier: string): Promise<Album> => {
     return (await response.json()) as Album;
 };
 
-export const getAlbumContents = async (identifier: string): Promise<DirectoryListing> => {
+export const getAlbumContents = async (identifier: string, params?: { offset?: number; limit?: number }): Promise<DirectoryListing> => {
     const encodedIdentifier = encodeURIComponent(identifier);
-    const response = await apiClient(`/albums/${encodedIdentifier}/contents`);
+    const search = new URLSearchParams();
+    if (params?.offset !== undefined) search.set('offset', String(params.offset));
+    if (params?.limit !== undefined) search.set('limit', String(params.limit));
+    const qs = search.toString();
+    const response = await apiClient(`/albums/${encodedIdentifier}/contents${qs ? `?${qs}` : ''}`);
     return (await response.json()) as DirectoryListing;
 };
 

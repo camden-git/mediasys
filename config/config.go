@@ -148,6 +148,7 @@ func LoadConfig() (Config, error) {
 	faceRecognitionModelName := getEnvOrDefault("FACE_RECOGNITION_MODEL_NAME", "arcface")
 	faceRecognitionThreshold := getEnvFloatOrDefault("FACE_RECOGNITION_THRESHOLD", 0.6)
 	faceRecognitionEnabled := getEnvBoolOrDefault("FACE_RECOGNITION_ENABLED", true)
+	// log.Printf("Config: FACE_RECOGNITION_ENABLED env var parsed as: %v", faceRecognitionEnabled)
 
 	// Cloudflare Turnstile
 	turnstileSiteKey := getEnvOrDefault("TURNSTILE_SITE_KEY", "")
