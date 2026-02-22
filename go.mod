@@ -1,6 +1,6 @@
 module github.com/camden-git/mediasysbackend
 
-go 1.23.0
+go 1.24.0
 
 require (
 	github.com/disintegration/imaging v1.6.2
@@ -14,6 +14,7 @@ require (
 	github.com/rwcarlsen/goexif v0.0.0-20190401172101-9e8deecbddbd
 	gocv.io/x/gocv v0.41.0
 	golang.org/x/crypto v0.38.0
+	golang.org/x/term v0.40.0
 	gorm.io/driver/sqlite v1.5.7
 	gorm.io/gorm v1.30.0
 )
@@ -24,5 +25,6 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.28 // indirect
 	golang.org/x/image v0.0.0-20191009234506-e7c1f5e7dbb8 // indirect
 	golang.org/x/net v0.21.0 // indirect
+	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/text v0.25.0 // indirect
 )

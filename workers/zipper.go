@@ -1,4 +1,4 @@
-package utils
+package workers
 
 import (
 	"archive/zip"
@@ -78,7 +78,6 @@ func CreateAlbumZip(sourceRootDir, albumRelativeFolderPath, archiveSaveDir, arch
 				return // Skip this file
 			}
 			foundFiles = true
-			// log.Printf("zipper: Added %s to archive %s", entry.Name(), zipFilePath) // Less verbose log
 		}() // Immediately invoke the func to ensure defer runs
 	}
 
@@ -104,10 +103,8 @@ func CreateAlbumZip(sourceRootDir, albumRelativeFolderPath, archiveSaveDir, arch
 
 	zipInfo, err := os.Stat(zipFilePath)
 	if err != nil {
-		// File might be locked briefly? Unlikely but possible.
-		// If Stat fails, we can't return size, but the file might exist.
 		log.Printf("zipper: Warning - failed to stat created zip file %s: %v", zipFilePath, err)
-		return zipFilename, 0, fmt.Errorf("zip created but failed to get size: %w", err) // Return filename but size 0 and error
+		return zipFilename, 0, fmt.Errorf("zip created but failed to get size: %w", err)
 	}
 
 	log.Printf("Successfully created album zip: %s (Size: %d bytes)", zipFilePath, zipInfo.Size())

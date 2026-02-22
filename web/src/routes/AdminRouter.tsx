@@ -2,8 +2,7 @@ import React from 'react';
 import { Routes, Route } from 'react-router-dom';
 import ProtectedRoute from '../components/router/ProtectedRoute';
 import { StackedLayout } from '../components/elements/StackedLayout.tsx';
-import { Navbar, NavbarItem, NavbarSection, NavbarSpacer } from '../components/elements/Navbar.tsx';
-import { InboxIcon, MagnifyingGlassIcon } from '@heroicons/react/20/solid';
+import { Navbar, NavbarItem, NavbarSection } from '../components/elements/Navbar.tsx';
 import { Sidebar, SidebarBody, SidebarItem, SidebarSection } from '../components/elements/Sidebar.tsx';
 import InviteCodeManagementContainer from '../components/admin/invites/InviteCodeManagementContainer.tsx';
 import RoleManagementContainer from '../components/admin/roles/RoleManagementContainer.tsx';
@@ -14,6 +13,11 @@ import { Can } from '../components/elements/Can.tsx';
 import UserView from '../components/admin/users/UserView.tsx';
 import AlbumManagementContainer from '../components/admin/albums/AlbumManagementContainer.tsx';
 import CreateAlbumForm from '../components/admin/albums/CreateAlbumForm.tsx';
+import PeopleManagementContainer from '../components/admin/people/PeopleManagementContainer.tsx';
+import PersonAdminView from '../components/admin/people/PersonAdminView.tsx';
+import FaceTaggingContainer from '../components/admin/faces/FaceTaggingContainer.tsx';
+import GroupManagementContainer from '../components/admin/groups/GroupManagementContainer.tsx';
+import CollectionManagementContainer from '../components/admin/collections/CollectionManagementContainer.tsx';
 
 export interface RouteDefinition {
     path: string;
@@ -78,6 +82,36 @@ const navItems: AdminRouteDefinition[] = [
         name: undefined,
         component: CreateAlbumForm,
     },
+    {
+        path: 'people',
+        permission: null,
+        name: 'People',
+        component: PeopleManagementContainer,
+    },
+    {
+        path: 'people/:id',
+        permission: null,
+        name: undefined,
+        component: PersonAdminView,
+    },
+    {
+        path: 'faces',
+        permission: null,
+        name: 'Face Tagging',
+        component: FaceTaggingContainer,
+    },
+    {
+        path: 'groups',
+        permission: null,
+        name: 'Groups',
+        component: GroupManagementContainer,
+    },
+    {
+        path: 'collections',
+        permission: 'collection.manage',
+        name: 'Collections',
+        component: CollectionManagementContainer,
+    },
 ];
 
 const AdminRouter: React.FC = () => {
@@ -95,15 +129,6 @@ const AdminRouter: React.FC = () => {
                                     </NavbarItem>
                                 </Can>
                             ))}
-                    </NavbarSection>
-                    <NavbarSpacer />
-                    <NavbarSection>
-                        <NavbarItem to='/search' aria-label='Search'>
-                            <MagnifyingGlassIcon />
-                        </NavbarItem>
-                        <NavbarItem to='/inbox' aria-label='Inbox'>
-                            <InboxIcon />
-                        </NavbarItem>
                     </NavbarSection>
                 </Navbar>
             }

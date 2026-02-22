@@ -112,16 +112,14 @@ func toRoleListResponseDTO(roles []models.Role) []RoleResponseDTO {
 // @Router /api/admin/roles [get]
 // @Security BearerAuth
 func (h *AdminRoleHandler) ListRoles(w http.ResponseWriter, r *http.Request) {
+	params := ParsePaginationParams(r)
 	roles, err := h.RoleRepo.ListAll()
 	if err != nil {
-		http.Error(w, "Failed to retrieve roles: "+err.Error(), http.StatusInternalServerError)
+		WriteAPIError(w, http.StatusInternalServerError, "RoleListError", "Failed to retrieve roles: "+err.Error())
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(toRoleListResponseDTO(roles)); err != nil {
-		fmt.Printf("Error encoding JSON response for ListRoles: %v\n", err)
-	}
+	pagedRoles, meta := PaginateSlice(roles, params)
+	WriteAPIPaginated(w, http.StatusOK, toRoleListResponseDTO(pagedRoles), meta)
 }
 
 // GetRole godoc
@@ -140,24 +138,20 @@ func (h *AdminRoleHandler) GetRole(w http.ResponseWriter, r *http.Request) {
 	roleIDStr := chi.URLParam(r, "roleID")
 	roleID, err := strconv.ParseUint(roleIDStr, 10, 32)
 	if err != nil {
-		http.Error(w, "Invalid role ID format", http.StatusBadRequest)
+		WriteAPIError(w, http.StatusBadRequest, "InvalidRoleID", "Invalid role ID format")
 		return
 	}
 
 	role, err := h.RoleRepo.GetByID(uint(roleID)) // Assumes GetByID preloads AlbumPermissions
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			http.Error(w, "Role not found", http.StatusNotFound)
+			WriteAPIError(w, http.StatusNotFound, "RoleNotFound", "Role not found")
 		} else {
-			http.Error(w, "Failed to retrieve role: "+err.Error(), http.StatusInternalServerError)
+			WriteAPIError(w, http.StatusInternalServerError, "RoleFetchError", "Failed to retrieve role: "+err.Error())
 		}
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(toRoleResponseDTO(role)); err != nil {
-		fmt.Printf("Error encoding JSON response for GetRole: %v\n", err)
-	}
+	WriteAPIResponse(w, http.StatusOK, toRoleResponseDTO(role))
 }
 
 // CreateRole godoc
@@ -175,28 +169,28 @@ func (h *AdminRoleHandler) GetRole(w http.ResponseWriter, r *http.Request) {
 func (h *AdminRoleHandler) CreateRole(w http.ResponseWriter, r *http.Request) {
 	var payload RoleCreatePayload
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		http.Error(w, "Invalid request payload: "+err.Error(), http.StatusBadRequest)
+		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request payload: "+err.Error())
 		return
 	}
 
 	if payload.Name == "" {
-		http.Error(w, "Role name is required", http.StatusBadRequest)
+		WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Role name is required")
 		return
 	}
 
 	if payload.Name == models.SuperAdminRoleName {
-		http.Error(w, fmt.Sprintf("Role name '%s' is reserved.", models.SuperAdminRoleName), http.StatusBadRequest)
+		WriteAPIError(w, http.StatusBadRequest, "ValidationError", fmt.Sprintf("Role name '%s' is reserved.", models.SuperAdminRoleName))
 		return
 	}
 
 	for _, pKey := range payload.GlobalPermissions {
 		permDef, ok := permissions.GetPermissionDefinition(pKey)
 		if !ok {
-			http.Error(w, fmt.Sprintf("Invalid global permission key: %s", pKey), http.StatusBadRequest)
+			WriteAPIError(w, http.StatusBadRequest, "ValidationError", fmt.Sprintf("Invalid global permission key: %s", pKey))
 			return
 		}
 		if permDef.Scope != permissions.ScopeGlobal {
-			http.Error(w, fmt.Sprintf("Permission '%s' is not a global permission", pKey), http.StatusBadRequest)
+			WriteAPIError(w, http.StatusBadRequest, "ValidationError", fmt.Sprintf("Permission '%s' is not a global permission", pKey))
 			return
 		}
 	}
@@ -204,11 +198,11 @@ func (h *AdminRoleHandler) CreateRole(w http.ResponseWriter, r *http.Request) {
 	for _, pKey := range payload.GlobalAlbumPermissions {
 		permDef, ok := permissions.GetPermissionDefinition(pKey)
 		if !ok {
-			http.Error(w, fmt.Sprintf("Invalid album permission key: %s", pKey), http.StatusBadRequest)
+			WriteAPIError(w, http.StatusBadRequest, "ValidationError", fmt.Sprintf("Invalid album permission key: %s", pKey))
 			return
 		}
 		if permDef.Scope != permissions.ScopeAlbum {
-			http.Error(w, fmt.Sprintf("Permission '%s' is not an album-scoped permission", pKey), http.StatusBadRequest)
+			WriteAPIError(w, http.StatusBadRequest, "ValidationError", fmt.Sprintf("Permission '%s' is not an album-scoped permission", pKey))
 			return
 		}
 	}
@@ -220,7 +214,7 @@ func (h *AdminRoleHandler) CreateRole(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.RoleRepo.Create(role); err != nil {
-		http.Error(w, "Failed to create role: "+err.Error(), http.StatusInternalServerError)
+		WriteAPIError(w, http.StatusInternalServerError, "RoleCreateError", "Failed to create role: "+err.Error())
 		return
 	}
 
@@ -229,11 +223,11 @@ func (h *AdminRoleHandler) CreateRole(w http.ResponseWriter, r *http.Request) {
 		for _, pKey := range apPayload.Permissions {
 			permDef, ok := permissions.GetPermissionDefinition(pKey)
 			if !ok {
-				http.Error(w, fmt.Sprintf("Invalid album permission key: %s for album %d", pKey, apPayload.AlbumID), http.StatusBadRequest)
+				WriteAPIError(w, http.StatusBadRequest, "ValidationError", fmt.Sprintf("Invalid album permission key: %s for album %d", pKey, apPayload.AlbumID))
 				return
 			}
 			if permDef.Scope != permissions.ScopeAlbum {
-				http.Error(w, fmt.Sprintf("Permission %s is not an album-specific permission for album %d", pKey, apPayload.AlbumID), http.StatusBadRequest)
+				WriteAPIError(w, http.StatusBadRequest, "ValidationError", fmt.Sprintf("Permission %s is not an album-specific permission for album %d", pKey, apPayload.AlbumID))
 				return
 			}
 		}
@@ -246,7 +240,7 @@ func (h *AdminRoleHandler) CreateRole(w http.ResponseWriter, r *http.Request) {
 		if err := h.RoleRepo.CreateRoleAlbumPermission(rap); err != nil {
 			// attempt to clean up the created role if subsequent album perm creation fails
 			_ = h.RoleRepo.Delete(role.ID)
-			http.Error(w, fmt.Sprintf("Failed to create album permission for album %d: %s", apPayload.AlbumID, err.Error()), http.StatusInternalServerError)
+			WriteAPIError(w, http.StatusInternalServerError, "RoleAlbumPermissionError", fmt.Sprintf("Failed to create album permission for album %d: %s", apPayload.AlbumID, err.Error()))
 			return
 		}
 		createdAlbumPermissions = append(createdAlbumPermissions, *rap)
@@ -255,15 +249,11 @@ func (h *AdminRoleHandler) CreateRole(w http.ResponseWriter, r *http.Request) {
 
 	reloadedRole, err := h.RoleRepo.GetByID(role.ID)
 	if err != nil {
-		http.Error(w, "Failed to retrieve newly created role with associations: "+err.Error(), http.StatusInternalServerError)
+		WriteAPIError(w, http.StatusInternalServerError, "RoleFetchError", "Failed to retrieve newly created role with associations: "+err.Error())
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	if err := json.NewEncoder(w).Encode(toRoleResponseDTO(reloadedRole)); err != nil {
-		fmt.Printf("Error encoding JSON response for CreateRole: %v\n", err)
-	}
+	WriteAPIResponse(w, http.StatusCreated, toRoleResponseDTO(reloadedRole))
 }
 
 // UpdateRole godoc
@@ -286,34 +276,34 @@ func (h *AdminRoleHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 	roleIDStr := chi.URLParam(r, "roleID")
 	roleID, err := strconv.ParseUint(roleIDStr, 10, 32)
 	if err != nil {
-		http.Error(w, "Invalid role ID format", http.StatusBadRequest)
+		WriteAPIError(w, http.StatusBadRequest, "InvalidRoleID", "Invalid role ID format")
 		return
 	}
 
 	var payload RoleUpdatePayload
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		http.Error(w, "Invalid request payload: "+err.Error(), http.StatusBadRequest)
+		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request payload: "+err.Error())
 		return
 	}
 
 	role, err := h.RoleRepo.GetByID(uint(roleID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			http.Error(w, "Role not found", http.StatusNotFound)
+			WriteAPIError(w, http.StatusNotFound, "RoleNotFound", "Role not found")
 		} else {
-			http.Error(w, "Failed to retrieve role for update: "+err.Error(), http.StatusInternalServerError)
+			WriteAPIError(w, http.StatusInternalServerError, "RoleFetchError", "Failed to retrieve role for update: "+err.Error())
 		}
 		return
 	}
 
 	if role.Name == models.SuperAdminRoleName {
-		http.Error(w, "The Super Administrator role cannot be modified.", http.StatusForbidden)
+		WriteAPIError(w, http.StatusForbidden, "ForbiddenRoleUpdate", "The Super Administrator role cannot be modified.")
 		return
 	}
 
 	if payload.Name != nil {
 		if *payload.Name == models.SuperAdminRoleName && role.Name != models.SuperAdminRoleName {
-			http.Error(w, fmt.Sprintf("Role name '%s' is reserved.", models.SuperAdminRoleName), http.StatusBadRequest)
+			WriteAPIError(w, http.StatusBadRequest, "ValidationError", fmt.Sprintf("Role name '%s' is reserved.", models.SuperAdminRoleName))
 			return
 		}
 		role.Name = *payload.Name
@@ -323,11 +313,11 @@ func (h *AdminRoleHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 		for _, pKey := range *payload.GlobalPermissions {
 			permDef, ok := permissions.GetPermissionDefinition(pKey)
 			if !ok {
-				http.Error(w, fmt.Sprintf("Invalid global permission key: %s", pKey), http.StatusBadRequest)
+				WriteAPIError(w, http.StatusBadRequest, "ValidationError", fmt.Sprintf("Invalid global permission key: %s", pKey))
 				return
 			}
 			if permDef.Scope != permissions.ScopeGlobal {
-				http.Error(w, fmt.Sprintf("Permission '%s' is not a global permission", pKey), http.StatusBadRequest)
+				WriteAPIError(w, http.StatusBadRequest, "ValidationError", fmt.Sprintf("Permission '%s' is not a global permission", pKey))
 				return
 			}
 		}
@@ -338,11 +328,11 @@ func (h *AdminRoleHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 		for _, pKey := range *payload.GlobalAlbumPermissions {
 			permDef, ok := permissions.GetPermissionDefinition(pKey)
 			if !ok {
-				http.Error(w, fmt.Sprintf("Invalid album permission key: %s", pKey), http.StatusBadRequest)
+				WriteAPIError(w, http.StatusBadRequest, "ValidationError", fmt.Sprintf("Invalid album permission key: %s", pKey))
 				return
 			}
 			if permDef.Scope != permissions.ScopeAlbum {
-				http.Error(w, fmt.Sprintf("Permission '%s' is not an album-scoped permission", pKey), http.StatusBadRequest)
+				WriteAPIError(w, http.StatusBadRequest, "ValidationError", fmt.Sprintf("Permission '%s' is not an album-scoped permission", pKey))
 				return
 			}
 		}
@@ -352,12 +342,12 @@ func (h *AdminRoleHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 	if payload.AlbumPermissions != nil {
 		existingRaps, err := h.RoleRepo.GetRoleAlbumPermissions(role.ID)
 		if err != nil {
-			http.Error(w, "Failed to retrieve existing album permissions for update: "+err.Error(), http.StatusInternalServerError)
+			WriteAPIError(w, http.StatusInternalServerError, "RoleAlbumPermissionError", "Failed to retrieve existing album permissions for update: "+err.Error())
 			return
 		}
 		for _, existingRap := range existingRaps {
 			if err := h.RoleRepo.DeleteRoleAlbumPermission(role.ID, existingRap.AlbumID); err != nil {
-				http.Error(w, fmt.Sprintf("Failed to delete existing album permission for album %d: %s", existingRap.AlbumID, err.Error()), http.StatusInternalServerError)
+				WriteAPIError(w, http.StatusInternalServerError, "RoleAlbumPermissionError", fmt.Sprintf("Failed to delete existing album permission for album %d: %s", existingRap.AlbumID, err.Error()))
 				return
 			}
 		}
@@ -367,11 +357,11 @@ func (h *AdminRoleHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 			for _, pKey := range apInput.Permissions {
 				permDef, ok := permissions.GetPermissionDefinition(pKey)
 				if !ok {
-					http.Error(w, fmt.Sprintf("Invalid album permission key: %s for album %d", pKey, apInput.AlbumID), http.StatusBadRequest)
+					WriteAPIError(w, http.StatusBadRequest, "ValidationError", fmt.Sprintf("Invalid album permission key: %s for album %d", pKey, apInput.AlbumID))
 					return
 				}
 				if permDef.Scope != permissions.ScopeAlbum {
-					http.Error(w, fmt.Sprintf("Permission %s is not an album-specific permission for album %d", pKey, apInput.AlbumID), http.StatusBadRequest)
+					WriteAPIError(w, http.StatusBadRequest, "ValidationError", fmt.Sprintf("Permission %s is not an album-specific permission for album %d", pKey, apInput.AlbumID))
 					return
 				}
 			}
@@ -382,7 +372,7 @@ func (h *AdminRoleHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if err := h.RoleRepo.CreateRoleAlbumPermission(rap); err != nil {
-				http.Error(w, fmt.Sprintf("Failed to create/update album permission for album %d: %s", apInput.AlbumID, err.Error()), http.StatusInternalServerError)
+				WriteAPIError(w, http.StatusInternalServerError, "RoleAlbumPermissionError", fmt.Sprintf("Failed to create/update album permission for album %d: %s", apInput.AlbumID, err.Error()))
 				return
 			}
 			createdRap, _ := h.RoleRepo.GetRoleAlbumPermission(role.ID, apInput.AlbumID)
@@ -394,21 +384,17 @@ func (h *AdminRoleHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.RoleRepo.Update(role); err != nil {
-		http.Error(w, "Failed to update role: "+err.Error(), http.StatusInternalServerError)
+		WriteAPIError(w, http.StatusInternalServerError, "RoleUpdateError", "Failed to update role: "+err.Error())
 		return
 	}
 
 	updatedRole, err := h.RoleRepo.GetByID(role.ID)
 	if err != nil {
-		http.Error(w, "Failed to retrieve updated role with associations: "+err.Error(), http.StatusInternalServerError)
+		WriteAPIError(w, http.StatusInternalServerError, "RoleFetchError", "Failed to retrieve updated role with associations: "+err.Error())
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(toRoleResponseDTO(updatedRole)); err != nil {
-		fmt.Printf("Error encoding JSON response for UpdateRole: %v\n", err)
-	}
+	WriteAPIResponse(w, http.StatusOK, toRoleResponseDTO(updatedRole))
 }
 
 // DeleteRole godoc
@@ -427,181 +413,27 @@ func (h *AdminRoleHandler) DeleteRole(w http.ResponseWriter, r *http.Request) {
 	roleIDStr := chi.URLParam(r, "roleID")
 	roleID, err := strconv.ParseUint(roleIDStr, 10, 32)
 	if err != nil {
-		http.Error(w, "Invalid role ID format", http.StatusBadRequest)
+		WriteAPIError(w, http.StatusBadRequest, "InvalidRoleID", "Invalid role ID format")
 		return
 	}
 
 	role, err := h.RoleRepo.GetByID(uint(roleID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			http.Error(w, "Role not found", http.StatusNotFound)
+			WriteAPIError(w, http.StatusNotFound, "RoleNotFound", "Role not found")
 			return
 		}
-		http.Error(w, "Failed to check role before delete: "+err.Error(), http.StatusInternalServerError)
+		WriteAPIError(w, http.StatusInternalServerError, "RoleFetchError", "Failed to check role before delete: "+err.Error())
 		return
 	}
 
 	if role.Name == models.SuperAdminRoleName {
-		http.Error(w, "The Super Administrator role cannot be deleted.", http.StatusForbidden)
+		WriteAPIError(w, http.StatusForbidden, "ForbiddenRoleDelete", "The Super Administrator role cannot be deleted.")
 		return
 	}
 
 	if err := h.RoleRepo.Delete(uint(roleID)); err != nil {
-		http.Error(w, "Failed to delete role: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// GetRoleUsers godoc
-// @Summary Get users assigned to a role
-// @Description Get a list of all users who are assigned to a specific role
-// @Tags admin-roles
-// @Produce json
-// @Param id path int true "Role ID"
-// @Success 200 {array} UserSummaryDTO
-// @Failure 400 {object} map[string]string
-// @Failure 404 {object} map[string]string
-// @Failure 500 {object} map[string]string
-// @Router /api/admin/roles/{id}/users [get]
-// @Security BearerAuth
-func (h *AdminRoleHandler) GetRoleUsers(w http.ResponseWriter, r *http.Request) {
-	roleIDStr := chi.URLParam(r, "roleID")
-	roleID, err := strconv.ParseUint(roleIDStr, 10, 32)
-	if err != nil {
-		http.Error(w, "Invalid role ID format", http.StatusBadRequest)
-		return
-	}
-
-	if _, err := h.RoleRepo.GetByID(uint(roleID)); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			http.Error(w, "Role not found", http.StatusNotFound)
-		} else {
-			http.Error(w, "Failed to verify role existence: "+err.Error(), http.StatusInternalServerError)
-		}
-		return
-	}
-
-	users, err := h.RoleRepo.FindUsersByRoleID(uint(roleID))
-	if err != nil {
-		http.Error(w, "Failed to retrieve users for role: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(toUserSummaryListDTO(users)); err != nil {
-		fmt.Printf("Error encoding JSON response for GetRoleUsers: %v\n", err)
-	}
-}
-
-type AddUserToRolePayload struct {
-	UserID uint `json:"user_id"`
-}
-
-// AddUserToRole godoc
-// @Summary Assign a user to a role
-// @Description Assign a user to a role. The Super Administrator role cannot be assigned.
-// @Tags admin-roles
-// @Accept json
-// @Produce json
-// @Param id path int true "Role ID"
-// @Param payload body AddUserToRolePayload true "User ID to add"
-// @Success 204 "No Content"
-// @Failure 400 {object} map[string]string
-// @Failure 403 {object} map[string]string "Forbidden to modify Super Administrator role"
-// @Failure 404 {object} map[string]string
-// @Failure 500 {object} map[string]string
-// @Router /api/admin/roles/{id}/users [post]
-// @Security BearerAuth
-func (h *AdminRoleHandler) AddUserToRole(w http.ResponseWriter, r *http.Request) {
-	roleIDStr := chi.URLParam(r, "roleID")
-	roleID, err := strconv.ParseUint(roleIDStr, 10, 32)
-	if err != nil {
-		http.Error(w, "Invalid role ID format", http.StatusBadRequest)
-		return
-	}
-
-	var payload AddUserToRolePayload
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		http.Error(w, "Invalid request payload: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	if payload.UserID == 0 {
-		http.Error(w, "User ID is required", http.StatusBadRequest)
-		return
-	}
-
-	role, err := h.RoleRepo.GetByID(uint(roleID))
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			http.Error(w, "Role not found", http.StatusNotFound)
-		} else {
-			http.Error(w, "Failed to retrieve role: "+err.Error(), http.StatusInternalServerError)
-		}
-		return
-	}
-	if role.Name == models.SuperAdminRoleName {
-		http.Error(w, "The Super Administrator role cannot be manually assigned.", http.StatusForbidden)
-		return
-	}
-
-	// TODO: check if user exists before adding
-
-	if err := h.RoleRepo.AddUserToRole(payload.UserID, uint(roleID)); err != nil {
-		http.Error(w, "Failed to add user to role: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// RemoveUserFromRole godoc
-// @Summary Remove a user from a role
-// @Description Remove a user's assignment from a role. The Super Administrator role cannot be modified.
-// @Tags admin-roles
-// @Param roleID path int true "Role ID"
-// @Param userID path int true "User ID"
-// @Success 204 "No Content"
-// @Failure 400 {object} map[string]string
-// @Failure 403 {object} map[string]string "Forbidden to modify Super Administrator role"
-// @Failure 404 {object} map[string]string
-// @Failure 500 {object} map[string]string
-// @Router /api/admin/roles/{roleID}/users/{userID} [delete]
-// @Security BearerAuth
-func (h *AdminRoleHandler) RemoveUserFromRole(w http.ResponseWriter, r *http.Request) {
-	roleIDStr := chi.URLParam(r, "roleID")
-	roleID, err := strconv.ParseUint(roleIDStr, 10, 32)
-	if err != nil {
-		http.Error(w, "Invalid role ID format", http.StatusBadRequest)
-		return
-	}
-
-	userIDStr := chi.URLParam(r, "userID")
-	userID, err := strconv.ParseUint(userIDStr, 10, 32)
-	if err != nil {
-		http.Error(w, "Invalid user ID format", http.StatusBadRequest)
-		return
-	}
-
-	role, err := h.RoleRepo.GetByID(uint(roleID))
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			http.Error(w, "Role not found", http.StatusNotFound)
-		} else {
-			http.Error(w, "Failed to retrieve role: "+err.Error(), http.StatusInternalServerError)
-		}
-		return
-	}
-	if role.Name == models.SuperAdminRoleName {
-		http.Error(w, "Users cannot be removed from the Super Administrator role.", http.StatusForbidden)
-		return
-	}
-
-	if err := h.RoleRepo.RemoveUserFromRole(uint(userID), uint(roleID)); err != nil {
-		http.Error(w, "Failed to remove user from role: "+err.Error(), http.StatusInternalServerError)
+		WriteAPIError(w, http.StatusInternalServerError, "RoleDeleteError", "Failed to delete role: "+err.Error())
 		return
 	}
 

@@ -59,6 +59,23 @@ func (r *PersonRepository) ListAll() ([]models.Person, error) {
 	return people, nil
 }
 
+// UpdateKeyPhoto sets or clears the key_photo_face_id for a person.
+// Pass nil to clear the key photo.
+func (r *PersonRepository) UpdateKeyPhoto(personID uint, faceID *uint) error {
+	updates := map[string]interface{}{
+		"key_photo_face_id": faceID,
+		"updated_at":        time.Now().Unix(),
+	}
+	result := r.DB.Model(&models.Person{}).Where("id = ?", personID).Updates(updates)
+	if result.Error != nil {
+		return fmt.Errorf("failed to update key photo for person ID %d: %w", personID, result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
 // Update updates an existing person's details
 func (r *PersonRepository) Update(person *models.Person) error {
 	person.UpdatedAt = time.Now().Unix()
@@ -177,6 +194,23 @@ func (r *PersonRepository) FindImagesByPersonIDs(personIDs []uint) ([]string, er
 		return nil, fmt.Errorf("failed to find images by person IDs: %w", err)
 	}
 	return imagePaths, nil
+}
+
+// SearchByNameOrAlias searches for people by primary name or alias, returning up to limit results.
+func (r *PersonRepository) SearchByNameOrAlias(query string, limit int) ([]models.Person, error) {
+	var people []models.Person
+	likeQuery := "%" + query + "%"
+	err := r.DB.Preload("Aliases").
+		Joins("LEFT JOIN aliases ON aliases.person_id = people.id").
+		Where("people.primary_name LIKE ? OR aliases.name LIKE ?", likeQuery, likeQuery).
+		Group("people.id").
+		Order("people.primary_name ASC").
+		Limit(limit).
+		Find(&people).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to search people for '%s': %w", query, err)
+	}
+	return people, nil
 }
 
 // GetPersonWithAliases retrieves a person and their aliases

@@ -12,9 +12,10 @@ import (
 
 	"github.com/camden-git/mediasysbackend/config"
 	"github.com/camden-git/mediasysbackend/media"
+	"github.com/camden-git/mediasysbackend/models"
 	"github.com/camden-git/mediasysbackend/realtime"
 	"github.com/camden-git/mediasysbackend/repository"
-	"github.com/camden-git/mediasysbackend/utils"
+	"github.com/disintegration/imaging"
 	"gocv.io/x/gocv"
 )
 
@@ -24,6 +25,7 @@ const (
 	TaskMetadata  = "metadata"
 	TaskDetection = "detection"
 	TaskAlbumZip  = "album_zip"
+	TaskPreview   = "preview"
 )
 
 type ImageJob struct {
@@ -40,6 +42,7 @@ type ImageProcessor struct {
 	ImageRepo repository.ImageRepositoryInterface
 	AlbumRepo repository.AlbumRepositoryInterface
 	FaceRepo  repository.FaceRepositoryInterface
+	TagRepo   repository.ImageTagRepositoryInterface
 	Wg        sync.WaitGroup
 	StopChan  chan struct{}
 	Pending   map[string]bool
@@ -52,6 +55,7 @@ func NewImageProcessor(
 	imgRepo repository.ImageRepositoryInterface,
 	albumRepo repository.AlbumRepositoryInterface,
 	faceRepo repository.FaceRepositoryInterface,
+	tagRepo repository.ImageTagRepositoryInterface,
 	queueSize, numWorkers int,
 	hub *realtime.Hub,
 ) *ImageProcessor {
@@ -67,6 +71,7 @@ func NewImageProcessor(
 		ImageRepo: imgRepo,
 		AlbumRepo: albumRepo,
 		FaceRepo:  faceRepo,
+		TagRepo:   tagRepo,
 		StopChan:  make(chan struct{}),
 		Pending:   make(map[string]bool),
 		Hub:       hub,
@@ -87,6 +92,7 @@ func (ip *ImageProcessor) worker(id int, cfg config.Config) {
 		media.AssetTypeThumbnail: filepath.Base(cfg.ThumbnailsPath),
 		media.AssetTypeBanner:    filepath.Base(cfg.BannersPath),
 		media.AssetTypeArchive:   filepath.Base(cfg.ArchivesPath),
+		media.AssetTypePreview:   filepath.Base(cfg.PreviewsPath),
 	})
 	if err != nil {
 		log.Printf("Worker %d: FATAL - Failed to initialize media store: %v. Worker exiting.", id, err)
@@ -197,6 +203,8 @@ func (ip *ImageProcessor) worker(id int, cfg config.Config) {
 				ip.processDetectionTask(job, faceDetector, retinaFaceDetector, recognitionModel, cfg)
 			case TaskAlbumZip:
 				ip.processAlbumZipTask(job, mediaStore)
+			case TaskPreview:
+				ip.processPreviewTask(job, mediaProcessor)
 			default:
 				log.Printf("Worker %d: ERROR unknown task type '%s'", id, job.TaskType)
 			}
@@ -280,6 +288,41 @@ func (ip *ImageProcessor) processMetadataTask(job ImageJob) {
 	if dbErr != nil {
 		log.Printf("Worker: ERROR updating metadata DB result for %s: %v", job.OriginalRelativePath, dbErr)
 	}
+
+	// Update XMP-derived tags if metadata was extracted successfully
+	if taskErr == nil && metadata != nil && ip.TagRepo != nil {
+		xmpTags := buildXMPTags(job.OriginalRelativePath, metadata.Keywords)
+		if tagErr := ip.TagRepo.SetXMPTags(job.OriginalRelativePath, xmpTags); tagErr != nil {
+			log.Printf("Worker: ERROR updating XMP tags for %s: %v", job.OriginalRelativePath, tagErr)
+		}
+	}
+}
+
+// buildXMPTags converts raw XMP keyword strings into ImageTag records.
+// Keywords containing "/" are treated as hierarchical "key/value" pairs.
+// Others use tag_key="keyword" with the raw string as tag_value.
+func buildXMPTags(imagePath string, keywords []string) []models.ImageTag {
+	tags := make([]models.ImageTag, 0, len(keywords))
+	for _, kw := range keywords {
+		var key, val string
+		if idx := strings.Index(kw, "/"); idx > 0 {
+			key = strings.TrimSpace(kw[:idx])
+			val = strings.TrimSpace(kw[idx+1:])
+		} else {
+			key = "keyword"
+			val = strings.TrimSpace(kw)
+		}
+		if key == "" || val == "" {
+			continue
+		}
+		tags = append(tags, models.ImageTag{
+			ImagePath: imagePath,
+			TagKey:    key,
+			TagValue:  val,
+			Source:    "xmp",
+		})
+	}
+	return tags
 }
 
 // processDetectionTask performs detection and updates DB
@@ -353,7 +396,7 @@ func (ip *ImageProcessor) processAlbumZipTask(job ImageJob, store media.Store) {
 
 		zipFilenameBase := fmt.Sprintf("album_%s_%d_archive_%d", safeSlug, album.ID, time.Now().Unix())
 
-		savedZipFilename, zipSizeBytes, zipErr := utils.CreateAlbumZip(
+		savedZipFilename, zipSizeBytes, zipErr := CreateAlbumZip(
 			ip.Config.RootDirectory, // root of all media folders
 			album.FolderPath,        // path relative to RootDirectory
 			zipSaveDirAbs,           // absolute path to save the zip
@@ -390,6 +433,75 @@ func (ip *ImageProcessor) processAlbumZipTask(job ImageJob, store media.Store) {
 					log.Printf("Worker: Failed to remove zip file %s after DB error: %v", fullPathToClean, err)
 				}
 			}
+		}
+	}
+}
+
+// processPreviewTask generates a scaled preview and updates DB
+func (ip *ImageProcessor) processPreviewTask(job ImageJob, processor *media.Processor) {
+	var taskErr error
+	var previewRelPath *string
+
+	src, openErr := imaging.Open(job.OriginalImagePath, imaging.AutoOrientation(true))
+	if openErr != nil {
+		taskErr = fmt.Errorf("failed to open original file for preview: %w", openErr)
+		log.Printf("Worker: Skipping preview task for %s: %v", job.OriginalRelativePath, taskErr)
+	} else {
+		relPath, genErr := processor.GeneratePreview(src, job.OriginalRelativePath)
+		if genErr != nil {
+			taskErr = fmt.Errorf("preview generation/save failed: %w", genErr)
+			log.Printf("Worker: ERROR %v for %s", taskErr, job.OriginalRelativePath)
+		} else {
+			previewRelPath = &relPath
+			log.Printf("Worker: Generated preview for %s", job.OriginalRelativePath)
+		}
+	}
+
+	dbErr := ip.ImageRepo.UpdatePreviewResult(job.OriginalRelativePath, previewRelPath, job.ModTimeUnix, taskErr)
+	if dbErr != nil {
+		log.Printf("Worker: ERROR updating preview DB result for %s: %v", job.OriginalRelativePath, dbErr)
+	}
+}
+
+// StartPreviewCleanup starts a background goroutine that evicts stale previews every 6 hours
+func (ip *ImageProcessor) StartPreviewCleanup() {
+	go func() {
+		ticker := time.NewTicker(6 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				ip.cleanupStalePreviewFiles()
+			case <-ip.StopChan:
+				return
+			}
+		}
+	}()
+	log.Println("Preview cleanup goroutine started (runs every 6 hours, TTL=7 days)")
+}
+
+// cleanupStalePreviewFiles removes preview files not accessed in the last 7 days
+func (ip *ImageProcessor) cleanupStalePreviewFiles() {
+	cutoffUnix := time.Now().Add(-7 * 24 * time.Hour).Unix()
+	staleImages, err := ip.ImageRepo.GetStalePreviewImages(cutoffUnix)
+	if err != nil {
+		log.Printf("Preview cleanup: ERROR fetching stale previews: %v", err)
+		return
+	}
+	log.Printf("Preview cleanup: Found %d stale preview(s) to evict", len(staleImages))
+	for _, img := range staleImages {
+		if img.PreviewPath == nil {
+			continue
+		}
+		fullPath := filepath.Join(ip.Config.MediaStoragePath, *img.PreviewPath)
+		if removeErr := os.Remove(fullPath); removeErr != nil && !os.IsNotExist(removeErr) {
+			log.Printf("Preview cleanup: ERROR removing %s: %v", fullPath, removeErr)
+		}
+		resetErr := ip.ImageRepo.UpdatePreviewResult(img.OriginalPath, nil, img.LastModified, nil)
+		if resetErr != nil {
+			log.Printf("Preview cleanup: ERROR resetting preview status for %s: %v", img.OriginalPath, resetErr)
+		} else {
+			log.Printf("Preview cleanup: Evicted preview for %s", img.OriginalPath)
 		}
 	}
 }

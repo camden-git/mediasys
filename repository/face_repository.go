@@ -133,10 +133,11 @@ func (r *FaceRepository) DeleteUntaggedByImagePath(imagePath string) (int64, err
 	return result.RowsAffected, nil
 }
 
-// TagFace assigns a PersonID to an existing face
-func (r *FaceRepository) TagFace(faceID uint, personID uint) error {
+// TagFace assigns a PersonID to an existing face. Set confirmed=true when a human explicitly approves the assignment.
+func (r *FaceRepository) TagFace(faceID uint, personID uint, confirmed bool) error {
 	updates := map[string]interface{}{
 		"person_id":  personID,
+		"confirmed":  confirmed,
 		"updated_at": time.Now().Unix(),
 	}
 	result := r.DB.Model(&models.Face{}).Where("id = ?", faceID).Updates(updates)
@@ -149,10 +150,11 @@ func (r *FaceRepository) TagFace(faceID uint, personID uint) error {
 	return nil
 }
 
-// UntagFace sets the PersonID of an existing face to NULL.
+// UntagFace sets the PersonID of an existing face to NULL and clears confirmed.
 func (r *FaceRepository) UntagFace(faceID uint) error {
 	updates := map[string]interface{}{
 		"person_id":  gorm.Expr("NULL"),
+		"confirmed":  false,
 		"updated_at": time.Now().Unix(),
 	}
 	result := r.DB.Model(&models.Face{}).Where("id = ?", faceID).Updates(updates)

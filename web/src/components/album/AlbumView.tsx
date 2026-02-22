@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useStoreState, State } from 'easy-peasy';
 import { useStoreActions, Actions } from 'easy-peasy';
 import { StoreModel } from '../../store';
@@ -6,12 +7,10 @@ import LoadingSpinner from '../elements/LoadingSpinner.tsx';
 import ErrorMessage from '../elements/ErrorMessage.tsx';
 import { Heading } from '../elements/Heading.tsx';
 import AdvancedImageGrid from './AdvancedImageGrid.tsx';
-import { getAlbumDownloadUrl, getBannerUrl, getOriginalImageUrl } from '../../api.ts';
+import { getAlbumContentsWithRating, getAlbumDownloadUrl, getBannerUrl, getOriginalImageUrl } from '../../api.ts';
 import { FileInfo } from '../../types.ts';
 import ImageLightbox from './ImageLightbox.tsx';
-//
-//
-import { ArrowDownIcon, CameraIcon, MapPinIcon, PhotoIcon, ShareIcon } from '@heroicons/react/16/solid';
+import { ArrowDownIcon, CameraIcon, MapPinIcon, PhotoIcon, ShareIcon, SparklesIcon } from '@heroicons/react/16/solid';
 import { useFlash } from '../../hooks/useFlash.ts';
 import FlashMessageRender from '../elements/FlashMessageRender.tsx';
 import DownloadDialog from './DownloadDialog.tsx';
@@ -61,22 +60,77 @@ const AlbumView: React.FC = () => {
     const [isSharing, setIsSharing] = useState(false);
     const [shareProgress, setShareProgress] = useState<ShareProgress>(null);
 
+    const navigate = useNavigate();
+    const routeParams = useParams<{ identifier: string; '*': string }>();
+    const identifier = routeParams.identifier ?? currentAlbum?.slug ?? String(currentAlbum?.id ?? '');
+    const imagePathFromUrl = routeParams['*'] ? decodeURIComponent(routeParams['*']) : null;
+
+    // Highlights mode: ?highlights=1 in URL enables min_rating=4 filter
+    const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
+    const [highlightsMode, setHighlightsMode] = useState(searchParams.get('highlights') === '1');
+    const [highlightsListing, setHighlightsListing] = useState<typeof directoryListing>(null);
+
+    const folderPrefix = currentAlbum?.folder_path
+        ? currentAlbum.folder_path.replace(/\/?$/, '/')
+        : null;
+
+    const encodeImagePath = (path: string) => {
+        const stripped = (folderPrefix ? path.replace(folderPrefix, '') : path).replace(/^\//, '');
+        return stripped.split('/').map(encodeURIComponent).join('/');
+    };
+
+    const normalizePath = (path: string) =>
+        (folderPrefix ? path.replace(folderPrefix, '') : path).replace(/^\//, '');
+
     const sentinelRef = useRef<HTMLDivElement | null>(null);
     const isFetchingMoreRef = useRef(false);
     const hasUserScrolledRef = useRef(false);
     const prefillCountRef = useRef(0);
+    const pendingAdvanceRef = useRef(false);
+
+    // Fetch highlights when toggled on
+    useEffect(() => {
+        if (!highlightsMode || !currentAlbum) {
+            setHighlightsListing(null);
+            return;
+        }
+        const controller = new AbortController();
+        (async () => {
+            try {
+                const data = await getAlbumContentsWithRating(
+                    currentAlbum.slug ?? String(currentAlbum.id),
+                    { offset: 0, limit: 200, min_rating: 4 },
+                    controller.signal,
+                );
+                setHighlightsListing(data);
+            } catch {
+                // ignore abort
+            }
+        })();
+        return () => controller.abort();
+    }, [highlightsMode, currentAlbum]);
+
+    const handleToggleHighlights = () => {
+        const next = !highlightsMode;
+        setHighlightsMode(next);
+        const base = `/album/${identifier}`;
+        navigate(next ? `${base}?highlights=1` : base, { replace: true });
+    };
+
+    const activeListing = highlightsMode ? highlightsListing : directoryListing;
 
     const imageFiles = useMemo(() => {
-        if (!directoryListing?.files) {
+        if (!activeListing?.files) {
             return [];
         }
-        return directoryListing.files.filter((file) => !file.is_dir && file.thumbnail_path);
-    }, [directoryListing]);
+        return activeListing.files.filter((file) => !file.is_dir && file.thumbnail_path);
+    }, [activeListing?.files]);
 
     const canLoadMore = useMemo(() => {
+        if (highlightsMode) return false; // highlights fetches everything at once
         if (!directoryListing) return false;
         return Boolean(directoryListing.has_more);
-    }, [directoryListing]);
+    }, [directoryListing, highlightsMode]);
 
     const loadMore = useCallback(async () => {
         if (!currentAlbum || isFetchingMoreRef.current || !canLoadMore) return;
@@ -102,7 +156,37 @@ const AlbumView: React.FC = () => {
     useEffect(() => {
         prefillCountRef.current = 0;
         hasUserScrolledRef.current = false;
+        setSelectedImage(null); // Close lightbox when switching albums
     }, [currentAlbum?.id, currentAlbum?.slug]);
+
+    // URL → state: seek to image from URL
+    useEffect(() => {
+        if (!imagePathFromUrl) {
+            if (selectedImage) setSelectedImage(null);
+            return;
+        }
+
+        // Already showing the right image — nothing to do
+        if (selectedImage && normalizePath(selectedImage.path) === imagePathFromUrl) {
+            return;
+        }
+
+        const found = imageFiles.find(f => normalizePath(f.path) === imagePathFromUrl);
+        if (found) {
+            setSelectedImage(found);
+            return;
+        }
+
+        // Image not in loaded pages yet
+        if (canLoadMore) {
+            // loadMore guards against double-fetching internally
+            void loadMore();
+        } else if (directoryListing) {
+            // All pages exhausted, image not found — go back to album
+            navigate(`/album/${identifier}`, { replace: true });
+        }
+        // else: initial data not yet loaded, wait for next run
+    }, [imagePathFromUrl, imageFiles, selectedImage, canLoadMore, directoryListing, loadMore, navigate, identifier]);
 
     useEffect(() => {
         if (!sentinelRef.current) return;
@@ -133,33 +217,62 @@ const AlbumView: React.FC = () => {
         }
     }, [imageFiles.length, canLoadMore, loadMore]);
 
-    const handleImageClick = (image: FileInfo) => {
+    const handleImageClick = useCallback((image: FileInfo) => {
         setSelectedImage(image);
-    };
+        navigate(`/album/${identifier}/image/${encodeImagePath(image.path)}`, { replace: false });
+    }, [navigate, identifier]);
 
-    const handleCloseLightbox = () => {
+    const handleCloseLightbox = useCallback(() => {
         setSelectedImage(null);
-    };
+        navigate(`/album/${identifier}`, { replace: true });
+    }, [navigate, identifier]);
 
     const selectedIndex = useMemo(() => {
         if (!selectedImage) return -1;
         return imageFiles.findIndex((f) => f.path === selectedImage.path);
     }, [selectedImage, imageFiles]);
 
+    const totalImageCount = activeListing?.total ?? imageFiles.length;
     const canPrev = selectedIndex > 0;
-    const canNext = selectedIndex >= 0 && selectedIndex < imageFiles.length - 1;
+    const canNext = selectedIndex >= 0 && selectedIndex < totalImageCount - 1;
 
-    const handlePrevImage = () => {
+    const handlePrevImage = useCallback(() => {
         if (!canPrev) return;
         const prev = imageFiles[selectedIndex - 1];
-        if (prev) setSelectedImage(prev);
-    };
+        if (prev) {
+            setSelectedImage(prev);
+            navigate(`/album/${identifier}/image/${encodeImagePath(prev.path)}`, { replace: true });
+        }
+    }, [canPrev, imageFiles, selectedIndex, navigate, identifier]);
 
-    const handleNextImage = () => {
-        if (!canNext) return;
-        const next = imageFiles[selectedIndex + 1];
-        if (next) setSelectedImage(next);
-    };
+    const handleNextImage = useCallback(() => {
+        if (selectedIndex < imageFiles.length - 1) {
+            const next = imageFiles[selectedIndex + 1];
+            setSelectedImage(next);
+            navigate(`/album/${identifier}/image/${encodeImagePath(next.path)}`, { replace: true });
+        } else if (canLoadMore) {
+            pendingAdvanceRef.current = true;
+            void loadMore();
+        }
+    }, [selectedIndex, imageFiles, canLoadMore, loadMore, navigate, identifier]);
+
+    // Proactive preload: fetch next page when within 20 images of end
+    useEffect(() => {
+        if (!selectedImage) return;
+        if (selectedIndex >= imageFiles.length - 20 && canLoadMore) {
+            void loadMore();
+        }
+    }, [selectedIndex, imageFiles.length, canLoadMore, selectedImage, loadMore]);
+
+    // Flush pending advance when new images arrive
+    useEffect(() => {
+        if (pendingAdvanceRef.current && imageFiles.length > selectedIndex + 1) {
+            pendingAdvanceRef.current = false;
+            const nextImage = imageFiles[selectedIndex + 1];
+            setSelectedImage(nextImage);
+            navigate(`/album/${identifier}/image/${encodeImagePath(nextImage.path)}`, { replace: true });
+        }
+    }, [imageFiles.length, selectedIndex, imageFiles, navigate, identifier]);
 
     const handleDownloadZip = () => {
         if (!currentAlbum?.zip_path) {
@@ -255,7 +368,7 @@ const AlbumView: React.FC = () => {
     return (
         <>
             <FlashMessageRender byKey={'album'} />
-            <div className='relative mx-auto'>
+            <div className='relative isolate mx-auto'>
                 <div className='absolute inset-x-0 top-0 -z-10 h-80 overflow-hidden rounded-t-2xl mask-b-from-60% sm:h-88 md:h-112 lg:h-128'>
                     {currentAlbum?.banner_image_path && (
                         <img
@@ -279,7 +392,8 @@ const AlbumView: React.FC = () => {
                             <div className='mt-6 flex flex-wrap items-center gap-x-4 gap-y-3 text-sm/7 font-semibold text-gray-950 sm:gap-3'>
                                 <div className='flex items-center gap-1.5'>
                                     <PhotoIcon className='size-4 text-gray-950/40' />
-                                    {directoryListing?.total ?? directoryListing?.files.length ?? 0} photos
+                                    {activeListing?.total ?? activeListing?.files.length ?? 0} photos
+                                    {highlightsMode && <span className='text-yellow-500'> (highlights)</span>}
                                 </div>
                                 <span className='hidden text-gray-950/25 sm:inline dark:text-white/25'>&middot;</span>
                                 <div className='flex items-center gap-1.5'>
@@ -306,7 +420,18 @@ const AlbumView: React.FC = () => {
                                     </>
                                 )}
                             </div>
-                            <div className='mt-10 flex gap-3'>
+                            <div className='mt-10 flex flex-wrap gap-3'>
+                                <button
+                                    onClick={handleToggleHighlights}
+                                    className={`inline-flex items-center gap-x-2 rounded-full px-3 py-0.5 text-sm/7 font-semibold transition-colors ${
+                                        highlightsMode
+                                            ? 'bg-yellow-400 text-gray-950 hover:bg-yellow-300'
+                                            : 'bg-gray-950/10 text-gray-950 hover:bg-gray-950/20 dark:bg-white/10 dark:text-white dark:hover:bg-white/20'
+                                    }`}
+                                >
+                                    <SparklesIcon className='size-2' />
+                                    Highlights
+                                </button>
                                 {currentAlbum?.zip_size && (
                                     <>
                                         <button
@@ -349,7 +474,7 @@ const AlbumView: React.FC = () => {
                                             ? shareProgress
                                                 ? `Processing ${shareProgress.current}/${shareProgress.total} (${(shareProgress.size / (1024 * 1024)).toFixed(1)}MB)`
                                                 : 'Sharing...'
-                                            : 'Experimental: Navigator Web Share API'}
+                                            : 'Share'}
                                     </button>
                                 )}
                             </div>
@@ -360,7 +485,7 @@ const AlbumView: React.FC = () => {
 
                             {isLoading && <LoadingSpinner />}
 
-                            {!isLoading && !error && directoryListing && (
+                            {!isLoading && !error && activeListing && (
                                 <AdvancedImageGrid
                                     images={imageFiles}
                                     targetRowHeight={280}
@@ -372,6 +497,8 @@ const AlbumView: React.FC = () => {
                             {canLoadMore && imageFiles.length > 0 && <div ref={sentinelRef} className='h-1 w-full' />}
                             <ImageLightbox
                                 image={selectedImage}
+                                imageIndex={selectedIndex >= 0 ? selectedIndex : undefined}
+                                totalImages={totalImageCount}
                                 onClose={handleCloseLightbox}
                                 onPrev={handlePrevImage}
                                 onNext={handleNextImage}

@@ -1,4 +1,4 @@
-package services
+package handlers
 
 import (
 	"fmt"
@@ -33,12 +33,15 @@ func NewFaceRecognitionService(
 
 // SimilarFaceResult represents a similar face found during recognition
 type SimilarFaceResult struct {
-	FaceID         uint    `json:"face_id"`
-	PersonID       *uint   `json:"person_id,omitempty"`
-	PersonName     *string `json:"person_name,omitempty"`
-	ImagePath      string  `json:"image_path"`
-	Similarity     float32 `json:"similarity"`
-	X1, Y1, X2, Y2 int     `json:"x1, y1, x2, y2"`
+	FaceID     uint    `json:"face_id"`
+	PersonID   *uint   `json:"person_id,omitempty"`
+	PersonName *string `json:"person_name,omitempty"`
+	ImagePath  string  `json:"image_path"`
+	Similarity float32 `json:"similarity"`
+	X1         int     `json:"x1"`
+	Y1         int     `json:"y1"`
+	X2         int     `json:"x2"`
+	Y2         int     `json:"y2"`
 }
 
 // FindSimilarFaces finds faces similar to a given face ID
@@ -160,10 +163,11 @@ func (s *FaceRecognitionService) SuggestPersonForFace(faceID uint) (*uint, *stri
 	return bestPersonID, bestPersonName, bestSimilarity, nil
 }
 
-// TagFaceWithPerson tags a face with a person and updates related faces
-func (s *FaceRecognitionService) TagFaceWithPerson(faceID uint, personID uint) error {
-	// Tag the target face
-	err := s.faceRepo.TagFace(faceID, personID)
+// TagFaceWithPerson tags a face with a person and updates related faces.
+// confirmed should be true when a human explicitly approved the assignment; auto-tagged similar faces are always unconfirmed.
+func (s *FaceRecognitionService) TagFaceWithPerson(faceID uint, personID uint, confirmed bool) error {
+	// Tag the target face with the requested confirmation state
+	err := s.faceRepo.TagFace(faceID, personID, confirmed)
 	if err != nil {
 		return fmt.Errorf("failed to tag face %d with person %d: %w", faceID, personID, err)
 	}
@@ -175,10 +179,10 @@ func (s *FaceRecognitionService) TagFaceWithPerson(faceID uint, personID uint) e
 		return nil // Don't fail the main operation
 	}
 
-	// Auto-tag faces with high similarity that are untagged
+	// Auto-tag faces with high similarity that are untagged; these are never confirmed
 	for _, similarFace := range similarFaces {
 		if similarFace.PersonID == nil && similarFace.Similarity > 0.8 {
-			err := s.faceRepo.TagFace(similarFace.FaceID, personID)
+			err := s.faceRepo.TagFace(similarFace.FaceID, personID, false)
 			if err != nil {
 				log.Printf("Warning: Failed to auto-tag similar face %d: %v", similarFace.FaceID, err)
 			} else {
@@ -191,11 +195,58 @@ func (s *FaceRecognitionService) TagFaceWithPerson(faceID uint, personID uint) e
 }
 
 // GetUntaggedFacesWithSuggestions returns untagged faces with person suggestions
-func (s *FaceRecognitionService) GetUntaggedFacesWithSuggestions(limit int) ([]map[string]interface{}, error) {
-	// Get untagged embeddings
-	untaggedEmbeddings, err := s.embeddingRepo.GetUntaggedEmbeddings()
+func (s *FaceRecognitionService) GetUntaggedFacesWithSuggestions(limit int, filter repository.UntaggedFaceFilter) ([]map[string]interface{}, error) {
+	// Query 1: untagged embeddings with Face preloaded (filtered + sorted at DB level)
+	untaggedEmbeddings, err := s.embeddingRepo.GetUntaggedEmbeddingsFiltered(filter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get untagged embeddings: %w", err)
+	}
+
+	// Group-by-image: keep only the first (best) embedding per image path.
+	// The embeddings are already sorted by the requested criterion, so the first
+	// occurrence per image_path is the "best" one.
+	if filter.GroupByImage {
+		seen := make(map[string]bool, len(untaggedEmbeddings))
+		filtered := untaggedEmbeddings[:0]
+		for _, e := range untaggedEmbeddings {
+			if e.Face == nil {
+				continue
+			}
+			if !seen[e.Face.ImagePath] {
+				seen[e.Face.ImagePath] = true
+				filtered = append(filtered, e)
+			}
+		}
+		untaggedEmbeddings = filtered
+	}
+
+	// Query 2: ALL embeddings with Face + Person preloaded (GORM issues batched preload queries)
+	allEmbeddings, err := s.embeddingRepo.GetAllEmbeddings()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get all embeddings: %w", err)
+	}
+
+	// Build in-memory index: faceID -> vector + person info — O(M) once
+	type embeddingInfo struct {
+		vector     []float32
+		personID   *uint
+		personName *string
+	}
+	embeddingIndex := make(map[uint]embeddingInfo, len(allEmbeddings))
+	for _, e := range allEmbeddings {
+		vec := e.GetEmbedding()
+		if vec == nil {
+			continue
+		}
+		info := embeddingInfo{vector: vec}
+		if e.Face != nil {
+			info.personID = e.Face.PersonID
+			if e.Face.Person != nil {
+				name := e.Face.Person.PrimaryName
+				info.personName = &name
+			}
+		}
+		embeddingIndex[e.FaceID] = info
 	}
 
 	var results []map[string]interface{}
@@ -203,40 +254,65 @@ func (s *FaceRecognitionService) GetUntaggedFacesWithSuggestions(limit int) ([]m
 		if i >= limit {
 			break
 		}
-
-		// Get similar faces for this untagged face
-		similarFaces, err := s.FindSimilarFaces(embedding.FaceID, 5)
-		if err != nil {
-			log.Printf("Warning: Failed to find similar faces for face %d: %v", embedding.FaceID, err)
+		targetVec := embedding.GetEmbedding()
+		if targetVec == nil || embedding.Face == nil {
 			continue
 		}
 
-		// Count person suggestions
-		personSuggestions := make(map[uint]int)
-		for _, similarFace := range similarFaces {
-			if similarFace.PersonID != nil {
-				personSuggestions[*similarFace.PersonID]++
+		// Find similar faces entirely in memory — no DB calls
+		type simResult struct {
+			personID   *uint
+			personName *string
+			similarity float32
+		}
+		var similar []simResult
+		for otherFaceID, info := range embeddingIndex {
+			if otherFaceID == embedding.FaceID {
+				continue
+			}
+			sim := s.CalculateSimilarity(targetVec, info.vector)
+			if sim >= s.similarityThreshold {
+				similar = append(similar, simResult{
+					personID:   info.personID,
+					personName: info.personName,
+					similarity: sim,
+				})
 			}
 		}
 
-		// Find most suggested person
-		var suggestedPersonID *uint
-		var suggestedPersonName *string
-		maxSuggestions := 0
-		for personID, count := range personSuggestions {
-			if count > maxSuggestions {
-				maxSuggestions = count
-				suggestedPersonID = &personID
-
-				// Get person name
-				person, err := s.personRepo.GetByID(personID)
-				if err == nil {
-					suggestedPersonName = &person.PrimaryName
+		// Vote for suggested person by count, breaking ties by similarity
+		personCounts := make(map[uint]int)
+		personSimilarities := make(map[uint]float32)
+		personNames := make(map[uint]*string)
+		for _, sf := range similar {
+			if sf.personID != nil {
+				pid := *sf.personID
+				personCounts[pid]++
+				if sf.similarity > personSimilarities[pid] {
+					personSimilarities[pid] = sf.similarity
+				}
+				if personNames[pid] == nil {
+					personNames[pid] = sf.personName
 				}
 			}
 		}
 
-		result := map[string]interface{}{
+		var suggestedPersonID *uint
+		var suggestedPersonName *string
+		maxCount := 0
+		var bestSim float32
+		for pid, count := range personCounts {
+			sim := personSimilarities[pid]
+			if count > maxCount || (count == maxCount && sim > bestSim) {
+				maxCount = count
+				bestSim = sim
+				pid2 := pid
+				suggestedPersonID = &pid2
+				suggestedPersonName = personNames[pid]
+			}
+		}
+
+		results = append(results, map[string]interface{}{
 			"face_id":               embedding.FaceID,
 			"image_path":            embedding.Face.ImagePath,
 			"x1":                    embedding.Face.X1,
@@ -245,13 +321,11 @@ func (s *FaceRecognitionService) GetUntaggedFacesWithSuggestions(limit int) ([]m
 			"y2":                    embedding.Face.Y2,
 			"detection_confidence":  embedding.Face.DetectionConfidence,
 			"quality_score":         embedding.Face.QualityScore,
-			"similar_faces_count":   len(similarFaces),
+			"similar_faces_count":   len(similar),
 			"suggested_person_id":   suggestedPersonID,
 			"suggested_person_name": suggestedPersonName,
-			"suggestion_count":      maxSuggestions,
-		}
-
-		results = append(results, result)
+			"suggestion_count":      maxCount,
+		})
 	}
 
 	return results, nil

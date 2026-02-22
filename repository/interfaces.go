@@ -5,6 +5,19 @@ import (
 	"github.com/camden-git/mediasysbackend/models"
 )
 
+// AlbumGroupRepositoryInterface defines the methods for album group data operations
+type AlbumGroupRepositoryInterface interface {
+	Create(group *models.AlbumGroup) error
+	GetByID(id uint) (*models.AlbumGroup, error)
+	GetBySlug(slug string) (*models.AlbumGroup, error)
+	ListAll() ([]models.AlbumGroup, error)
+	ListAllAdmin() ([]models.AlbumGroup, error)
+	Update(groupID uint, name, slug string, description *string, isHidden bool) error
+	Delete(id uint) error
+	SetBannerPath(groupID uint, bannerPath *string) error
+	SetAlbumGroup(albumID uint, groupID *uint) error
+}
+
 // AlbumRepositoryInterface defines the methods for album data operations
 type AlbumRepositoryInterface interface {
 	Create(album *models.Album) error
@@ -27,12 +40,14 @@ type PersonRepositoryInterface interface {
 	GetByID(id uint) (*models.Person, error)
 	ListAll() ([]models.Person, error)
 	Update(person *models.Person) error
+	UpdateKeyPhoto(personID uint, faceID *uint) error
 	Delete(id uint) error
 	AddAlias(alias *models.Alias) error
 	ListAliasesByPersonID(personID uint) ([]models.Alias, error)
 	DeleteAlias(aliasID uint) error
 	FindPersonIDsByNameOrAlias(query string) ([]uint, error)
 	FindImagesByPersonIDs(personIDs []uint) ([]string, error)
+	SearchByNameOrAlias(query string, limit int) ([]models.Person, error)
 }
 
 // ImageRepositoryInterface defines the methods for image data operations
@@ -44,10 +59,14 @@ type ImageRepositoryInterface interface {
 	UpdateThumbnailResult(originalPath string, thumbPath *string, modTime int64, taskErr error) error
 	UpdateMetadataResult(originalPath string, meta *media.Metadata, modTime int64, taskErr error) error
 	UpdateDetectionResult(originalPath string, detections []media.DetectionResult, modTime int64, taskErr error) error
+	UpdatePreviewResult(originalPath string, previewPath *string, modTime int64, taskErr error) error
+	TouchPreviewLastRequested(originalPath string) error
+	GetStalePreviewImages(olderThan int64) ([]models.Image, error)
 	Delete(originalPath string) error
 	GetImagesRequiringProcessing() ([]models.Image, error)
 	GetImagesByPaths(originalPaths []string) ([]models.Image, error)
 	GetDistinctUploaderIDsByFolderPrefix(prefix string) ([]uint, error)
+	GetImagesByFolderPaths(folderPaths []string, minRating *int, offset, limit int) ([]models.Image, int, error)
 }
 
 // FaceRepositoryInterface defines the methods for face data operations
@@ -58,8 +77,17 @@ type FaceRepositoryInterface interface {
 	Update(faceID uint, personID *uint, x1, y1, x2, y2 *int) error
 	Delete(id uint) error
 	DeleteUntaggedByImagePath(imagePath string) (int64, error)
-	TagFace(faceID uint, personID uint) error
+	TagFace(faceID uint, personID uint, confirmed bool) error
 	UntagFace(faceID uint) error
+}
+
+// UntaggedFaceFilter holds filter and sort options for querying untagged face embeddings.
+type UntaggedFaceFilter struct {
+	MinQuality    *float32 // minimum faces.quality_score (0–100)
+	MinConfidence *float32 // minimum faces.detection_confidence (0–1)
+	SortBy        string   // "quality" | "confidence" | "created_at"
+	SortOrder     string   // "asc" | "desc"
+	GroupByImage  bool     // keep only the best face per image_path
 }
 
 // FaceEmbeddingRepositoryInterface defines the methods for face embedding data operations
@@ -71,7 +99,9 @@ type FaceEmbeddingRepositoryInterface interface {
 	Delete(id uint) error
 	DeleteByFaceID(faceID uint) error
 	GetEmbeddingsByPersonID(personID uint) ([]models.FaceEmbedding, error)
+	GetAllEmbeddings() ([]models.FaceEmbedding, error)
 	GetUntaggedEmbeddings() ([]models.FaceEmbedding, error)
+	GetUntaggedEmbeddingsFiltered(filter UntaggedFaceFilter) ([]models.FaceEmbedding, error)
 	GetEmbeddingsByImagePath(imagePath string) ([]models.FaceEmbedding, error)
 	FindSimilarFaces(targetEmbedding []float32, threshold float32, limit int) ([]models.FaceEmbedding, error)
 }
@@ -101,8 +131,8 @@ type UserRepository interface {
 	GetUserAlbumPermissions(userID uint) ([]models.UserAlbumPermission, error)
 
 	// album-specific user management
-	GetUsersWithAlbumPermissions(albumID uint) ([]models.User, error)    // get all users who have permissions for a specific album
-	GetUsersWithoutAlbumPermissions(albumID uint) ([]models.User, error) // get all users who don't have permissions for a specific album
+	GetUsersWithAlbumPermissions(albumID uint) ([]models.User, map[uint]models.UserAlbumPermission, error) // get all users who have permissions for a specific album
+	GetUsersWithoutAlbumPermissions(albumID uint) ([]models.User, error)                                   // get all users who don't have permissions for a specific album
 }
 
 // RoleRepository defines the methods for role data operations
@@ -128,6 +158,37 @@ type RoleRepository interface {
 	FindUsersByRoleID(roleID uint) ([]models.User, error)
 	AddUserToRole(userID, roleID uint) error
 	RemoveUserFromRole(userID, roleID uint) error
+}
+
+// ImageTagRepositoryInterface defines the methods for image tag data operations
+type ImageTagRepositoryInterface interface {
+	GetTagsByImagePath(imagePath string) ([]models.ImageTag, error)
+	// SetXMPTags replaces all source="xmp" tags for the given image path within a transaction.
+	SetXMPTags(imagePath string, tags []models.ImageTag) error
+	AddManualTag(imagePath, key, value string) error
+	RemoveManualTag(imagePath, key, value string) error
+	// ApplyAlbumDefaultTags copies album_default_tags for the album → image_tags with source="album_default", INSERT OR IGNORE.
+	ApplyAlbumDefaultTags(imagePath string, albumID uint) error
+	GetAlbumDefaultTags(albumID uint) ([]models.AlbumDefaultTag, error)
+	// SetAlbumDefaultTags replaces all default tags for an album in a transaction.
+	SetAlbumDefaultTags(albumID uint, tags []models.AlbumDefaultTag) error
+}
+
+// CollectionRepositoryInterface defines the methods for collection data operations
+type CollectionRepositoryInterface interface {
+	Create(collection *models.Collection) error
+	GetByID(id uint) (*models.Collection, error)
+	GetBySlug(slug string) (*models.Collection, error)
+	ListPublic() ([]models.Collection, error)
+	ListAll() ([]models.Collection, error)
+	Update(collectionID uint, name, slug string, description *string, isPublic bool) error
+	Delete(id uint) error
+	SetBannerPath(collectionID uint, bannerPath *string) error
+	// SetFilters replaces all tag filters for a collection in a transaction.
+	SetFilters(collectionID uint, filters []models.CollectionTagFilter) error
+	// GetImagePathsMatchingFilters returns image paths that match all collection filters
+	// using AND-across-keys / OR-within-key logic, with pagination.
+	GetImagePathsMatchingFilters(collectionID uint, offset, limit int) ([]string, int, error)
 }
 
 // InviteCodeRepository defines the methods for invite code data operations

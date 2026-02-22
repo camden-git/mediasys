@@ -50,6 +50,7 @@ func InitGormDB(dataSourceName string) (*gorm.DB, error) {
 // It's placed here for convenience but should be called selectively
 func AutoMigrateModels(db *gorm.DB) error {
 	err := db.AutoMigrate(
+		&models.AlbumGroup{},
 		&models.Person{},
 		&models.Alias{},
 		&models.Face{},
@@ -62,6 +63,10 @@ func AutoMigrateModels(db *gorm.DB) error {
 		&models.UserRole{},
 		&models.RoleAlbumPermission{},
 		&models.InviteCode{},
+		&models.ImageTag{},
+		&models.AlbumDefaultTag{},
+		&models.Collection{},
+		&models.CollectionTagFilter{},
 	)
 	if err != nil {
 		return fmt.Errorf("GORM AutoMigrate failed: %w", err)

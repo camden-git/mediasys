@@ -1,9 +1,16 @@
 import useSWR, { mutate } from 'swr';
 import { listUsers, getUser, updateUser } from '../admin/users';
 import { AdminUserResponse, UserUpdatePayload } from '../../types';
+import { PaginatedResult, PaginationRequest } from '../standard';
 
-export const useUsers = () => {
-    return useSWR<AdminUserResponse[]>('users', listUsers);
+const usersKey = (params?: PaginationRequest) => [
+    'users',
+    params?.page ?? 1,
+    params?.perPage ?? undefined,
+];
+
+export const useUsers = (params?: PaginationRequest) => {
+    return useSWR<PaginatedResult<AdminUserResponse>>(usersKey(params), () => listUsers(params));
 };
 
 export const useUser = (userId: number) => {
@@ -13,8 +20,7 @@ export const useUser = (userId: number) => {
 export const updateUserMutation = async (id: number, payload: UserUpdatePayload) => {
     const updatedUser = await updateUser(id, payload);
 
-    // Update the cache
-    mutate('users');
+    mutate((key) => Array.isArray(key) && key[0] === 'users');
     mutate(`user-${id}`, updatedUser);
 
     return updatedUser;

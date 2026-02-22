@@ -1,5 +1,6 @@
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
 import store from '../store';
+import { ApiErrorDetail, ApiErrorResponse, httpErrorToHuman } from './standard';
 
 const getAuthToken = (): string | null => localStorage.getItem('authToken');
 
@@ -50,75 +51,67 @@ http.interceptors.response.use(
     (error) => {
         store.getActions().progress.setComplete();
 
-        // Handle error response
-        let errorMessage = `HTTP error! status: ${error.response?.status || 'unknown'}`;
-        let standardizedErrors: Array<{ code: string; status: string; detail: string }> | null = null;
+        const parsePayload = (payload: unknown): ApiErrorResponse | undefined => {
+            if (!payload) {
+                return undefined;
+            }
 
-        const tryExtractFrom = (payload: any) => {
-            if (!payload) return;
-            if (payload.errors && Array.isArray(payload.errors)) {
-                standardizedErrors = payload.errors;
-                if (standardizedErrors && standardizedErrors.length > 0) {
-                    const first = standardizedErrors[0];
-                    if (first?.detail) {
-                        errorMessage = first.detail;
-                    }
+            if (typeof payload === 'string') {
+                try {
+                    return JSON.parse(payload) as ApiErrorResponse;
+                } catch {
+                    return { detail: payload };
                 }
-                return;
             }
-            if (payload.detail && typeof payload.detail === 'string') {
-                errorMessage = payload.detail;
-                return;
+
+            if (typeof payload === 'object') {
+                return payload as ApiErrorResponse;
             }
-            if (payload.message && typeof payload.message === 'string') {
-                errorMessage = payload.message;
-                return;
-            }
+
+            return undefined;
         };
 
-        if (error.response?.data) {
-            const data = error.response.data;
-            if (typeof data === 'string') {
-                // Try parsing string JSON
-                try {
-                    const parsed = JSON.parse(data);
-                    tryExtractFrom(parsed);
-                    if (!standardizedErrors && typeof parsed === 'string') {
-                        errorMessage = parsed;
-                    }
-                } catch {
-                    errorMessage = data;
-                }
-            } else if (typeof data === 'object') {
-                tryExtractFrom(data);
-            }
+        const parsedResponsePayload = parsePayload(error.response?.data);
+        const parsedRequestPayload =
+            !parsedResponsePayload && typeof error?.request?.responseText === 'string'
+                ? parsePayload(error.request.responseText)
+                : undefined;
+
+        let standardizedErrors: ApiErrorDetail[] | null = null;
+        const candidatePayload = parsedResponsePayload || parsedRequestPayload;
+        if (candidatePayload?.errors && Array.isArray(candidatePayload.errors) && candidatePayload.errors.length > 0) {
+            standardizedErrors = candidatePayload.errors as ApiErrorDetail[];
         }
 
-        // Some environments expose the raw response as text on request
-        if (!standardizedErrors && typeof (error?.request?.responseText) === 'string') {
-            try {
-                const parsed = JSON.parse(error.request.responseText);
-                tryExtractFrom(parsed);
-                if (!standardizedErrors && typeof parsed === 'string') {
-                    errorMessage = parsed;
-                }
-            } catch {
-                // ignore
-            }
-        }
+        const normalizedError = {
+            ...error,
+            response: error.response
+                ? {
+                      ...error.response,
+                      data: parsedResponsePayload ?? error.response.data,
+                  }
+                : {
+                      data: candidatePayload,
+                  },
+        };
+
+        let errorMessage = httpErrorToHuman(normalizedError);
 
         // Endpoint-aware fallbacks if extraction failed
         const status = error.response?.status as number | undefined;
         const urlStr: string | undefined = error?.config?.url;
         const lowerUrl = (urlStr || '').toLowerCase();
-        if (errorMessage.startsWith('HTTP error!') && status) {
+        if ((!errorMessage || errorMessage.startsWith('HTTP error')) && status) {
             if (lowerUrl.includes('/auth/login') && status === 401) {
                 errorMessage = 'No account matching those credentials could be found.';
             }
             if (lowerUrl.includes('/auth/register') && (status === 400 || status === 403)) {
-                // Keep generic but user-friendly register error if backend detail was not parsed
                 errorMessage = 'Registration failed. Please verify your input and invite code.';
             }
+        }
+
+        if (!errorMessage) {
+            errorMessage = `HTTP error! status: ${status || 'unknown'}`;
         }
 
         const customError = new Error(errorMessage);

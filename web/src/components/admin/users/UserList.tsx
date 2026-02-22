@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { Button } from '../../elements/Button';
 import { Can } from '../../elements/Can';
 import CreateUserForm from './CreateUserForm';
@@ -8,9 +7,17 @@ import { useFlash } from '../../../hooks/useFlash';
 import FlashMessageRender from '../../elements/FlashMessageRender';
 import LoadingSpinner from '../../elements/LoadingSpinner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../elements/Table.tsx';
+import { PaginationControls } from '../../elements/PaginationControls';
+import { Heading } from '../../elements/Heading';
+import { Text } from '../../elements/Text';
+
+const DEFAULT_PER_PAGE = 25;
 
 const UserList: React.FC = () => {
-    const { data: users, error, isValidating } = useUsers();
+    const [page, setPage] = useState(1);
+    const perPage = DEFAULT_PER_PAGE;
+
+    const { data: userResult, error, isValidating } = useUsers({ page, perPage });
     const { clearFlashes, clearAndAddHttpError } = useFlash();
     const [isCreateModalOpen, setCreateModalOpen] = useState(false);
 
@@ -23,23 +30,27 @@ const UserList: React.FC = () => {
         clearAndAddHttpError({ error, key: 'users' });
     }, [error, clearFlashes, clearAndAddHttpError]);
 
-    if (!users || (error && isValidating)) {
+    const users = userResult?.items ?? [];
+    const pagination = userResult?.pagination;
+    useEffect(() => {
+        if (pagination && pagination.totalPages > 0 && page > pagination.totalPages) {
+            setPage(pagination.totalPages);
+        }
+    }, [pagination, page]);
+
+    if (!userResult || (error && isValidating)) {
         return <LoadingSpinner />;
     }
 
     return (
         <div>
-            <div className='sm:flex sm:items-center sm:justify-between'>
+            <div className='mb-6 flex w-full flex-wrap items-end justify-between gap-4'>
                 <div>
-                    <h2 className='text-lg font-medium text-gray-900 dark:text-white'>Users</h2>
-                    <p className='mt-1 text-sm text-gray-500 dark:text-zinc-400'>
-                        A list of all the users in the system.
-                    </p>
+                    <Heading>Users</Heading>
+                    <Text className='mt-1'>A list of all the users in the system.</Text>
                 </div>
                 <Can permission='user.create'>
-                    <Button onClick={() => setCreateModalOpen(true)} className='mt-4 sm:mt-0'>
-                        Create User
-                    </Button>
+                    <Button onClick={() => setCreateModalOpen(true)}>Create User</Button>
                 </Can>
             </div>
 
@@ -48,46 +59,37 @@ const UserList: React.FC = () => {
             {users.length === 0 ? (
                 <p className='mt-4 text-gray-500'>No users found.</p>
             ) : (
-                <div className='mt-8 flow-root'>
-                    <div className='-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8'>
-                        <div className='inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8'>
-                            <Table>
-                                <TableHead>
-                                    <TableRow>
-                                        <TableHeader>Name</TableHeader>
-                                        <TableHeader>Username</TableHeader>
-                                        <TableHeader>Roles</TableHeader>
-                                        <TableHeader>Created At</TableHeader>
-                                        <TableHeader>
-                                            <span className='sr-only'>View</span>
-                                        </TableHeader>
-                                    </TableRow>
-                                </TableHead>
-                                <TableBody className='divide-y divide-gray-200 dark:divide-zinc-800'>
-                                    {users.map((user) => (
-                                        <TableRow key={user.id}>
-                                            <TableCell>{`${user.first_name} ${user.last_name}`.trim()}</TableCell>
-                                            <TableCell>{user.username}</TableCell>
-                                            <TableCell>
-                                                {user.roles?.map((role) => role.name).join(', ') || 'No roles'}
-                                            </TableCell>
-                                            <TableCell>{new Date(user.created_at).toLocaleDateString()}</TableCell>
-                                            <TableCell>
-                                                <Can permission='user.view'>
-                                                    <Link to={`/admin/users/${user.id}`}>
-                                                        <Button plain>
-                                                            View<span className='sr-only'>, {user.username}</span>
-                                                        </Button>
-                                                    </Link>
-                                                </Can>
-                                            </TableCell>
-                                        </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
-                        </div>
-                    </div>
-                </div>
+                <Table>
+                    <TableHead>
+                        <TableRow>
+                            <TableHeader>Name</TableHeader>
+                            <TableHeader>Username</TableHeader>
+                            <TableHeader>Roles</TableHeader>
+                            <TableHeader>Created At</TableHeader>
+                        </TableRow>
+                    </TableHead>
+                    <TableBody>
+                        {users.map((user) => (
+                            <TableRow key={user.id} href={`/admin/users/${user.id}`}>
+                                <TableCell>{`${user.first_name} ${user.last_name}`.trim()}</TableCell>
+                                <TableCell>{user.username}</TableCell>
+                                <TableCell>
+                                    {user.roles?.map((role) => role.name).join(', ') || 'No roles'}
+                                </TableCell>
+                                <TableCell>{new Date(user.created_at).toLocaleDateString()}</TableCell>
+                            </TableRow>
+                        ))}
+                    </TableBody>
+                </Table>
+            )}
+
+            {pagination && pagination.totalPages > 1 && (
+                <PaginationControls
+                    className='mt-6'
+                    pagination={pagination}
+                    currentPage={page}
+                    onPageChange={setPage}
+                />
             )}
 
             <CreateUserForm isOpen={isCreateModalOpen} onClose={() => setCreateModalOpen(false)} />

@@ -1,0 +1,313 @@
+package handlers
+
+import (
+	"encoding/json"
+	"errors"
+	"log"
+	"net/http"
+	"os"
+	"strconv"
+	"strings"
+
+	"github.com/camden-git/mediasysbackend/config"
+	"github.com/camden-git/mediasysbackend/media"
+	"github.com/camden-git/mediasysbackend/models"
+	"github.com/camden-git/mediasysbackend/repository"
+	"github.com/go-chi/chi/v5"
+	"gorm.io/gorm"
+)
+
+// AdminAlbumGroupHandler handles admin CRUD for album groups.
+type AdminAlbumGroupHandler struct {
+	GroupRepo      repository.AlbumGroupRepositoryInterface
+	Cfg            config.Config
+	MediaProcessor *media.Processor
+}
+
+// NewAdminAlbumGroupHandler creates a new AdminAlbumGroupHandler.
+func NewAdminAlbumGroupHandler(
+	groupRepo repository.AlbumGroupRepositoryInterface,
+	cfg config.Config,
+	mediaProcessor *media.Processor,
+) *AdminAlbumGroupHandler {
+	return &AdminAlbumGroupHandler{
+		GroupRepo:      groupRepo,
+		Cfg:            cfg,
+		MediaProcessor: mediaProcessor,
+	}
+}
+
+// ListGroups lists all album groups (including hidden).
+func (h *AdminAlbumGroupHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
+	groups, err := h.GroupRepo.ListAllAdmin()
+	if err != nil {
+		log.Printf("Error listing album groups for admin: %v", err)
+		WriteAPIError(w, http.StatusInternalServerError, "GroupListError", "Failed to retrieve album groups")
+		return
+	}
+	WriteAPIResponse(w, http.StatusOK, groups)
+}
+
+// GetGroup returns a single album group by ID.
+func (h *AdminAlbumGroupHandler) GetGroup(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		WriteAPIError(w, http.StatusBadRequest, "InvalidID", "Invalid group ID")
+		return
+	}
+
+	group, err := h.GroupRepo.GetByID(uint(id))
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			WriteAPIError(w, http.StatusNotFound, "GroupNotFound", "Album group not found")
+		} else {
+			log.Printf("Error getting album group %d for admin: %v", id, err)
+			WriteAPIError(w, http.StatusInternalServerError, "GroupFetchError", "Failed to retrieve album group")
+		}
+		return
+	}
+	WriteAPIResponse(w, http.StatusOK, group)
+}
+
+// CreateGroup creates a new album group.
+func (h *AdminAlbumGroupHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name        string  `json:"name"`
+		Slug        string  `json:"slug"`
+		Description *string `json:"description"`
+		IsHidden    *bool   `json:"is_hidden"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request body: "+err.Error())
+		return
+	}
+
+	if req.Name == "" || req.Slug == "" {
+		WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Missing required fields: name and slug")
+		return
+	}
+	if strings.ContainsAny(req.Slug, " /\\?%*:|\"<>") || strings.TrimSpace(req.Slug) == "" {
+		WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Invalid slug format. Use URL-safe characters without spaces.")
+		return
+	}
+
+	group := &models.AlbumGroup{
+		Name:        req.Name,
+		Slug:        req.Slug,
+		Description: req.Description,
+	}
+	if req.IsHidden != nil {
+		group.IsHidden = *req.IsHidden
+	}
+
+	if err := h.GroupRepo.Create(group); err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "unique") {
+			WriteAPIError(w, http.StatusConflict, "GroupConflict", "Album group name or slug already exists")
+		} else {
+			log.Printf("Error creating album group '%s': %v", req.Name, err)
+			WriteAPIError(w, http.StatusInternalServerError, "GroupCreateError", "Failed to create album group")
+		}
+		return
+	}
+
+	WriteAPIResponse(w, http.StatusCreated, group)
+}
+
+// UpdateGroup updates an existing album group.
+func (h *AdminAlbumGroupHandler) UpdateGroup(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		WriteAPIError(w, http.StatusBadRequest, "InvalidID", "Invalid group ID")
+		return
+	}
+
+	group, err := h.GroupRepo.GetByID(uint(id))
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			WriteAPIError(w, http.StatusNotFound, "GroupNotFound", "Album group not found")
+		} else {
+			log.Printf("Error finding album group %d for update: %v", id, err)
+			WriteAPIError(w, http.StatusInternalServerError, "GroupFetchError", "Failed to find album group")
+		}
+		return
+	}
+
+	var req struct {
+		Name        *string `json:"name"`
+		Slug        *string `json:"slug"`
+		Description *string `json:"description"`
+		IsHidden    *bool   `json:"is_hidden"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request body: "+err.Error())
+		return
+	}
+
+	name := group.Name
+	slug := group.Slug
+	description := group.Description
+	isHidden := group.IsHidden
+
+	if req.Name != nil {
+		name = *req.Name
+	}
+	if req.Slug != nil {
+		if strings.ContainsAny(*req.Slug, " /\\?%*:|\"<>") || strings.TrimSpace(*req.Slug) == "" {
+			WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Invalid slug format.")
+			return
+		}
+		slug = *req.Slug
+	}
+	if req.Description != nil {
+		description = req.Description
+	}
+	if req.IsHidden != nil {
+		isHidden = *req.IsHidden
+	}
+
+	if err := h.GroupRepo.Update(uint(id), name, slug, description, isHidden); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			WriteAPIError(w, http.StatusNotFound, "GroupNotFound", "Album group not found during update")
+		} else if strings.Contains(strings.ToLower(err.Error()), "unique") {
+			WriteAPIError(w, http.StatusConflict, "GroupConflict", "Album group name or slug already exists")
+		} else {
+			log.Printf("Error updating album group %d: %v", id, err)
+			WriteAPIError(w, http.StatusInternalServerError, "GroupUpdateError", "Failed to update album group")
+		}
+		return
+	}
+
+	updated, err := h.GroupRepo.GetByID(uint(id))
+	if err != nil {
+		WriteAPIResponse(w, http.StatusOK, map[string]string{"message": "Album group updated"})
+		return
+	}
+	WriteAPIResponse(w, http.StatusOK, updated)
+}
+
+// DeleteGroup soft-deletes an album group.
+func (h *AdminAlbumGroupHandler) DeleteGroup(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		WriteAPIError(w, http.StatusBadRequest, "InvalidID", "Invalid group ID")
+		return
+	}
+
+	if err := h.GroupRepo.Delete(uint(id)); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			WriteAPIError(w, http.StatusNotFound, "GroupNotFound", "Album group not found")
+		} else {
+			log.Printf("Error deleting album group %d: %v", id, err)
+			WriteAPIError(w, http.StatusInternalServerError, "GroupDeleteError", "Failed to delete album group")
+		}
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// UploadGroupBanner uploads and sets a banner image for an album group.
+func (h *AdminAlbumGroupHandler) UploadGroupBanner(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		WriteAPIError(w, http.StatusBadRequest, "InvalidID", "Invalid group ID")
+		return
+	}
+
+	group, err := h.GroupRepo.GetByID(uint(id))
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			WriteAPIError(w, http.StatusNotFound, "GroupNotFound", "Album group not found")
+		} else {
+			log.Printf("Error finding album group %d for banner upload: %v", id, err)
+			WriteAPIError(w, http.StatusInternalServerError, "GroupFetchError", "Failed to find album group")
+		}
+		return
+	}
+
+	const maxUploadSize = 20 << 20 // 20 MB
+	if err := r.ParseMultipartForm(maxUploadSize); err != nil {
+		WriteAPIError(w, http.StatusBadRequest, "InvalidForm", "Invalid form data: "+err.Error())
+		return
+	}
+
+	file, handler, err := r.FormFile("banner_image")
+	if err != nil {
+		if errors.Is(err, http.ErrMissingFile) {
+			WriteAPIError(w, http.StatusBadRequest, "MissingFile", "No file in 'banner_image' field")
+		} else {
+			WriteAPIError(w, http.StatusBadRequest, "FileError", "Could not retrieve uploaded file")
+		}
+		return
+	}
+	defer file.Close()
+
+	log.Printf("Received banner upload for group %d: %s (size: %d)", id, handler.Filename, handler.Size)
+
+	if h.MediaProcessor == nil {
+		WriteAPIError(w, http.StatusInternalServerError, "ConfigError", "Media processor not configured")
+		return
+	}
+
+	savedRelPath, procErr := h.MediaProcessor.ProcessBanner(file)
+	if procErr != nil {
+		log.Printf("Error processing banner for group %d: %v", id, procErr)
+		WriteAPIError(w, http.StatusInternalServerError, "BannerProcessError", "Failed to process banner image")
+		return
+	}
+
+	// Remove old banner if different
+	if group.BannerImagePath != nil && *group.BannerImagePath != savedRelPath {
+		mediaStore, storeErr := media.NewLocalStorage(h.Cfg.MediaStoragePath, map[media.AssetType]string{})
+		if storeErr == nil {
+			if oldPath, pathErr := mediaStore.GetFullPath(*group.BannerImagePath); pathErr == nil {
+				if removeErr := os.Remove(oldPath); removeErr != nil && !os.IsNotExist(removeErr) {
+					log.Printf("Warning: failed to remove old group banner %s: %v", oldPath, removeErr)
+				}
+			}
+		}
+	}
+
+	if dbErr := h.GroupRepo.SetBannerPath(uint(id), &savedRelPath); dbErr != nil {
+		log.Printf("Error saving banner path for group %d: %v", id, dbErr)
+		WriteAPIError(w, http.StatusInternalServerError, "BannerSaveError", "Failed to save banner information")
+		return
+	}
+
+	updated, err := h.GroupRepo.GetByID(uint(id))
+	if err != nil {
+		WriteAPIResponse(w, http.StatusOK, map[string]string{"banner_image_path": savedRelPath})
+		return
+	}
+	WriteAPIResponse(w, http.StatusOK, updated)
+}
+
+// SetAlbumGroup assigns or removes an album from a group.
+// Accepts JSON body: {"group_id": 1} or {"group_id": null} to clear.
+func (h *AdminAlbumGroupHandler) SetAlbumGroup(w http.ResponseWriter, r *http.Request) {
+	albumIDStr := chi.URLParam(r, "id")
+	albumID, err := strconv.ParseUint(albumIDStr, 10, 64)
+	if err != nil {
+		WriteAPIError(w, http.StatusBadRequest, "InvalidAlbumID", "Invalid album ID")
+		return
+	}
+
+	var req struct {
+		GroupID *uint `json:"group_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request body: "+err.Error())
+		return
+	}
+
+	if err := h.GroupRepo.SetAlbumGroup(uint(albumID), req.GroupID); err != nil {
+		log.Printf("Error setting group for album %d: %v", albumID, err)
+		WriteAPIError(w, http.StatusInternalServerError, "SetGroupError", "Failed to update album group assignment")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}

@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { DescriptionList, DescriptionTerm, DescriptionDetails } from '../../elements/DescriptionList';
+import { ErrorMessage } from '../../elements/Fieldset';
 import { Heading } from '../../elements/Heading';
 import ContentBlock from '../../elements/PageContentBlock.tsx';
 import { Button } from '../../elements/Button';
@@ -13,42 +14,54 @@ import FlashMessageRender from '../../elements/FlashMessageRender';
 import { getRoleUsers, addUserToRole, removeUserFromRole } from '../../../api/admin/roles';
 import LoadingSpinner from '../../elements/LoadingSpinner';
 import { Select } from '../../elements/Select.tsx';
+import { Text } from '../../elements/Text.tsx';
+import { PaginatedResult } from '../../../api/standard';
+import { UserSummary } from '../../../types';
+import { PaginationControls } from '../../elements/PaginationControls';
+import { Dialog, DialogActions, DialogDescription, DialogTitle } from '../../elements/Dialog';
 
 const RoleView: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const roleId = id ? parseInt(id, 10) : 0;
 
     const { data: role, error, isValidating } = useRole(roleId);
-    const { data: allUsers } = useUsers();
+    const { data: allUsersResult } = useUsers({ perPage: 500 });
+    const allUsers = allUsersResult?.items ?? [];
     const { addFlash, clearFlashes, clearAndAddHttpError } = useFlash();
 
-    const [users, setUsers] = useState<any[]>([]);
+    const [userResult, setUserResult] = useState<PaginatedResult<UserSummary> | null>(null);
     const [isLoadingUsers, setIsLoadingUsers] = useState(false);
     const [userError, setUserError] = useState<string | null>(null);
+    const [userPage, setUserPage] = useState(1);
+    const userPerPage = 25;
 
     const [isEditModalOpen, setEditModalOpen] = useState(false);
     const [isAddUserModalOpen, setAddUserModalOpen] = useState(false);
+    const [userForRemove, setUserForRemove] = useState<{ id: number; username: string } | null>(null);
 
-    const loadRoleUsers = async () => {
-        if (!roleId) return;
+    const loadRoleUsers = useCallback(
+        async (pageToLoad: number) => {
+            if (!roleId) return;
 
-        setIsLoadingUsers(true);
-        setUserError(null);
-        try {
-            const roleUsers = await getRoleUsers(roleId);
-            setUsers(roleUsers);
-        } catch (error: any) {
-            setUserError(error.message || 'Failed to load users');
-        } finally {
-            setIsLoadingUsers(false);
-        }
-    };
+            setIsLoadingUsers(true);
+            setUserError(null);
+            try {
+                const result = await getRoleUsers(roleId, { page: pageToLoad, perPage: userPerPage });
+                setUserResult(result);
+            } catch (error: any) {
+                setUserError(error.message || 'Failed to load users');
+            } finally {
+                setIsLoadingUsers(false);
+            }
+        },
+        [roleId],
+    );
 
     useEffect(() => {
         if (roleId) {
-            loadRoleUsers();
+            loadRoleUsers(userPage);
         }
-    }, [roleId]);
+    }, [roleId, userPage, loadRoleUsers]);
 
     useEffect(() => {
         if (!error) {
@@ -64,13 +77,13 @@ const RoleView: React.FC = () => {
     }
 
     if (error) {
-        return <p style={{ color: 'red' }}>Error: {error.message}</p>;
+        return <ErrorMessage>Error: {error.message}</ErrorMessage>;
     }
 
     const handleAddUserToRole = async (userId: number) => {
         try {
             await addUserToRole(roleId, userId);
-            await loadRoleUsers();
+            await loadRoleUsers(userPage);
             addFlash({
                 key: 'role-view',
                 type: 'success',
@@ -86,25 +99,103 @@ const RoleView: React.FC = () => {
         }
     };
 
-    const handleRemoveUserFromRole = async (userId: number, username: string) => {
-        if (window.confirm(`Are you sure you want to remove ${username} from this role?`)) {
-            try {
-                await removeUserFromRole(roleId, userId);
-                await loadRoleUsers();
-                addFlash({
-                    key: 'role-view',
-                    type: 'success',
-                    message: 'User removed from role successfully!',
-                });
-            } catch (error: any) {
-                addFlash({
-                    key: 'role-view',
-                    type: 'error',
-                    message: error.message || 'Failed to remove user from role.',
-                });
-            }
+    const handleRemoveUserFromRole = (userId: number, username: string) => {
+        setUserForRemove({ id: userId, username });
+    };
+
+    const confirmRemoveUser = async () => {
+        if (!userForRemove) return;
+        try {
+            await removeUserFromRole(roleId, userForRemove.id);
+            await loadRoleUsers(userPage);
+            addFlash({
+                key: 'role-view',
+                type: 'success',
+                message: 'User removed from role successfully!',
+            });
+        } catch (error: any) {
+            addFlash({
+                key: 'role-view',
+                type: 'error',
+                message: error.message || 'Failed to remove user from role.',
+            });
+        } finally {
+            setUserForRemove(null);
         }
     };
+
+    const renderPermissionChips = (permissions: string[] | undefined) => {
+        if (!permissions || permissions.length === 0) {
+            return <span className='text-sm text-gray-500'>None</span>;
+        }
+        return (
+            <div className='flex flex-wrap gap-1'>
+                {permissions.map((perm) => (
+                    <span
+                        key={perm}
+                        className='inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800'
+                    >
+                        {perm}
+                    </span>
+                ))}
+            </div>
+        );
+    };
+
+    const renderAlbumRules = (currentRole: typeof role) => {
+        if (!currentRole) return null;
+        const globalAlbum = currentRole.global_album_permissions || [];
+        const scopedAlbums = currentRole.album_permissions || [];
+        if (globalAlbum.length === 0 && scopedAlbums.length === 0) {
+            return <span className='text-sm text-gray-500'>None</span>;
+        }
+        return (
+            <div className='space-y-3 text-sm'>
+                {globalAlbum.length > 0 && (
+                    <div>
+                        <div className='text-xs font-semibold text-gray-500 uppercase'>All Albums</div>
+                        <div className='mt-1 flex flex-wrap gap-1'>
+                            {globalAlbum.map((perm) => (
+                                <span
+                                    key={`role-${currentRole.id}-global-${perm}`}
+                                    className='inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800'
+                                >
+                                    {perm}
+                                </span>
+                            ))}
+                        </div>
+                    </div>
+                )}
+                {scopedAlbums.length > 0 && (
+                    <div className='space-y-2'>
+                        {scopedAlbums.map((ap) => (
+                            <div
+                                key={`${currentRole.id}-${ap.album_id}`}
+                                className='rounded border border-gray-200 p-3'
+                            >
+                                <div className='text-xs font-semibold text-gray-500 uppercase'>
+                                    Album #{ap.album_id}
+                                </div>
+                                <div className='mt-1 flex flex-wrap gap-1'>
+                                    {ap.permissions.map((perm) => (
+                                        <span
+                                            key={`${currentRole.id}-${ap.album_id}-${perm}`}
+                                            className='inline-flex items-center rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-800'
+                                        >
+                                            {perm}
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+    const users = userResult?.items ?? [];
+    const userPagination = userResult?.pagination;
 
     return (
         <>
@@ -117,6 +208,9 @@ const RoleView: React.FC = () => {
                         <Button onClick={() => setEditModalOpen(true)}>Edit Role</Button>
                     </Can>
                 </div>
+                <Text className='mt-2 text-sm text-gray-600 dark:text-gray-300'>
+                    Review the permissions bundled in this role and manage which users inherit its access.
+                </Text>
                 <DescriptionList className='mt-4'>
                     <DescriptionTerm>ID</DescriptionTerm>
                     <DescriptionDetails>{role.id}</DescriptionDetails>
@@ -125,50 +219,13 @@ const RoleView: React.FC = () => {
                     <DescriptionDetails>{role.name}</DescriptionDetails>
 
                     <DescriptionTerm>Global Permissions</DescriptionTerm>
-                    <DescriptionDetails>
-                        {role.global_permissions && role.global_permissions.length > 0 ? (
-                            <ul className='list-inside list-disc'>
-                                {role.global_permissions.map((p) => (
-                                    <li key={p}>{p}</li>
-                                ))}
-                            </ul>
-                        ) : (
-                            'None'
-                        )}
-                    </DescriptionDetails>
+                    <DescriptionDetails>{renderPermissionChips(role.global_permissions)}</DescriptionDetails>
 
                     <DescriptionTerm>Global Album Permissions</DescriptionTerm>
-                    <DescriptionDetails>
-                        {role.global_album_permissions && role.global_album_permissions.length > 0 ? (
-                            <ul className='list-inside list-disc'>
-                                {role.global_album_permissions.map((p) => (
-                                    <li key={p}>{p}</li>
-                                ))}
-                            </ul>
-                        ) : (
-                            'None'
-                        )}
-                    </DescriptionDetails>
+                    <DescriptionDetails>{renderPermissionChips(role.global_album_permissions)}</DescriptionDetails>
 
                     <DescriptionTerm>Album-Specific Permissions</DescriptionTerm>
-                    <DescriptionDetails>
-                        {role.album_permissions && role.album_permissions.length > 0 ? (
-                            <div className='space-y-2'>
-                                {role.album_permissions.map((ap) => (
-                                    <div key={ap.album_id}>
-                                        <h4 className='font-semibold'>Album ID: {ap.album_id}</h4>
-                                        <ul className='list-inside list-disc pl-4'>
-                                            {ap.permissions.map((p) => (
-                                                <li key={p}>{p}</li>
-                                            ))}
-                                        </ul>
-                                    </div>
-                                ))}
-                            </div>
-                        ) : (
-                            'None'
-                        )}
-                    </DescriptionDetails>
+                    <DescriptionDetails>{renderAlbumRules(role)}</DescriptionDetails>
                 </DescriptionList>
             </ContentBlock>
 
@@ -190,7 +247,7 @@ const RoleView: React.FC = () => {
                 <Can permission='role.view.users'>
                     <>
                         {isLoadingUsers && <p>Loading users...</p>}
-                        {userError && <p style={{ color: 'red' }}>Error: {userError}</p>}
+                        {userError && <ErrorMessage>Error: {userError}</ErrorMessage>}
                         {!isLoadingUsers && !userError && (
                             <div className='mt-4 flow-root'>
                                 <div className='-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8'>
@@ -260,53 +317,63 @@ const RoleView: React.FC = () => {
                         )}
                     </>
                 </Can>
+                {userPagination && userPagination.totalPages > 1 && (
+                    <PaginationControls
+                        className='mt-4'
+                        pagination={userPagination}
+                        currentPage={userPage}
+                        onPageChange={(page) => {
+                            setUserPage(page);
+                            loadRoleUsers(page);
+                        }}
+                    />
+                )}
             </ContentBlock>
 
-            {isAddUserModalOpen && (
-                <div
-                    className='fixed inset-0 z-10 bg-zinc-400/25 backdrop-blur-sm dark:bg-black/40'
-                    aria-hidden='true'
-                />
-            )}
-            {isAddUserModalOpen && (
-                <div
-                    className='fixed inset-0 z-10 w-screen overflow-y-auto p-4 sm:p-6 md:p-20'
-                    role='dialog'
-                    aria-modal='true'
-                >
-                    <div className='mx-auto max-w-lg transform rounded-xl bg-white p-6 shadow-2xl ring-1 ring-black/5 transition-all dark:bg-zinc-900'>
-                        <h3 className='text-lg leading-6 font-medium'>Add User to Role</h3>
-                        <div className='mt-4'>
-                            {!allUsers ? (
-                                <p className='mb-4 text-sm text-gray-500'>Loading users...</p>
-                            ) : (
-                                <Select
-                                    onChange={async (e) => {
-                                        const userId = parseInt(e.target.value, 10);
-                                        if (userId) {
-                                            await handleAddUserToRole(userId);
-                                        }
-                                    }}
-                                >
-                                    <option value=''>Select a user...</option>
-                                    {allUsers
-                                        .filter((user) => !users.some((roleUser) => roleUser.id === user.id))
-                                        .map((user) => (
-                                            <option key={user.id} value={user.id}>
-                                                {user.username}
-                                            </option>
-                                        ))}
-                                </Select>
-                            )}
-                        </div>
-                        <div className='mt-6 flex justify-end'>
-                            <Button plain onClick={() => setAddUserModalOpen(false)}>
-                                Cancel
-                            </Button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <Dialog open={isAddUserModalOpen} onClose={setAddUserModalOpen} size='sm'>
+                <DialogTitle>Add User to Role</DialogTitle>
+                <DialogActions>
+                    {!allUsersResult ? (
+                        <p className='text-sm text-gray-500'>Loading users...</p>
+                    ) : (
+                        <Select
+                            onChange={async (e) => {
+                                const userId = parseInt(e.target.value, 10);
+                                if (userId) {
+                                    await handleAddUserToRole(userId);
+                                }
+                            }}
+                        >
+                            <option value=''>Select a user...</option>
+                            {allUsers
+                                .filter((user) => !users.some((roleUser) => roleUser.id === user.id))
+                                .map((user) => (
+                                    <option key={user.id} value={user.id}>
+                                        {user.username}
+                                    </option>
+                                ))}
+                        </Select>
+                    )}
+                    <Button plain onClick={() => setAddUserModalOpen(false)}>
+                        Cancel
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            <Dialog open={!!userForRemove} onClose={() => setUserForRemove(null)} size='sm'>
+                <DialogTitle>Remove User</DialogTitle>
+                <DialogDescription>
+                    Are you sure you want to remove {userForRemove?.username} from this role?
+                </DialogDescription>
+                <DialogActions>
+                    <Button plain onClick={() => setUserForRemove(null)}>
+                        Cancel
+                    </Button>
+                    <Button color='red' onClick={confirmRemoveUser}>
+                        Remove
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </>
     );
 };

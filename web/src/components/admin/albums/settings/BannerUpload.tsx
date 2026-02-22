@@ -77,7 +77,7 @@ export function BannerUpload() {
         <HeaderedContent
             title={'Album Banner'}
             description={'Upload a banner image for this album.'}
-            className={'mt-8 mb-4'}
+            className={'mt-16 pb-8'}
         >
             {bannerError && (
                 <div className='mb-4 rounded-lg border border-red-200 bg-red-50 p-3'>

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { DescriptionList, DescriptionTerm, DescriptionDetails } from '../../elements/DescriptionList';
+import { ErrorMessage } from '../../elements/Fieldset';
 import { Heading } from '../../elements/Heading';
 import ContentBlock from '../../elements/PageContentBlock.tsx';
 import { Button } from '../../elements/Button';
@@ -33,7 +34,7 @@ const UserView: React.FC = () => {
     }
 
     if (error) {
-        return <p style={{ color: 'red' }}>Error: {error.message}</p>;
+        return <ErrorMessage>Error: {error.message}</ErrorMessage>;
     }
 
     return (

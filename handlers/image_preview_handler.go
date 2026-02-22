@@ -14,14 +14,16 @@ import (
 
 	"github.com/camden-git/mediasysbackend/config"
 	"github.com/camden-git/mediasysbackend/repository"
+	"github.com/disintegration/imaging"
+	"github.com/go-chi/chi/v5"
 	"gocv.io/x/gocv"
 	"gorm.io/gorm"
 )
 
 type ImagePreviewHandler struct {
-	FaceRepo repository.FaceRepositoryInterface
-	Cfg      config.Config
-	// GormDB *gorm.DB
+	FaceRepo  repository.FaceRepositoryInterface
+	ImageRepo repository.ImageRepositoryInterface
+	Cfg       config.Config
 }
 
 func (iph *ImagePreviewHandler) ServeImageWithFaces(w http.ResponseWriter, r *http.Request) {
@@ -108,5 +110,84 @@ func (iph *ImagePreviewHandler) ServeImageWithFaces(w http.ResponseWriter, r *ht
 	if err != nil {
 		log.Printf("Error writing image response for %s: %v", dbPath, err)
 		// Cannot send error header now, just log
+	}
+}
+
+// ServeScaledPreview serves a scaled JPEG preview of the requested image.
+// If a pre-generated preview exists on disk, it is served directly (fast path).
+// Otherwise an on-the-fly preview is generated and streamed (fallback path).
+// Registered at /api/preview/* — the image path is the wildcard segment.
+func (iph *ImagePreviewHandler) ServeScaledPreview(w http.ResponseWriter, r *http.Request) {
+	wildcardPath := chi.URLParam(r, "*")
+	if wildcardPath == "" {
+		WriteAPIError(w, http.StatusBadRequest, "MissingPath", "image path is required")
+		return
+	}
+
+	decodedPath, err := url.PathUnescape(wildcardPath)
+	if err != nil {
+		WriteAPIError(w, http.StatusBadRequest, "InvalidPath", "invalid URL encoding in path")
+		return
+	}
+
+	cleanRelativePath := filepath.Clean(decodedPath)
+	if filepath.IsAbs(cleanRelativePath) || strings.HasPrefix(cleanRelativePath, "..") {
+		WriteAPIError(w, http.StatusBadRequest, "InvalidPath", "path must be relative with no '..'")
+		return
+	}
+
+	fullPath := filepath.Join(iph.Cfg.RootDirectory, cleanRelativePath)
+	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+		http.NotFound(w, r)
+		return
+	} else if err != nil {
+		log.Printf("ServeScaledPreview: stat error for %s: %v", fullPath, err)
+		WriteAPIError(w, http.StatusInternalServerError, "StatError", "could not stat image file")
+		return
+	}
+
+	// Fast path: serve pre-generated preview from disk
+	if iph.ImageRepo != nil {
+		dbPath := filepath.ToSlash(cleanRelativePath)
+		imageInfo, dbErr := iph.ImageRepo.GetByPath(dbPath)
+		if dbErr == nil && imageInfo != nil &&
+			imageInfo.PreviewStatus == "done" && imageInfo.PreviewPath != nil {
+
+			fullPreviewPath := filepath.Join(iph.Cfg.MediaStoragePath, *imageInfo.PreviewPath)
+			go func() {
+				if touchErr := iph.ImageRepo.TouchPreviewLastRequested(dbPath); touchErr != nil {
+					log.Printf("ServeScaledPreview: failed to touch preview timestamp for %s: %v", dbPath, touchErr)
+				}
+			}()
+			w.Header().Set("Cache-Control", "public, max-age=86400")
+			http.ServeFile(w, r, fullPreviewPath)
+			return
+		}
+	}
+
+	// Fallback: generate on-the-fly
+	src, err := imaging.Open(fullPath, imaging.AutoOrientation(true))
+	if err != nil {
+		log.Printf("ServeScaledPreview: failed to open image %s: %v", fullPath, err)
+		WriteAPIError(w, http.StatusInternalServerError, "ImageOpenError", "could not open image")
+		return
+	}
+
+	imgW, imgH := src.Bounds().Dx(), src.Bounds().Dy()
+	if imgW >= imgH {
+		if imgW > 3400 {
+			src = imaging.Fit(src, 3400, 99999, imaging.Lanczos)
+		}
+	} else {
+		if imgH > 2200 {
+			src = imaging.Fit(src, 99999, 2200, imaging.Lanczos)
+		}
+	}
+
+	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+
+	if err := imaging.Encode(w, src, imaging.JPEG, imaging.JPEGQuality(85)); err != nil {
+		log.Printf("ServeScaledPreview: encode error for %s: %v", fullPath, err)
 	}
 }

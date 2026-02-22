@@ -10,7 +10,8 @@ import {
 } from '../../../api/admin/albums';
 import { useFlash } from '../../../hooks/useFlash';
 import { Button } from '../../elements/Button';
-import { Dialog, DialogActions, DialogBody, DialogTitle } from '../../elements/Dialog';
+import { Dialog, DialogActions, DialogBody, DialogDescription, DialogTitle } from '../../elements/Dialog';
+import { Heading } from '../../elements/Heading';
 import { Field, FieldGroup, Label, Description } from '../../elements/Fieldset';
 import { Select } from '../../elements/Select';
 import { Checkbox } from '../../elements/Checkbox';
@@ -34,6 +35,8 @@ const AlbumSubusersPage: React.FC = () => {
 
     const [showAddModal, setShowAddModal] = useState(false);
     const [showEditModal, setShowEditModal] = useState(false);
+    const [showRemoveModal, setShowRemoveModal] = useState(false);
+    const [userToRemove, setUserToRemove] = useState<{ id: number; username: string } | null>(null);
     const [selectedUser, setSelectedUser] = useState<any>(null);
     const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
     const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
@@ -42,8 +45,21 @@ const AlbumSubusersPage: React.FC = () => {
     const albumPermissions = permissionDefinitions?.find((group) => group.key === 'album')?.permissions || [];
     const albumScopedPermissions = albumPermissions.filter((p) => p.scope === 'album');
 
+    const renderPermissionTags = (perms: string[], styleClass: string) =>
+        perms.map((perm) => {
+            const permDef = albumScopedPermissions.find((p) => p.key === perm);
+            return (
+                <span
+                    key={`${perm}-${styleClass}`}
+                    className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${styleClass}`}
+                >
+                    {permDef?.name || perm}
+                </span>
+            );
+        });
+
     const handleAddUser = async () => {
-        if (!selectedUserId || selectedPermissions.length === 0) return;
+        if (!selectedUserId) return;
 
         setIsSubmitting(true);
         try {
@@ -76,7 +92,7 @@ const AlbumSubusersPage: React.FC = () => {
     };
 
     const handleUpdatePermissions = async () => {
-        if (!selectedUser || selectedPermissions.length === 0) return;
+        if (!selectedUser) return;
 
         setIsSubmitting(true);
         try {
@@ -84,7 +100,14 @@ const AlbumSubusersPage: React.FC = () => {
                 permissions: selectedPermissions,
             };
 
-            await updateUserAlbumPermissions(albumId!, selectedUser.user.id, payload);
+            if (selectedUser.user_album_permission) {
+                await updateUserAlbumPermissions(albumId!, selectedUser.user.id, payload);
+            } else {
+                await addUserToAlbum(albumId!, {
+                    user_id: selectedUser.user.id,
+                    permissions: selectedPermissions,
+                });
+            }
             addFlash({
                 key: 'album-permissions-updated',
                 type: 'success',
@@ -107,17 +130,24 @@ const AlbumSubusersPage: React.FC = () => {
         }
     };
 
-    const handleRemoveUser = async (userId: number, username: string) => {
-        if (!confirm(`Are you sure you want to remove ${username} from this album?`)) return;
+    const handleRemoveClick = (userId: number, username: string) => {
+        setUserToRemove({ id: userId, username });
+        setShowRemoveModal(true);
+    };
+
+    const handleRemoveConfirm = async () => {
+        if (!userToRemove) return;
 
         try {
-            await removeUserFromAlbum(albumId!, userId);
+            await removeUserFromAlbum(albumId!, userToRemove.id);
             addFlash({
                 key: 'album-user-removed',
                 type: 'success',
                 title: 'Success',
                 message: 'User removed from album successfully',
             });
+            setShowRemoveModal(false);
+            setUserToRemove(null);
             mutateUsers();
         } catch (error: any) {
             addFlash({
@@ -131,7 +161,7 @@ const AlbumSubusersPage: React.FC = () => {
 
     const openEditModal = (user: any) => {
         setSelectedUser(user);
-        setSelectedPermissions(user.permissions || []);
+        setSelectedPermissions(user.direct_permissions || []);
         setShowEditModal(true);
     };
 
@@ -150,7 +180,7 @@ const AlbumSubusersPage: React.FC = () => {
     return (
         <div className='space-y-6'>
             <div className='flex items-center justify-between'>
-                <h1 className='text-2xl font-bold text-gray-900'>Album Subusers</h1>
+                <Heading>Album Subusers</Heading>
                 <Can permission='album.manage.members.global'>
                     <Button onClick={() => setShowAddModal(true)}>Add User</Button>
                 </Can>
@@ -178,18 +208,69 @@ const AlbumSubusersPage: React.FC = () => {
                                         </div>
                                     </TableCell>
                                     <TableCell>
-                                        <div className='flex flex-wrap gap-1'>
-                                            {userData.permissions.map((perm) => {
-                                                const permDef = albumScopedPermissions.find((p) => p.key === perm);
-                                                return (
-                                                    <span
-                                                        key={perm}
-                                                        className='inline-flex items-center rounded-full bg-blue-100 px-2 py-1 text-xs font-medium text-blue-800'
-                                                    >
-                                                        {permDef?.name || perm}
-                                                    </span>
-                                                );
-                                            })}
+                                        <div className='space-y-3'>
+                                            <div>
+                                                <div className='text-xs font-semibold uppercase tracking-wide text-gray-500'>
+                                                    Direct
+                                                </div>
+                                                <div className='mt-1 flex flex-wrap gap-1'>
+                                                    {userData.direct_permissions && userData.direct_permissions.length > 0 ? (
+                                                        renderPermissionTags(
+                                                            userData.direct_permissions,
+                                                            'bg-blue-100 text-blue-800',
+                                                        )
+                                                    ) : (
+                                                        <span className='text-xs text-gray-400'>None</span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            {userData.inherited_permissions && userData.inherited_permissions.length > 0 && (
+                                                <div>
+                                                    <div className='text-xs font-semibold uppercase tracking-wide text-gray-500'>
+                                                        Inherited
+                                                    </div>
+                                                    <div className='mt-1 flex flex-wrap gap-1'>
+                                                        {renderPermissionTags(
+                                                            userData.inherited_permissions,
+                                                            'bg-purple-100 text-purple-800',
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {userData.role_contributions && userData.role_contributions.length > 0 && (
+                                                <div className='rounded-md border border-gray-100 p-3 text-xs text-gray-600'>
+                                                    <div className='font-semibold uppercase tracking-wide text-gray-500'>
+                                                        Role-derived
+                                                    </div>
+                                                    <ul className='mt-2 space-y-2'>
+                                                        {userData.role_contributions.map((contrib) => (
+                                                            <li key={contrib.role_id}>
+                                                                <div className='font-medium text-gray-700'>
+                                                                    {contrib.role_name}
+                                                                </div>
+                                                                {contrib.for_all_albums &&
+                                                                    contrib.for_all_albums.length > 0 && (
+                                                                        <div className='mt-1 flex flex-wrap gap-1'>
+                                                                            {renderPermissionTags(
+                                                                                contrib.for_all_albums,
+                                                                                'bg-amber-100 text-amber-800',
+                                                                            )}
+                                                                        </div>
+                                                                    )}
+                                                                {contrib.album_specific &&
+                                                                    contrib.album_specific.length > 0 && (
+                                                                        <div className='mt-1 flex flex-wrap gap-1'>
+                                                                            {renderPermissionTags(
+                                                                                contrib.album_specific,
+                                                                                'bg-gray-200 text-gray-800',
+                                                                            )}
+                                                                        </div>
+                                                                    )}
+                                                            </li>
+                                                        ))}
+                                                    </ul>
+                                                </div>
+                                            )}
                                         </div>
                                     </TableCell>
                                     <TableCell>
@@ -205,7 +286,7 @@ const AlbumSubusersPage: React.FC = () => {
                                                 <Button
                                                     color='red'
                                                     onClick={() =>
-                                                        handleRemoveUser(userData.user.id, userData.user.username)
+                                                        handleRemoveClick(userData.user.id, userData.user.username)
                                                     }
                                                     className='px-2 py-1 text-xs'
                                                 >
@@ -275,10 +356,7 @@ const AlbumSubusersPage: React.FC = () => {
                     <Button outline onClick={() => setShowAddModal(false)} disabled={isSubmitting}>
                         Cancel
                     </Button>
-                    <Button
-                        onClick={handleAddUser}
-                        disabled={isSubmitting || !selectedUserId || selectedPermissions.length === 0}
-                    >
+                    <Button onClick={handleAddUser} disabled={isSubmitting || !selectedUserId}>
                         {isSubmitting ? 'Adding...' : 'Add User'}
                     </Button>
                 </DialogActions>
@@ -328,11 +406,24 @@ const AlbumSubusersPage: React.FC = () => {
                     <Button outline onClick={() => setShowEditModal(false)} disabled={isSubmitting}>
                         Cancel
                     </Button>
-                    <Button
-                        onClick={handleUpdatePermissions}
-                        disabled={isSubmitting || selectedPermissions.length === 0}
-                    >
+                    <Button onClick={handleUpdatePermissions} disabled={isSubmitting}>
                         {isSubmitting ? 'Updating...' : 'Update Permissions'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            <Dialog open={showRemoveModal} onClose={() => setShowRemoveModal(false)}>
+                <DialogTitle>Remove User</DialogTitle>
+                <DialogDescription>
+                    Are you sure you want to remove {userToRemove?.username} from this album? This action cannot be
+                    undone.
+                </DialogDescription>
+                <DialogActions>
+                    <Button plain onClick={() => setShowRemoveModal(false)}>
+                        Cancel
+                    </Button>
+                    <Button color='red' onClick={handleRemoveConfirm}>
+                        Remove
                     </Button>
                 </DialogActions>
             </Dialog>

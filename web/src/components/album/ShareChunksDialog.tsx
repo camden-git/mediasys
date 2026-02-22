@@ -37,7 +37,7 @@ const ShareChunksDialog: React.FC<ShareChunksDialogProps> = ({
                 'mb-2 inline-flex items-center rounded-md bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700 ring-1 ring-indigo-700/10 ring-inset'
             }
         >
-            <BeakerIcon className='my-auto mr-1 size-4' /> Experimental feature
+            <BeakerIcon className='my-auto mr-1 size-4' /> Share
         </span>
         <DialogTitle>Share Album in Multiple Parts</DialogTitle>
         <DialogDescription>

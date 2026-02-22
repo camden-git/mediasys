@@ -12,10 +12,11 @@ const (
 	DefaultThumbnailsSubDir = "thumbnails"
 	DefaultBannersSubDir    = "album_banners"
 	DefaultArchivesSubDir   = "album_archives"
+	DefaultPreviewsSubDir   = "previews"
 )
 
 const (
-	defaultThumbnailQueueSize  = 200
+	defaultThumbnailQueueSize  = 600
 	defaultNumThumbnailWorkers = 4
 	defaultThumbnailMaxSize    = 300
 )
@@ -32,6 +33,7 @@ type Config struct {
 	ThumbnailsPath   string // full-calculated path for thumbnails
 	BannersPath      string // full-calculated path for banners
 	ArchivesPath     string // full-calculated path for archives
+	PreviewsPath     string // full-calculated path for previews
 
 	// thumbnail generation settings
 	ThumbnailMaxSize int
@@ -131,6 +133,9 @@ func LoadConfig() (Config, error) {
 	archiveSubDir := getEnvOrDefault("ARCHIVES_SUBDIR", DefaultArchivesSubDir)
 	absArchivesPath := filepath.Join(absMediaStorage, archiveSubDir)
 
+	previewSubDir := getEnvOrDefault("PREVIEWS_SUBDIR", DefaultPreviewsSubDir)
+	absPreviewsPath := filepath.Join(absMediaStorage, previewSubDir)
+
 	thumbMaxSize := getEnvIntOrDefault("THUMBNAIL_MAX_SIZE", defaultThumbnailMaxSize)
 
 	queueSize := getEnvIntOrDefault("THUMBNAIL_QUEUE_SIZE", defaultThumbnailQueueSize)
@@ -161,6 +166,7 @@ func LoadConfig() (Config, error) {
 		ThumbnailsPath:           absThumbnailsPath,
 		BannersPath:              absBannersPath,
 		ArchivesPath:             absArchivesPath,
+		PreviewsPath:             absPreviewsPath,
 		ThumbnailMaxSize:         thumbMaxSize,
 		ThumbnailQueueSize:       queueSize,
 		NumThumbnailWorkers:      numWorkers,

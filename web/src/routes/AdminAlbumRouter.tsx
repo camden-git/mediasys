@@ -2,11 +2,10 @@ import React, { useEffect } from 'react';
 import { Routes, Route, useParams, useNavigate } from 'react-router-dom';
 import ProtectedRoute from '../components/router/ProtectedRoute';
 import { StackedLayout } from '../components/elements/StackedLayout.tsx';
-import { Navbar, NavbarItem, NavbarLabel, NavbarSection, NavbarSpacer } from '../components/elements/Navbar.tsx';
-import { ArrowLeftIcon, InboxIcon, MagnifyingGlassIcon, PlusIcon } from '@heroicons/react/20/solid';
+import { Navbar, NavbarItem, NavbarLabel, NavbarSection } from '../components/elements/Navbar.tsx';
+import { ArrowLeftIcon, PlusIcon } from '@heroicons/react/20/solid';
 import { Sidebar, SidebarBody, SidebarItem, SidebarSection } from '../components/elements/Sidebar.tsx';
 import AlbumView from '../components/admin/albums/AlbumView.tsx';
-import EditAlbumForm from '../components/admin/albums/EditAlbumForm.tsx';
 import AlbumSubusersPage from '../components/admin/albums/AlbumSubusersPage.tsx';
 import { Can } from '../components/elements/Can.tsx';
 import { useAlbums } from '../api/swr/useAlbums';
@@ -24,6 +23,7 @@ import { useStoreState, useStoreActions } from '../store/hooks';
 import { getAlbum } from '../api/admin/albums';
 import OverviewContainer from '../components/admin/albums/overview/OverviewContainer.tsx';
 import { SettingsContainer } from '../components/admin/albums/settings/SettingsContainer.tsx';
+import AlbumFaceTaggingContainer from '../components/admin/albums/faces/AlbumFaceTaggingContainer.tsx';
 
 export interface AdminAlbumRouteDefinition {
     path: string;
@@ -98,7 +98,7 @@ const AdminAlbumRouter: React.FC = () => {
         },
         {
             path: '/overview',
-            name: 'Overview',
+            name: 'Media',
             component: OverviewContainer,
             permission: 'album.list',
         },
@@ -109,16 +109,16 @@ const AdminAlbumRouter: React.FC = () => {
             permission: 'album.edit.general',
         },
         {
-            path: '/edit',
-            name: 'Edit',
-            component: EditAlbumForm,
-            permission: 'album.edit.general',
-        },
-        {
             path: '/subusers',
             name: 'Subusers',
             component: AlbumSubusersPage,
             permission: 'album.manage.members.global',
+        },
+        {
+            path: '/faces',
+            name: 'Face Tagging',
+            component: AlbumFaceTaggingContainer,
+            permission: null,
         },
     ];
 
@@ -160,15 +160,6 @@ const AdminAlbumRouter: React.FC = () => {
                             </Can>
                         ))}
                     </NavbarSection>
-                    <NavbarSpacer />
-                    <NavbarSection>
-                        <NavbarItem to='/search' aria-label='Search'>
-                            <MagnifyingGlassIcon />
-                        </NavbarItem>
-                        <NavbarItem to='/inbox' aria-label='Inbox'>
-                            <InboxIcon />
-                        </NavbarItem>
-                    </NavbarSection>
                 </Navbar>
             }
             sidebar={
@@ -193,7 +184,7 @@ const AdminAlbumRouter: React.FC = () => {
                             key={path}
                             element={
                                 <Can permission={permission}>
-                                    <Component />
+                                    <Component key={id} />
                                 </Can>
                             }
                         />

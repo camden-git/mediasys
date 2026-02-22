@@ -73,53 +73,48 @@ func toInviteCodeListResponseDTO(ics []models.InviteCode) []InviteCodeResponseDT
 }
 
 func (h *AdminInviteCodeHandler) ListInviteCodes(w http.ResponseWriter, r *http.Request) {
+	params := ParsePaginationParams(r)
 	codes, err := h.InviteCodeRepo.ListAll()
 	if err != nil {
-		http.Error(w, "Failed to retrieve invite codes: "+err.Error(), http.StatusInternalServerError)
+		WriteAPIError(w, http.StatusInternalServerError, "InviteCodeListError", "Failed to retrieve invite codes: "+err.Error())
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(toInviteCodeListResponseDTO(codes)); err != nil {
-		// fmt.Printf("Error encoding JSON response for ListInviteCodes: %v\n", err)
-	}
+	pagedCodes, meta := PaginateSlice(codes, params)
+	response := toInviteCodeListResponseDTO(pagedCodes)
+	WriteAPIPaginated(w, http.StatusOK, response, meta)
 }
 
 func (h *AdminInviteCodeHandler) GetInviteCode(w http.ResponseWriter, r *http.Request) {
 	codeIDStr := chi.URLParam(r, "id")
 	codeID, err := strconv.ParseUint(codeIDStr, 10, 32)
 	if err != nil {
-		http.Error(w, "Invalid invite code ID format", http.StatusBadRequest)
+		WriteAPIError(w, http.StatusBadRequest, "InvalidInviteCodeID", "Invalid invite code ID format")
 		return
 	}
 
 	code, err := h.InviteCodeRepo.GetByID(uint(codeID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			http.Error(w, "Invite code not found", http.StatusNotFound)
+			WriteAPIError(w, http.StatusNotFound, "InviteCodeNotFound", "Invite code not found")
 		} else {
-			http.Error(w, "Failed to retrieve invite code: "+err.Error(), http.StatusInternalServerError)
+			WriteAPIError(w, http.StatusInternalServerError, "InviteCodeFetchError", "Failed to retrieve invite code: "+err.Error())
 		}
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(toInviteCodeResponseDTO(code)); err != nil {
-		// fmt.Printf("Error encoding JSON response for GetInviteCode: %v\n", err)
-	}
+	WriteAPIResponse(w, http.StatusOK, toInviteCodeResponseDTO(code))
 }
 
 func (h *AdminInviteCodeHandler) CreateInviteCode(w http.ResponseWriter, r *http.Request) {
 	var payload InviteCodeCreatePayload
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		http.Error(w, "Invalid request payload: "+err.Error(), http.StatusBadRequest)
+		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request payload: "+err.Error())
 		return
 	}
 
 	// get authenticated user ID from context (set by AuthMiddleware)
 	currentUser, ok := r.Context().Value(UserContextKey).(*models.User)
 	if !ok || currentUser == nil {
-		http.Error(w, "User not found in context (authentication error)", http.StatusInternalServerError)
+		WriteAPIError(w, http.StatusInternalServerError, "ContextUserError", "User not found in context (authentication error)")
 		return
 	}
 
@@ -131,50 +126,46 @@ func (h *AdminInviteCodeHandler) CreateInviteCode(w http.ResponseWriter, r *http
 	if payload.ExpiresAt != nil && *payload.ExpiresAt != "" {
 		t, err := time.Parse(time.RFC3339, *payload.ExpiresAt)
 		if err != nil {
-			http.Error(w, "Invalid expires_at format (must be RFC3339): "+err.Error(), http.StatusBadRequest)
+			WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Invalid expires_at format (must be RFC3339): "+err.Error())
 			return
 		}
 		inviteCode.ExpiresAt = &t
 	}
 
 	if err := h.InviteCodeRepo.Create(inviteCode); err != nil {
-		http.Error(w, "Failed to create invite code: "+err.Error(), http.StatusInternalServerError)
+		WriteAPIError(w, http.StatusInternalServerError, "InviteCodeCreateError", "Failed to create invite code: "+err.Error())
 		return
 	}
 
 	reloadedCode, err := h.InviteCodeRepo.GetByID(inviteCode.ID)
 	if err != nil {
-		http.Error(w, "Failed to retrieve newly created invite code: "+err.Error(), http.StatusInternalServerError)
+		WriteAPIError(w, http.StatusInternalServerError, "InviteCodeFetchError", "Failed to retrieve newly created invite code: "+err.Error())
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	if err := json.NewEncoder(w).Encode(toInviteCodeResponseDTO(reloadedCode)); err != nil {
-		// fmt.Printf("Error encoding JSON response for CreateInviteCode: %v\n", err)
-	}
+	WriteAPIResponse(w, http.StatusCreated, toInviteCodeResponseDTO(reloadedCode))
 }
 
 func (h *AdminInviteCodeHandler) UpdateInviteCode(w http.ResponseWriter, r *http.Request) {
 	codeIDStr := chi.URLParam(r, "id")
 	codeID, err := strconv.ParseUint(codeIDStr, 10, 32)
 	if err != nil {
-		http.Error(w, "Invalid invite code ID format", http.StatusBadRequest)
+		WriteAPIError(w, http.StatusBadRequest, "InvalidInviteCodeID", "Invalid invite code ID format")
 		return
 	}
 
 	var payload InviteCodeUpdatePayload
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		http.Error(w, "Invalid request payload: "+err.Error(), http.StatusBadRequest)
+		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request payload: "+err.Error())
 		return
 	}
 
 	inviteCode, err := h.InviteCodeRepo.GetByID(uint(codeID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			http.Error(w, "Invite code not found", http.StatusNotFound)
+			WriteAPIError(w, http.StatusNotFound, "InviteCodeNotFound", "Invite code not found")
 		} else {
-			http.Error(w, "Failed to retrieve invite code for update: "+err.Error(), http.StatusInternalServerError)
+			WriteAPIError(w, http.StatusInternalServerError, "InviteCodeFetchError", "Failed to retrieve invite code for update: "+err.Error())
 		}
 		return
 	}
@@ -185,7 +176,7 @@ func (h *AdminInviteCodeHandler) UpdateInviteCode(w http.ResponseWriter, r *http
 		} else {
 			t, err := time.Parse(time.RFC3339, *payload.ExpiresAt)
 			if err != nil {
-				http.Error(w, "Invalid expires_at format (must be RFC3339): "+err.Error(), http.StatusBadRequest)
+				WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Invalid expires_at format (must be RFC3339): "+err.Error())
 				return
 			}
 			inviteCode.ExpiresAt = &t
@@ -199,36 +190,32 @@ func (h *AdminInviteCodeHandler) UpdateInviteCode(w http.ResponseWriter, r *http
 	}
 
 	if err := h.InviteCodeRepo.Update(inviteCode); err != nil {
-		http.Error(w, "Failed to update invite code: "+err.Error(), http.StatusInternalServerError)
+		WriteAPIError(w, http.StatusInternalServerError, "InviteCodeUpdateError", "Failed to update invite code: "+err.Error())
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(toInviteCodeResponseDTO(inviteCode)); err != nil {
-		// fmt.Printf("Error encoding JSON response for UpdateInviteCode: %v\n", err)
-	}
+	WriteAPIResponse(w, http.StatusOK, toInviteCodeResponseDTO(inviteCode))
 }
 
 func (h *AdminInviteCodeHandler) DeleteInviteCode(w http.ResponseWriter, r *http.Request) {
 	codeIDStr := chi.URLParam(r, "id")
 	codeID, err := strconv.ParseUint(codeIDStr, 10, 32)
 	if err != nil {
-		http.Error(w, "Invalid invite code ID format", http.StatusBadRequest)
+		WriteAPIError(w, http.StatusBadRequest, "InvalidInviteCodeID", "Invalid invite code ID format")
 		return
 	}
 
 	_, err = h.InviteCodeRepo.GetByID(uint(codeID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			http.Error(w, "Invite code not found", http.StatusNotFound)
+			WriteAPIError(w, http.StatusNotFound, "InviteCodeNotFound", "Invite code not found")
 			return
 		}
-		http.Error(w, "Failed to check invite code before delete: "+err.Error(), http.StatusInternalServerError)
+		WriteAPIError(w, http.StatusInternalServerError, "InviteCodeFetchError", "Failed to check invite code before delete: "+err.Error())
 		return
 	}
 
 	if err := h.InviteCodeRepo.Delete(uint(codeID)); err != nil {
-		http.Error(w, "Failed to delete invite code: "+err.Error(), http.StatusInternalServerError)
+		WriteAPIError(w, http.StatusInternalServerError, "InviteCodeDeleteError", "Failed to delete invite code: "+err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

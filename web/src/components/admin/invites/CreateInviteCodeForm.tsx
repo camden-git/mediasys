@@ -6,9 +6,9 @@ import { Dialog, DialogActions, DialogBody, DialogDescription, DialogTitle } fro
 import { FieldGroup } from '../../elements/Fieldset.tsx';
 import FormikFieldComponent from '../../elements/FormikField.tsx';
 import { useFlash } from '../../../hooks/useFlash';
-import { useInviteCodes } from '../../../api/swr/useInviteCodes';
 import { createInviteCode } from '../../../api/admin/inviteCodes';
 import { InviteCodeCreatePayload } from '../../../types';
+import { useSWRConfig } from 'swr';
 
 interface CreateInviteCodeFormValues {
     expiresAt: string;
@@ -41,7 +41,7 @@ export const CreateInviteCodeForm: React.FC = () => {
     const [isOpen, setIsOpen] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const { addFlash, clearFlashes } = useFlash();
-    const { mutate } = useInviteCodes();
+    const { mutate } = useSWRConfig();
 
     return (
         <>
@@ -70,11 +70,8 @@ export const CreateInviteCodeForm: React.FC = () => {
                         }
 
                         try {
-                            const newInviteCode = await createInviteCode(payload);
-                            mutate((currentData) => {
-                                if (!currentData) return [newInviteCode];
-                                return [newInviteCode, ...currentData];
-                            }, false);
+                            await createInviteCode(payload);
+                            mutate((key) => Array.isArray(key) && key[0] === 'invite-codes');
                             resetForm();
                             setIsOpen(false);
                         } catch (error: any) {

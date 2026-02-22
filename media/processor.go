@@ -17,6 +17,11 @@ const (
 
 	ThumbnailJpegQuality   = 90
 	ThumbnailFileExtension = ".jpg"
+
+	PreviewJpegQuality      = 85
+	PreviewFileExtension    = ".jpg"
+	PreviewLandscapeMaxLong = 3400
+	PreviewPortraitMaxLong  = 2200
 )
 
 // Processor handles media transformations like thumbnailing and resizing. it
@@ -86,6 +91,57 @@ func (p *Processor) GenerateThumbnail(originalImg image.Image, originalRelPath s
 	}
 
 	log.Printf("processor: Generated and saved thumbnail for %s at %s", originalRelPath, savedRelPath)
+	return savedRelPath, nil
+}
+
+// GeneratePreview creates an orientation-aware preview (landscape: ≤3400px on long side,
+// portrait: ≤2200px on long side), saves it via the Store, and returns the relative path.
+func (p *Processor) GeneratePreview(src image.Image, originalRelPath string) (string, error) {
+	w, h := src.Bounds().Dx(), src.Bounds().Dy()
+	if w <= 0 || h <= 0 {
+		return "", fmt.Errorf("invalid image dimensions: %dx%d", w, h)
+	}
+
+	var resized image.Image
+	if w >= h {
+		// landscape (or square)
+		if w > PreviewLandscapeMaxLong {
+			resized = imaging.Fit(src, PreviewLandscapeMaxLong, 99999, imaging.Lanczos)
+		} else {
+			resized = src
+		}
+	} else {
+		// portrait
+		if h > PreviewPortraitMaxLong {
+			resized = imaging.Fit(src, 99999, PreviewPortraitMaxLong, imaging.Lanczos)
+		} else {
+			resized = src
+		}
+	}
+
+	reader, writer := io.Pipe()
+	go func() {
+		defer writer.Close()
+		err := imaging.Encode(writer, resized, imaging.JPEG, imaging.JPEGQuality(PreviewJpegQuality))
+		if err != nil {
+			log.Printf("processor: Failed to encode preview: %v", err)
+			writer.CloseWithError(fmt.Errorf("preview encoding failed: %w", err))
+		}
+	}()
+
+	previewUUID, err := uuid.NewRandom()
+	if err != nil {
+		reader.Close()
+		return "", fmt.Errorf("failed to generate UUID for preview: %w", err)
+	}
+	targetFilename := previewUUID.String() + PreviewFileExtension
+
+	savedRelPath, err := p.store.Save(AssetTypePreview, "", targetFilename, reader)
+	if err != nil {
+		return "", fmt.Errorf("failed to save preview via store: %w", err)
+	}
+
+	log.Printf("processor: Generated and saved preview for %s at %s", originalRelPath, savedRelPath)
 	return savedRelPath, nil
 }
 

@@ -1,4 +1,5 @@
 mediasysbackend
+cli
 .env
 *.db
 *.db*

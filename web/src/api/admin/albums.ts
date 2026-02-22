@@ -1,6 +1,7 @@
 import http from '../http';
 import { Album, DirectoryListing } from '../../types';
 import { User } from '../../types';
+import { ApiResponse } from '../standard';
 
 export interface AdminAlbumResponse extends Album {
     is_hidden: boolean;
@@ -26,23 +27,23 @@ export interface UpdateAlbumPayload {
 }
 
 export const listAlbums = async (): Promise<AdminAlbumResponse[]> => {
-    const response = await http.get('/admin/albums');
-    return response.data;
+    const response = await http.get<ApiResponse<AdminAlbumResponse[]>>('/admin/albums');
+    return response.data.data;
 };
 
 export const getAlbum = async (id: number): Promise<AdminAlbumResponse> => {
-    const response = await http.get(`/admin/albums/${id}`);
-    return response.data;
+    const response = await http.get<ApiResponse<AdminAlbumResponse>>(`/admin/albums/${id}`);
+    return response.data.data;
 };
 
 export const createAlbum = async (payload: CreateAlbumPayload): Promise<AdminAlbumResponse> => {
-    const response = await http.post('/admin/albums', payload);
-    return response.data;
+    const response = await http.post<ApiResponse<AdminAlbumResponse>>('/admin/albums', payload);
+    return response.data.data;
 };
 
 export const updateAlbum = async (id: number, payload: UpdateAlbumPayload): Promise<AdminAlbumResponse> => {
-    const response = await http.put(`/admin/albums/${id}`, payload);
-    return response.data;
+    const response = await http.put<ApiResponse<AdminAlbumResponse>>(`/admin/albums/${id}`, payload);
+    return response.data.data;
 };
 
 export const deleteAlbum = async (id: number): Promise<void> => {
@@ -53,18 +54,23 @@ export const uploadAlbumBanner = async (id: number, file: File): Promise<AdminAl
     const formData = new FormData();
     formData.append('banner_image', file);
 
-    const response = await http.put(`/admin/albums/${id}/banner`, formData, {
+    const response = await http.put<ApiResponse<AdminAlbumResponse>>(`/admin/albums/${id}/banner`, formData, {
         headers: {
             'Content-Type': 'multipart/form-data',
         },
     });
-    return response.data;
+    return response.data.data;
 };
+
+export interface UploadResult {
+    uploaded: number;
+    failed: Array<{ path: string; error: string }>;
+}
 
 export const uploadAlbumImages = async (
     id: number,
     files: Array<{ file: File; relativePath?: string }>,
-): Promise<{ uploaded: number }> => {
+): Promise<UploadResult> => {
     const formData = new FormData();
     for (const item of files) {
         if (item.relativePath) {
@@ -72,8 +78,8 @@ export const uploadAlbumImages = async (
         }
         formData.append('files', item.file, item.relativePath || item.file.name);
     }
-    const resp = await http.post(`/admin/albums/${id}/upload`, formData);
-    return resp.data;
+    const resp = await http.post<ApiResponse<UploadResult>>(`/admin/albums/${id}/upload`, formData);
+    return resp.data.data;
 };
 
 export interface UploadAlbumImagesBatchOptions {
@@ -86,7 +92,7 @@ export const uploadAlbumImagesBatched = async (
     id: number,
     files: Array<{ file: File; relativePath?: string }>,
     options: UploadAlbumImagesBatchOptions = {},
-): Promise<{ uploaded: number }> => {
+): Promise<UploadResult> => {
     const batchSize = options.batchSize ?? 5;
     const concurrency = Math.max(1, options.concurrency ?? 3);
     const requestTimeoutMs = options.requestTimeoutMs ?? 0; // 0 = no timeout
@@ -97,6 +103,7 @@ export const uploadAlbumImagesBatched = async (
     }
 
     let uploadedTotal = 0;
+    const failedTotal: Array<{ path: string; error: string }> = [];
     let nextBatchIndex = 0;
 
     const runOne = async () => {
@@ -112,10 +119,13 @@ export const uploadAlbumImagesBatched = async (
                 }
                 formData.append('files', item.file, item.relativePath || item.file.name);
             }
-            const resp = await http.post(`/admin/albums/${id}/upload`, formData, {
+            const resp = await http.post<ApiResponse<UploadResult>>(`/admin/albums/${id}/upload`, formData, {
                 timeout: requestTimeoutMs,
             });
-            uploadedTotal += resp.data?.uploaded ?? 0;
+            uploadedTotal += resp.data?.data?.uploaded ?? 0;
+            if (resp.data?.data?.failed) {
+                failedTotal.push(...resp.data.data.failed);
+            }
         }
     };
 
@@ -125,12 +135,12 @@ export const uploadAlbumImagesBatched = async (
     }
     await Promise.all(workers);
 
-    return { uploaded: uploadedTotal };
+    return { uploaded: uploadedTotal, failed: failedTotal };
 };
 
 export const listAlbumImages = async (id: number): Promise<DirectoryListing> => {
-    const resp = await http.get(`/admin/albums/${id}/images`);
-    return resp.data;
+    const resp = await http.get<ApiResponse<DirectoryListing>>(`/admin/albums/${id}/images`);
+    return resp.data.data;
 };
 
 export const deleteAlbumImage = async (id: number, imagePath: string): Promise<void> => {
@@ -139,8 +149,8 @@ export const deleteAlbumImage = async (id: number, imagePath: string): Promise<v
 };
 
 export const requestAlbumZip = async (id: number): Promise<{ message: string }> => {
-    const response = await http.post(`/admin/albums/${id}/zip`);
-    return response.data;
+    const response = await http.post<ApiResponse<{ message: string }>>(`/admin/albums/${id}/zip`);
+    return response.data.data;
 };
 
 export const downloadAlbumZip = async (id: number): Promise<Blob> => {
@@ -153,6 +163,14 @@ export const downloadAlbumZip = async (id: number): Promise<Blob> => {
 export interface AlbumUserPermissionResponse {
     user: User;
     permissions: string[];
+    direct_permissions?: string[];
+    inherited_permissions?: string[];
+    role_contributions?: Array<{
+        role_id: number;
+        role_name: string;
+        for_all_albums?: string[];
+        album_specific?: string[];
+    }>;
     user_album_permission?: {
         id: number;
         user_id: number;
@@ -173,18 +191,18 @@ export interface UpdateUserAlbumPermissionsPayload {
 }
 
 export const getAlbumUsers = async (albumId: number): Promise<AlbumUserPermissionResponse[]> => {
-    const response = await http.get(`/admin/albums/${albumId}/users`);
-    return response.data;
+    const response = await http.get<ApiResponse<AlbumUserPermissionResponse[]>>(`/admin/albums/${albumId}/users`);
+    return response.data.data;
 };
 
 export const getAvailableUsers = async (albumId: number): Promise<User[]> => {
-    const response = await http.get(`/admin/albums/${albumId}/users/available`);
-    return response.data;
+    const response = await http.get<ApiResponse<User[]>>(`/admin/albums/${albumId}/users/available`);
+    return response.data.data;
 };
 
 export const addUserToAlbum = async (albumId: number, payload: AddUserToAlbumPayload): Promise<any> => {
     const response = await http.post(`/admin/albums/${albumId}/users`, payload);
-    return response.data;
+    return response.data.data;
 };
 
 export const updateUserAlbumPermissions = async (
@@ -193,7 +211,7 @@ export const updateUserAlbumPermissions = async (
     payload: UpdateUserAlbumPermissionsPayload,
 ): Promise<any> => {
     const response = await http.put(`/admin/albums/${albumId}/users/${userId}`, payload);
-    return response.data;
+    return response.data.data;
 };
 
 export const removeUserFromAlbum = async (albumId: number, userId: number): Promise<void> => {

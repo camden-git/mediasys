@@ -1,3 +1,60 @@
+export interface Person {
+    id: number;
+    primary_name: string;
+    key_photo_face_id?: number;
+    faces?: FaceData[];
+}
+
+export interface Alias {
+    id: number;
+    person_id: number;
+    name: string;
+}
+
+export interface UntaggedFaceResult {
+    face_id: number;
+    image_path: string;
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+    /** Original image pixel width — used to normalise bounding-box coords */
+    image_width?: number;
+    /** Original image pixel height — used to normalise bounding-box coords */
+    image_height?: number;
+    detection_confidence: number;
+    quality_score: number | null;
+    similar_faces_count: number;
+    suggested_person_id: number | null;
+    suggested_person_name: string | null;
+    suggestion_count: number;
+}
+
+export interface FaceData {
+    id: number;
+    person_id?: number;
+    confirmed: boolean;
+    image_path: string;
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+    detection_confidence: number;
+    person?: Person;
+}
+
+export interface AlbumGroup {
+    id: number;
+    name: string;
+    slug: string;
+    description?: string;
+    banner_image_path?: string;
+    is_hidden: boolean;
+    created_at: number;
+    updated_at: number;
+    albums?: Album[];
+}
+
 export interface Album {
     id: number;
     name: string;
@@ -15,7 +72,45 @@ export interface Album {
     created_at: number;
     updated_at: number;
     is_hidden?: boolean;
+    group_id?: number;
+    group?: AlbumGroup;
     artists?: { id: number; username: string; first_name?: string; last_name?: string }[];
+}
+
+export interface ImageTag {
+    id: number;
+    image_path: string;
+    tag_key: string;
+    tag_value: string;
+    source: 'xmp' | 'album_default' | 'manual';
+    created_at: string;
+}
+
+export interface AlbumDefaultTag {
+    id: number;
+    album_id: number;
+    tag_key: string;
+    tag_value: string;
+    created_at: string;
+}
+
+export interface CollectionTagFilter {
+    id: number;
+    collection_id: number;
+    tag_key: string;
+    tag_value: string;
+}
+
+export interface Collection {
+    id: number;
+    name: string;
+    slug: string;
+    description?: string;
+    banner_image_path?: string;
+    is_public: boolean;
+    created_at: number;
+    updated_at: number;
+    filters?: CollectionTagFilter[];
 }
 
 export interface FileInfo {
@@ -25,6 +120,7 @@ export interface FileInfo {
     size: number;
     mod_time: number;
     thumbnail_path?: string;
+    tags?: ImageTag[];
     width?: number;
     height?: number;
 
@@ -37,6 +133,7 @@ export interface FileInfo {
     camera_make?: string;
     camera_model?: string;
     taken_at?: number;
+    rating?: number;
 
     thumbnail_status?: string;
     metadata_status?: string;
@@ -63,6 +160,16 @@ export interface Role {
     // album_permissions are likely too complex for a simple Role DTO here
 }
 
+export interface AlbumPermissionGrants {
+    for_all?: string[];
+    by_album?: Record<string, string[]>;
+}
+
+export interface UserEffectivePermissions {
+    global?: string[];
+    album?: AlbumPermissionGrants;
+}
+
 // Corresponds to backend models.User (or a UserResponseDTO)
 export interface User {
     id: number;
@@ -71,6 +178,7 @@ export interface User {
     last_name: string;
     roles?: Role[]; // Optional, might be just role IDs or full Role objects
     global_permissions?: string[];
+    effective_permissions?: UserEffectivePermissions;
     // album_permissions: UserAlbumPermission[]; // Likely fetched on demand
     created_at: string; // Assuming string format like from http.TimeFormat
     updated_at: string;

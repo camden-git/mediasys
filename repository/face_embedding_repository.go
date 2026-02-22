@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"time"
 
 	"github.com/camden-git/mediasysbackend/models"
@@ -117,6 +118,16 @@ func (r *FaceEmbeddingRepository) GetEmbeddingsByPersonID(personID uint) ([]mode
 	return embeddings, nil
 }
 
+// GetAllEmbeddings retrieves all face embeddings with Face and Person preloaded
+func (r *FaceEmbeddingRepository) GetAllEmbeddings() ([]models.FaceEmbedding, error) {
+	var embeddings []models.FaceEmbedding
+	err := r.DB.Preload("Face").Preload("Face.Person").Find(&embeddings).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to get all embeddings: %w", err)
+	}
+	return embeddings, nil
+}
+
 // GetUntaggedEmbeddings retrieves all face embeddings for untagged faces
 func (r *FaceEmbeddingRepository) GetUntaggedEmbeddings() ([]models.FaceEmbedding, error) {
 	var embeddings []models.FaceEmbedding
@@ -126,6 +137,39 @@ func (r *FaceEmbeddingRepository) GetUntaggedEmbeddings() ([]models.FaceEmbeddin
 		Find(&embeddings).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to get untagged embeddings: %w", err)
+	}
+	return embeddings, nil
+}
+
+// GetUntaggedEmbeddingsFiltered retrieves untagged face embeddings with optional quality/confidence
+// filtering and configurable sort order.
+func (r *FaceEmbeddingRepository) GetUntaggedEmbeddingsFiltered(filter UntaggedFaceFilter) ([]models.FaceEmbedding, error) {
+	q := r.DB.Joins("JOIN faces ON face_embeddings.face_id = faces.id AND faces.deleted_at IS NULL").
+		Where("faces.person_id IS NULL")
+
+	if filter.MinQuality != nil {
+		q = q.Where("faces.quality_score >= ?", *filter.MinQuality)
+	}
+	if filter.MinConfidence != nil {
+		q = q.Where("faces.detection_confidence >= ?", *filter.MinConfidence)
+	}
+
+	orderDir := "DESC"
+	if filter.SortOrder == "asc" {
+		orderDir = "ASC"
+	}
+	switch filter.SortBy {
+	case "quality":
+		q = q.Order("faces.quality_score " + orderDir)
+	case "confidence":
+		q = q.Order("faces.detection_confidence " + orderDir)
+	default:
+		q = q.Order("face_embeddings.created_at " + orderDir)
+	}
+
+	var embeddings []models.FaceEmbedding
+	if err := q.Preload("Face").Find(&embeddings).Error; err != nil {
+		return nil, fmt.Errorf("failed to get filtered untagged embeddings: %w", err)
 	}
 	return embeddings, nil
 }
@@ -172,13 +216,9 @@ func (r *FaceEmbeddingRepository) FindSimilarFaces(targetEmbedding []float32, th
 	}
 
 	// Sort by similarity (highest first)
-	for i := 0; i < len(embeddingPairs)-1; i++ {
-		for j := i + 1; j < len(embeddingPairs); j++ {
-			if embeddingPairs[i].similarity < embeddingPairs[j].similarity {
-				embeddingPairs[i], embeddingPairs[j] = embeddingPairs[j], embeddingPairs[i]
-			}
-		}
-	}
+	sort.Slice(embeddingPairs, func(i, j int) bool {
+		return embeddingPairs[i].similarity > embeddingPairs[j].similarity
+	})
 
 	// Return top results (let the service handle threshold filtering)
 	var result []models.FaceEmbedding

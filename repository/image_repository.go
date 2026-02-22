@@ -93,6 +93,7 @@ func (r *ImageRepository) MarkTaskProcessing(originalPath, taskStatusColumn stri
 		"metadata_status":  "metadata_error",
 		"thumbnail_status": "thumbnail_error",
 		"detection_status": "detection_error",
+		"preview_status":   "preview_error",
 	}
 
 	errorColumn, isValid := validStatusColumns[taskStatusColumn]
@@ -175,6 +176,7 @@ func (r *ImageRepository) UpdateMetadataResult(originalPath string, meta *media.
 		updateData["camera_make"] = meta.CameraMake
 		updateData["camera_model"] = meta.CameraModel
 		updateData["taken_at"] = meta.TakenAt
+		updateData["rating"] = meta.Rating
 	}
 
 	result := r.DB.Model(&models.Image{}).Where("original_path = ?", cleanPath).Updates(updateData)
@@ -318,6 +320,105 @@ func (r *ImageRepository) GetImagesByPaths(originalPaths []string) ([]models.Ima
 		return nil, fmt.Errorf("failed to get images by paths: %w", err)
 	}
 	return images, nil
+}
+
+// UpdatePreviewResult updates the image record with preview generation results
+func (r *ImageRepository) UpdatePreviewResult(originalPath string, previewPath *string, modTime int64, taskErr error) error {
+	cleanPath := filepath.ToSlash(originalPath)
+	now := time.Now().Unix()
+	status := database.StatusDone
+	var errStr *string
+
+	if taskErr != nil {
+		status = database.StatusError
+		s := taskErr.Error()
+		errStr = &s
+	}
+
+	updates := map[string]interface{}{
+		"preview_path":         previewPath,
+		"last_modified":        modTime,
+		"preview_status":       status,
+		"preview_processed_at": &now,
+		"preview_error":        errStr,
+	}
+
+	result := r.DB.Model(&models.Image{}).Where("original_path = ?", cleanPath).Updates(updates)
+	if result.Error != nil {
+		return fmt.Errorf("failed to update preview result for %s: %w", cleanPath, result.Error)
+	}
+	return nil
+}
+
+// TouchPreviewLastRequested updates the preview_last_requested_at timestamp for the given image
+func (r *ImageRepository) TouchPreviewLastRequested(originalPath string) error {
+	cleanPath := filepath.ToSlash(originalPath)
+	now := time.Now().Unix()
+	result := r.DB.Model(&models.Image{}).Where("original_path = ?", cleanPath).
+		Update("preview_last_requested_at", now)
+	if result.Error != nil {
+		return fmt.Errorf("failed to touch preview last requested for %s: %w", cleanPath, result.Error)
+	}
+	return nil
+}
+
+// GetStalePreviewImages returns images whose preview has not been accessed since olderThan (Unix timestamp)
+func (r *ImageRepository) GetStalePreviewImages(olderThan int64) ([]models.Image, error) {
+	var images []models.Image
+	err := r.DB.Where(
+		"preview_status = ? AND (preview_last_requested_at < ? OR (preview_last_requested_at IS NULL AND preview_processed_at < ?))",
+		database.StatusDone, olderThan, olderThan,
+	).Find(&images).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to get stale preview images: %w", err)
+	}
+	return images, nil
+}
+
+// GetImagesByFolderPaths returns paginated images whose original_path starts with any of the given folder paths,
+// optionally filtered to those with rating >= minRating.
+func (r *ImageRepository) GetImagesByFolderPaths(folderPaths []string, minRating *int, offset, limit int) ([]models.Image, int, error) {
+	if len(folderPaths) == 0 {
+		return nil, 0, nil
+	}
+
+	// Build OR condition for each folder prefix
+	db := r.DB.Model(&models.Image{})
+
+	// Construct LIKE conditions for each folder path
+	likes := make([]string, len(folderPaths))
+	args := make([]interface{}, len(folderPaths))
+	for i, p := range folderPaths {
+		p = filepath.ToSlash(p)
+		if !strings.HasSuffix(p, "/") {
+			p += "/"
+		}
+		likes[i] = "original_path LIKE ?"
+		args[i] = p + "%"
+	}
+
+	// Build the OR clause
+	whereCond := strings.Join(likes, " OR ")
+	db = db.Where(whereCond, args...)
+
+	if minRating != nil {
+		db = db.Where("rating >= ?", *minRating)
+	}
+
+	var total int64
+	if err := db.Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("failed to count group photos: %w", err)
+	}
+
+	var images []models.Image
+	err := db.Order("taken_at DESC, last_modified DESC").
+		Offset(offset).Limit(limit).
+		Find(&images).Error
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to query group photos: %w", err)
+	}
+
+	return images, int(total), nil
 }
 
 // GetDistinctUploaderIDsByFolderPrefix returns distinct uploader user IDs for images under a given path prefix

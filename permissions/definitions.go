@@ -178,6 +178,25 @@ var DefinedPermissionGroups = []PermissionGroupDefinition{
 				Description: "Allows managing album members for any album (admin access).",
 				Scope:       ScopeGlobal,
 			},
+			{
+				Key:         "album.group.manage",
+				Name:        "Manage Album Groups",
+				Description: "Allows creating, editing, deleting, and assigning album groups.",
+				Scope:       ScopeGlobal,
+			},
+		},
+	},
+	{
+		Key:         "collection",
+		Name:        "Collection Management",
+		Description: "Permissions related to managing virtual tag-based collections.",
+		Permissions: []PermissionDefinition{
+			{
+				Key:         "collection.manage",
+				Name:        "Manage Collections",
+				Description: "Allows creating, editing, deleting, and configuring tag filters for collections.",
+				Scope:       ScopeGlobal,
+			},
 		},
 	},
 	{

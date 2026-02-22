@@ -162,10 +162,34 @@ const CreateAlbumForm: React.FC = () => {
                                     onChange={handleChange}
                                     onBlur={handleBlur}
                                 >
-                                    <option value='filename_asc'>By Filename (A-Z)</option>
-                                    <option value='filename_nat'>By Filename (Natural)</option>
-                                    <option value='date_desc'>By Date (Newest First)</option>
-                                    <option value='date_asc'>By Date (Oldest First)</option>
+                                    <optgroup label='Filename'>
+                                        <option value='filename_asc'>Filename (A–Z)</option>
+                                        <option value='filename_desc'>Filename (Z–A)</option>
+                                        <option value='filename_nat'>Filename (Natural)</option>
+                                    </optgroup>
+                                    <optgroup label='Capture Date'>
+                                        <option value='date_desc'>Capture Date (Newest First)</option>
+                                        <option value='date_asc'>Capture Date (Oldest First)</option>
+                                    </optgroup>
+                                    <optgroup label='File'>
+                                        <option value='mod_time_desc'>Modified Time (Newest First)</option>
+                                        <option value='mod_time_asc'>Modified Time (Oldest First)</option>
+                                        <option value='file_size_desc'>File Size (Largest First)</option>
+                                        <option value='file_size_asc'>File Size (Smallest First)</option>
+                                    </optgroup>
+                                    <optgroup label='Camera Settings'>
+                                        <option value='iso_asc'>ISO (Low to High)</option>
+                                        <option value='iso_desc'>ISO (High to Low)</option>
+                                        <option value='aperture_asc'>Aperture (Small to Large)</option>
+                                        <option value='aperture_desc'>Aperture (Large to Small)</option>
+                                        <option value='shutter_speed_desc'>Shutter Speed (Fast to Slow)</option>
+                                        <option value='shutter_speed_asc'>Shutter Speed (Slow to Fast)</option>
+                                        <option value='focal_length_asc'>Focal Length (Short to Long)</option>
+                                        <option value='focal_length_desc'>Focal Length (Long to Short)</option>
+                                    </optgroup>
+                                    <optgroup label='Equipment'>
+                                        <option value='camera_asc'>Camera (A–Z)</option>
+                                    </optgroup>
                                 </Select>
                                 <Description>How images in this album should be sorted</Description>
                             </Field>

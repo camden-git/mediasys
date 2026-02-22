@@ -2,63 +2,41 @@ package models
 
 import (
 	"crypto/rand"
-	"fmt"
 	"math/big"
 	"time"
 
 	"gorm.io/gorm"
 )
 
-// InviteCode represents an invitation code for user registration
+// InviteCode represents a single-use or multi-use invitation for registration.
 type InviteCode struct {
 	ID              uint       `json:"id" gorm:"primaryKey"`
-	Code            string     `json:"code" gorm:"uniqueIndex;not null"`
-	ExpiresAt       *time.Time `json:"expires_at,omitempty" gorm:"index"` // Nullable for no expiration
-	MaxUses         *int       `json:"max_uses,omitempty"`                // Nullable for unlimited uses
-	Uses            int        `json:"uses" gorm:"default:0"`
-	IsActive        bool       `json:"is_active" gorm:"default:true"`
-	CreatedByUserID uint       `json:"created_by_user_id"` // ID of the admin user who created the code
-	CreatedByUser   User       `json:"-" gorm:"foreignKey:CreatedByUserID"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
+	Code            string     `json:"code" gorm:"size:32;not null;unique"`
+	ExpiresAt       *time.Time `json:"expires_at,omitempty"`
+	MaxUses         *int       `json:"max_uses,omitempty"`
+	Uses            int        `json:"uses"`
+	IsActive        bool       `json:"is_active" gorm:"not null;default:true"`
+	CreatedByUserID uint       `json:"created_by_user_id" gorm:"index;not null"`
+	CreatedAt       time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt       time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
-// BeforeCreate generates a unique code if not provided
-func (ic *InviteCode) BeforeCreate(tx *gorm.DB) (err error) {
+// BeforeCreate ensures new invite codes have a generated code and sane defaults.
+func (ic *InviteCode) BeforeCreate(tx *gorm.DB) error {
 	if ic.Code == "" {
-		// Attempt to generate a unique 6-digit PIN, retrying a few times in the unlikely event of collisions
-		const maxAttempts = 10
-		for attempt := 0; attempt < maxAttempts; attempt++ {
-			code, genErr := generateSixDigitPIN()
-			if genErr != nil {
-				return genErr
-			}
-			var existing InviteCode
-			findErr := tx.Where("code = ?", code).Select("id").First(&existing).Error
-			if findErr == gorm.ErrRecordNotFound {
-				ic.Code = code
-				return nil
-			}
-			if findErr != nil {
-				return findErr
-			}
-			// if found, loop to try another code
+		code, err := generateInviteCode(12)
+		if err != nil {
+			return err
 		}
-		return fmt.Errorf("failed to generate unique invite code after %d attempts", maxAttempts)
+		ic.Code = code
+	}
+	if !ic.IsActive {
+		ic.IsActive = true
 	}
 	return nil
 }
 
-func generateSixDigitPIN() (string, error) {
-	// Securely generate a number in [0, 1_000_000)
-	n, err := rand.Int(rand.Reader, big.NewInt(1000000))
-	if err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("%06d", n.Int64()), nil
-}
-
-// IsValid checks if the invite code can still be used
+// IsValid reports whether the invite code can still be used.
 func (ic *InviteCode) IsValid() bool {
 	if !ic.IsActive {
 		return false
@@ -70,4 +48,24 @@ func (ic *InviteCode) IsValid() bool {
 		return false
 	}
 	return true
+}
+
+var inviteAlphabet = []rune("ABCDEFGHJKLMNPQRSTUVWXYZ23456789")
+
+func generateInviteCode(length int) (string, error) {
+	if length <= 0 {
+		length = 12
+	}
+	runes := make([]rune, length)
+	max := big.NewInt(int64(len(inviteAlphabet)))
+
+	for i := 0; i < length; i++ {
+		n, err := rand.Int(rand.Reader, max)
+		if err != nil {
+			return "", err
+		}
+		runes[i] = inviteAlphabet[n.Int64()]
+	}
+
+	return string(runes), nil
 }

@@ -10,6 +10,8 @@ import progressStore, { ProgressStore } from './progressStore';
 import adminAlbumStore, { AdminAlbumStore } from './adminAlbumStore';
 import albumContextStore, { AlbumContextStore } from './albumContext';
 
+let currentFetchController: AbortController | null = null;
+
 export interface AlbumListModel {
     items: Album[];
     setItems: Action<AlbumListModel, Album[]>;
@@ -99,29 +101,44 @@ const contentViewModel: ContentViewModel = {
     }),
 
     fetchAlbumDataAndContents: thunk(async (actions, identifier) => {
+        currentFetchController?.abort();
+        const controller = new AbortController();
+        currentFetchController = controller;
+        const { signal } = controller;
+
+        actions.clearViewData();
         actions.setIsLoading(true);
         actions.setError(null);
-        actions.clearViewData();
         try {
             const [albumDetails, albumContents] = await Promise.all([
-                getAlbumDetails(identifier),
-                getAlbumContents(identifier, { offset: 0, limit: 50 }),
+                getAlbumDetails(identifier, signal),
+                getAlbumContents(identifier, { offset: 0, limit: 50 }, signal),
             ]);
 
             actions.setCurrentAlbum(albumDetails);
             actions.setDirectoryListing(albumContents);
         } catch (error: any) {
+            if (error.name === 'AbortError') return;
             console.error(`Failed to fetch data for album ${identifier}:`, error);
             actions.setError(error.message || `Failed to fetch data for album ${identifier}`);
             actions.clearViewData();
         } finally {
-            actions.setIsLoading(false);
+            if (!signal.aborted) {
+                actions.setIsLoading(false);
+            }
         }
     }),
     fetchMoreAlbumContents: thunk(async (actions, { identifier, limit }, { getState }) => {
         // append next page, respecting existing listing
         const pageLimit = limit ?? 50;
         const state = getState();
+        
+        // Validate that we're still operating on the same album
+        const currentIdentifier = state.currentAlbum?.slug ?? state.currentAlbum?.id?.toString();
+        if (currentIdentifier !== identifier) {
+            return;
+        }
+        
         const offset = state.directoryListing?.files?.length ?? 0;
         try {
             const next = await getAlbumContents(identifier, { offset, limit: pageLimit });

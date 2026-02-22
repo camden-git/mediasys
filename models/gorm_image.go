@@ -21,6 +21,7 @@ type Image struct {
 	Aperture     *float64 `gorm:"" json:"aperture,omitempty"`      // Nullable, F-number
 	ShutterSpeed *string  `gorm:"" json:"shutter_speed,omitempty"` // Nullable, e.g., "1/125s"
 	ISO          *int     `gorm:"" json:"iso,omitempty"`           // Nullable
+	Rating       *int     `gorm:"" json:"rating,omitempty"`        // Nullable, Lightroom XMP star rating (1-5)
 
 	ThumbnailPath *string `gorm:"" json:"thumbnail_path,omitempty"` // Nullable
 
@@ -36,10 +37,17 @@ type Image struct {
 	ThumbnailError *string `gorm:"" json:"thumbnail_error,omitempty"` // Nullable
 	DetectionError *string `gorm:"" json:"detection_error,omitempty"` // Nullable
 
+	PreviewPath            *string `gorm:"" json:"preview_path,omitempty"`
+	PreviewStatus          string  `gorm:"not null;default:pending" json:"preview_status"`
+	PreviewProcessedAt     *int64  `gorm:"" json:"preview_processed_at,omitempty"`
+	PreviewError           *string `gorm:"" json:"preview_error,omitempty"`
+	PreviewLastRequestedAt *int64  `gorm:"" json:"preview_last_requested_at,omitempty"`
+
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"` // For soft deletes
 
 	// Relationships
-	Faces []Face `gorm:"foreignKey:ImagePath;references:OriginalPath" json:"faces,omitempty"`
+	Faces []Face     `gorm:"foreignKey:ImagePath;references:OriginalPath" json:"faces,omitempty"`
+	Tags  []ImageTag `gorm:"foreignKey:ImagePath;references:OriginalPath" json:"tags,omitempty"`
 }
 
 // TableName explicitly sets the table name for GORM.

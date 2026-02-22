@@ -6,6 +6,7 @@ const (
 	AssetTypeThumbnail AssetType = "thumbnail"
 	AssetTypeBanner    AssetType = "banner"
 	AssetTypeArchive   AssetType = "archive"
+	AssetTypePreview   AssetType = "preview"
 )
 
 // ImageProcessingOptions holds parameters for transformations
@@ -31,6 +32,8 @@ type Metadata struct {
 	CameraMake   *string  `json:"camera_make,omitempty"`
 	CameraModel  *string  `json:"camera_model,omitempty"`
 	TakenAt      *int64   `json:"taken_at,omitempty"`
+	Rating       *int     `json:"rating,omitempty"`   // XMP star rating (1-5)
+	Keywords     []string `json:"keywords,omitempty"` // XMP dc:subject keywords (raw or "key/value" hierarchical)
 }
 
 // DetectionResult represents a detected face with enhanced information

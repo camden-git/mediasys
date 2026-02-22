@@ -2,14 +2,15 @@ import React, { useState } from 'react';
 import { Button } from '../../elements/Button';
 import { Dialog, DialogActions, DialogBody, DialogTitle, DialogDescription } from '../../elements/Dialog';
 import { Field, FieldGroup, Label } from '../../elements/Fieldset';
+import { CheckboxField, Checkbox } from '../../elements/Checkbox';
 import FormikFieldComponent from '../../elements/FormikField';
 import { Formik, Form } from 'formik';
 import * as Yup from 'yup';
 import { Role, UserCreatePayload } from '../../../types';
 import { createUser } from '../../../api/admin/users';
 import { useFlash } from '../../../hooks/useFlash';
-import { useUsers } from '../../../api/swr/useUsers';
 import { useRoles } from '../../../api/swr/useRoles';
+import { useSWRConfig } from 'swr';
 
 const UserCreationSchema = Yup.object().shape({
     username: Yup.string().required('Username is required.'),
@@ -27,9 +28,10 @@ interface CreateUserFormProps {
 const CreateUserForm: React.FC<CreateUserFormProps> = ({ isOpen, onClose }) => {
     const [isSubmitting, setIsSubmitting] = useState(false);
 
+    const { mutate } = useSWRConfig();
     const { addFlash, clearFlashes } = useFlash();
-    const { mutate: mutateUsers } = useUsers();
-    const { data: roles } = useRoles();
+    const { data: rolesResult } = useRoles({ perPage: 100 });
+    const roles = rolesResult?.items ?? [];
 
     const initialValues: UserCreatePayload = {
         username: '',
@@ -51,12 +53,9 @@ const CreateUserForm: React.FC<CreateUserFormProps> = ({ isOpen, onClose }) => {
                     clearFlashes('users');
 
                     try {
-                        const newUser = await createUser(values);
+                        await createUser(values);
 
-                        mutateUsers((currentData) => {
-                            if (!currentData) return [newUser];
-                            return [newUser, ...currentData];
-                        }, false);
+                        mutate((key) => Array.isArray(key) && key[0] === 'users');
 
                         addFlash({
                             key: 'users',
@@ -76,7 +75,7 @@ const CreateUserForm: React.FC<CreateUserFormProps> = ({ isOpen, onClose }) => {
                     }
                 }}
             >
-                {({ values, handleChange }) => (
+                {({ values, setFieldValue }) => (
                     <Form>
                         <DialogTitle>Create New User</DialogTitle>
                         <DialogDescription>Create a new user account and assign roles.</DialogDescription>
@@ -113,21 +112,24 @@ const CreateUserForm: React.FC<CreateUserFormProps> = ({ isOpen, onClose }) => {
                                 />
                                 <Field>
                                     <Label>Roles</Label>
-                                    {!roles && <p>Loading roles...</p>}
-                                    <div className='mt-1 grid max-h-60 grid-cols-2 gap-2 overflow-y-auto rounded border p-2'>
-                                        {roles?.map((role: Role) => (
-                                            <label key={role.id} className='flex items-center space-x-2 text-sm'>
-                                                <input
-                                                    type='checkbox'
-                                                    name='role_ids'
-                                                    value={role.id}
+                                    <div className='mt-3 grid max-h-60 grid-cols-2 gap-2 overflow-y-auto rounded border border-zinc-950/10 p-2 dark:border-white/10'>
+                                        {roles.map((role: Role) => (
+                                            <CheckboxField key={role.id}>
+                                                <Checkbox
                                                     checked={values.role_ids.includes(role.id)}
-                                                    onChange={handleChange}
+                                                    onChange={(checked) => {
+                                                        const current = values.role_ids;
+                                                        setFieldValue(
+                                                            'role_ids',
+                                                            checked
+                                                                ? [...current, role.id]
+                                                                : current.filter((id) => id !== role.id),
+                                                        );
+                                                    }}
                                                     disabled={isSubmitting}
-                                                    className='rounded'
                                                 />
-                                                <span>{role.name}</span>
-                                            </label>
+                                                <Label>{role.name}</Label>
+                                            </CheckboxField>
                                         ))}
                                     </div>
                                 </Field>
@@ -144,7 +146,7 @@ const CreateUserForm: React.FC<CreateUserFormProps> = ({ isOpen, onClose }) => {
                             >
                                 Cancel
                             </Button>
-                            <Button type='submit' disabled={isSubmitting || !roles}>
+                            <Button type='submit' disabled={isSubmitting || !rolesResult}>
                                 {isSubmitting ? 'Creating...' : 'Create User'}
                             </Button>
                         </DialogActions>

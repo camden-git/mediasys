@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/camden-git/mediasysbackend/config"
@@ -41,29 +42,29 @@ type FileInfo struct {
 	CameraMake      *string  `json:"camera_make,omitempty"`
 	CameraModel     *string  `json:"camera_model,omitempty"`
 	TakenAt         *int64   `json:"taken_at,omitempty"`
+	Rating          *int     `json:"rating,omitempty"`
 	ThumbnailStatus string   `json:"thumbnail_status,omitempty"`
 	MetadataStatus  string   `json:"metadata_status,omitempty"`
 	DetectionStatus string   `json:"detection_status,omitempty"`
 }
 
 type DirectoryListing struct {
-	Path   string     `json:"path"`
-	Files  []FileInfo `json:"files"`
-	Parent string     `json:"parent,omitempty"`
-    Total  int        `json:"total,omitempty"`
-    Offset int        `json:"offset,omitempty"`
-    Limit  int        `json:"limit,omitempty"`
-    HasMore bool      `json:"has_more,omitempty"`
+	Path    string     `json:"path"`
+	Files   []FileInfo `json:"files"`
+	Parent  string     `json:"parent,omitempty"`
+	Total   int        `json:"total,omitempty"`
+	Offset  int        `json:"offset,omitempty"`
+	Limit   int        `json:"limit,omitempty"`
+	HasMore bool       `json:"has_more,omitempty"`
 }
 
 const thumbnailApiPrefix = "/thumbnails/"
 
 type entryInfo struct {
-	entry fs.DirEntry
-	info  fs.FileInfo
-	err   error
+	entry     fs.DirEntry
+	info      fs.FileInfo
+	err       error
 	imageInfo *models.Image
-	takenAt   *int64
 }
 
 // DirectoryHandler now accepts repositories
@@ -138,7 +139,7 @@ func serveFileOrDirectory(w http.ResponseWriter, r *http.Request, cfg config.Con
 		return
 	}
 
-    fileInfos, totalCount, err := listDirectoryContents(cleanedFullPath, requestedPath, cfg, imgRepo, imgProc, database.DefaultSortOrder, -1, -1)
+	fileInfos, totalCount, err := listDirectoryContents(cleanedFullPath, requestedPath, cfg, imgRepo, imgProc, nil, 0, database.DefaultSortOrder, -1, -1)
 	if err != nil {
 		if os.IsPermission(err) {
 			http.Error(w, "Forbidden", http.StatusForbidden)
@@ -149,14 +150,14 @@ func serveFileOrDirectory(w http.ResponseWriter, r *http.Request, cfg config.Con
 		return
 	}
 
-    listing := DirectoryListing{
-        Path:   requestedPath,
-        Files:  fileInfos,
-        Total:  totalCount,
-        Offset: 0,
-        Limit:  len(fileInfos),
-        HasMore: false,
-    }
+	listing := DirectoryListing{
+		Path:    requestedPath,
+		Files:   fileInfos,
+		Total:   totalCount,
+		Offset:  0,
+		Limit:   len(fileInfos),
+		HasMore: false,
+	}
 
 	if requestedPath != "/" && requestedPath != "" {
 		parent := filepath.ToSlash(filepath.Dir(strings.TrimSuffix(requestedPath, "/")))
@@ -179,10 +180,131 @@ func serveFileOrDirectory(w http.ResponseWriter, r *http.Request, cfg config.Con
 	}
 }
 
-func listDirectoryContents(baseDirFullPath string, requestPathPrefix string, cfg config.Config, imgRepo repository.ImageRepositoryInterface, imgProc *workers.ImageProcessor, sortOrder string, offset int, limit int) ([]FileInfo, int, error) {
+func nameOf(ei entryInfo) string {
+	return strings.ToLower(ei.entry.Name())
+}
+
+func captureTime(ei entryInfo) int64 {
+	if ei.imageInfo != nil && ei.imageInfo.TakenAt != nil {
+		return *ei.imageInfo.TakenAt
+	}
+	return ei.info.ModTime().Unix()
+}
+
+func isoValue(ei entryInfo) int {
+	if ei.imageInfo != nil && ei.imageInfo.ISO != nil {
+		return *ei.imageInfo.ISO
+	}
+	return 0
+}
+
+func apertureValue(ei entryInfo) float64 {
+	if ei.imageInfo != nil && ei.imageInfo.Aperture != nil {
+		return *ei.imageInfo.Aperture
+	}
+	return 0
+}
+
+func focalLengthValue(ei entryInfo) float64 {
+	if ei.imageInfo != nil && ei.imageInfo.FocalLength != nil {
+		return *ei.imageInfo.FocalLength
+	}
+	return 0
+}
+
+func parseShutterSeconds(s string) float64 {
+	s = strings.TrimSuffix(s, "s")
+	if idx := strings.Index(s, "/"); idx >= 0 {
+		num, err1 := strconv.ParseFloat(s[:idx], 64)
+		den, err2 := strconv.ParseFloat(s[idx+1:], 64)
+		if err1 == nil && err2 == nil && den != 0 {
+			return num / den
+		}
+		return 0
+	}
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0
+	}
+	return v
+}
+
+func shutterSpeedSeconds(ei entryInfo) float64 {
+	if ei.imageInfo != nil && ei.imageInfo.ShutterSpeed != nil {
+		return parseShutterSeconds(*ei.imageInfo.ShutterSpeed)
+	}
+	return 0
+}
+
+func cameraString(ei entryInfo) string {
+	if ei.imageInfo == nil {
+		return ""
+	}
+	var parts []string
+	if ei.imageInfo.CameraMake != nil {
+		parts = append(parts, *ei.imageInfo.CameraMake)
+	}
+	if ei.imageInfo.CameraModel != nil {
+		parts = append(parts, *ei.imageInfo.CameraModel)
+	}
+	return strings.ToLower(strings.Join(parts, " "))
+}
+
+func sortEntries(entries []entryInfo, order string) {
+	sort.SliceStable(entries, func(i, j int) bool {
+		a, b := entries[i], entries[j]
+		if a.entry.IsDir() != b.entry.IsDir() {
+			return a.entry.IsDir()
+		}
+		return fileOrdering(a, b, order)
+	})
+}
+
+func fileOrdering(a, b entryInfo, order string) bool {
+	switch order {
+	case database.SortFilenameDesc:
+		return nameOf(a) > nameOf(b)
+	case database.SortFilenameNat:
+		return natsort.Compare(nameOf(a), nameOf(b))
+	case database.SortDateDesc:
+		return captureTime(a) > captureTime(b)
+	case database.SortDateAsc:
+		return captureTime(a) < captureTime(b)
+	case database.SortModTimeDesc:
+		return a.info.ModTime().Unix() > b.info.ModTime().Unix()
+	case database.SortModTimeAsc:
+		return a.info.ModTime().Unix() < b.info.ModTime().Unix()
+	case database.SortFileSizeDesc:
+		return a.info.Size() > b.info.Size()
+	case database.SortFileSizeAsc:
+		return a.info.Size() < b.info.Size()
+	case database.SortISODesc:
+		return isoValue(a) > isoValue(b)
+	case database.SortISOAsc:
+		return isoValue(a) < isoValue(b)
+	case database.SortApertureDesc:
+		return apertureValue(a) > apertureValue(b)
+	case database.SortApertureAsc:
+		return apertureValue(a) < apertureValue(b)
+	case database.SortFocalLengthDesc:
+		return focalLengthValue(a) > focalLengthValue(b)
+	case database.SortFocalLengthAsc:
+		return focalLengthValue(a) < focalLengthValue(b)
+	case database.SortShutterSpeedDesc:
+		return shutterSpeedSeconds(a) > shutterSpeedSeconds(b)
+	case database.SortShutterSpeedAsc:
+		return shutterSpeedSeconds(a) < shutterSpeedSeconds(b)
+	case database.SortCameraAsc:
+		return cameraString(a) < cameraString(b)
+	default:
+		return nameOf(a) < nameOf(b) // filename_asc
+	}
+}
+
+func listDirectoryContents(baseDirFullPath string, requestPathPrefix string, cfg config.Config, imgRepo repository.ImageRepositoryInterface, imgProc *workers.ImageProcessor, tagRepo repository.ImageTagRepositoryInterface, albumID uint, sortOrder string, offset int, limit int, minRating ...*int) ([]FileInfo, int, error) {
 	dirEntries, err := os.ReadDir(baseDirFullPath)
 	if err != nil {
-        return nil, 0, fmt.Errorf("reading directory %s: %w", baseDirFullPath, err)
+		return nil, 0, fmt.Errorf("reading directory %s: %w", baseDirFullPath, err)
 	}
 
 	entriesWithInfo := make([]entryInfo, 0, len(dirEntries))
@@ -191,7 +313,6 @@ func listDirectoryContents(baseDirFullPath string, requestPathPrefix string, cfg
 		info, statErr := os.Stat(entryFullPath)
 
 		var imgInfo *models.Image
-		var taken *int64
 		// preload minimal metadata required for sorting if needed
 		if statErr == nil && info != nil && !info.IsDir() && media.IsRasterImage(entry.Name()) {
 			// compute DB key relative to root
@@ -201,7 +322,6 @@ func listDirectoryContents(baseDirFullPath string, requestPathPrefix string, cfg
 				if imgRepo != nil {
 					if ii, getErr := imgRepo.GetByPath(dbKey); getErr == nil && ii != nil {
 						imgInfo = ii
-						taken = ii.TakenAt
 					}
 				}
 			}
@@ -212,91 +332,55 @@ func listDirectoryContents(baseDirFullPath string, requestPathPrefix string, cfg
 			info:      info, // can be nil on error
 			err:       statErr,
 			imageInfo: imgInfo,
-			takenAt:   taken,
 		})
 	}
 
-	sort.SliceStable(entriesWithInfo, func(i, j int) bool {
-		ei := entriesWithInfo[i]
-		ej := entriesWithInfo[j]
-
-		if ei.err != nil {
-			return false
-		} // put errored i after valid j
-		if ej.err != nil {
-			return true
-		} // put valid i before errored j
-
-		isDirI := ei.entry.IsDir()
-		isDirJ := ej.entry.IsDir()
-		if isDirI != isDirJ {
-			return isDirI
+	// First, filter out entries with errors to ensure consistent pagination
+	validEntries := make([]entryInfo, 0, len(entriesWithInfo))
+	for _, ei := range entriesWithInfo {
+		if ei.err == nil {
+			validEntries = append(validEntries, ei)
+		} else {
+			log.Printf("Error stating directory entry %s: %v. Skipping.", filepath.Join(baseDirFullPath, ei.entry.Name()), ei.err)
 		}
+	}
 
-		switch sortOrder {
-		case database.SortDateDesc:
-			// sort by TakenAt (shot time) descending when available, else by ModTime
-			var ti, tj int64
-			if ei.takenAt != nil {
-				ti = *ei.takenAt
-			} else {
-				ti = ei.info.ModTime().Unix()
+	sortEntries(validEntries, sortOrder)
+
+	// Apply min_rating filter if provided (only for image files with DB info)
+	if len(minRating) > 0 && minRating[0] != nil {
+		threshold := *minRating[0]
+		filtered := validEntries[:0]
+		for _, ei := range validEntries {
+			if ei.entry.IsDir() {
+				continue // skip directories when rating filter is active
 			}
-			if ej.takenAt != nil {
-				tj = *ej.takenAt
-			} else {
-				tj = ej.info.ModTime().Unix()
+			if ei.imageInfo != nil && ei.imageInfo.Rating != nil && *ei.imageInfo.Rating >= threshold {
+				filtered = append(filtered, ei)
 			}
-			return ti > tj
-		case database.SortDateAsc:
-			// sort by TakenAt (shot time) ascending when available, else by ModTime
-			var ti, tj int64
-			if ei.takenAt != nil {
-				ti = *ei.takenAt
-			} else {
-				ti = ei.info.ModTime().Unix()
-			}
-			if ej.takenAt != nil {
-				tj = *ej.takenAt
-			} else {
-				tj = ej.info.ModTime().Unix()
-			}
-			return ti < tj
-		case database.SortFilenameNat:
-			// natural sort, case-insensitive
-			return natsort.Compare(strings.ToLower(ei.entry.Name()), strings.ToLower(ej.entry.Name()))
-		case database.SortFilenameAsc:
-			fallthrough
-		default:
-			// sort by Name ascending (case-insensitive)
-			return strings.ToLower(ei.entry.Name()) < strings.ToLower(ej.entry.Name())
 		}
-	})
+		validEntries = filtered
+	}
 
-    totalCount := len(entriesWithInfo)
+	totalCount := len(validEntries)
 
-    start := offset
-    if start < 0 {
-        start = 0
-    }
-    end := totalCount
-    if limit > 0 {
-        if start+limit < end {
-            end = start + limit
-        }
-    }
-    if start > end {
-        start = end
-    }
-    window := entriesWithInfo[start:end]
-
-    fileInfos := make([]FileInfo, 0, len(window))
-    for _, ei := range window {
-		// skip entries that had stat errors
-		if ei.err != nil {
-            log.Printf("Error stating directory entry %s: %v. Skipping.", filepath.Join(baseDirFullPath, ei.entry.Name()), ei.err)
-			continue
+	start := offset
+	if start < 0 {
+		start = 0
+	}
+	end := totalCount
+	if limit > 0 {
+		if start+limit < end {
+			end = start + limit
 		}
+	}
+	if start > end {
+		start = end
+	}
+	window := validEntries[start:end]
+
+	fileInfos := make([]FileInfo, 0, len(window))
+	for _, ei := range window {
 
 		entry := ei.entry
 		info := ei.info
@@ -331,16 +415,16 @@ func listDirectoryContents(baseDirFullPath string, requestPathPrefix string, cfg
 			}
 			dbKeyPath := filepath.ToSlash(relPathFromRoot)
 
-		var imageInfo *models.Image
-		var recordExists = true
+			var imageInfo *models.Image
+			var recordExists = true
 
-		// Reuse preloaded image info if available to avoid duplicate DB lookups
-		if ei.imageInfo != nil {
-			imageInfo = ei.imageInfo
-			err = nil
-		} else {
-			imageInfo, err = imgRepo.GetByPath(dbKeyPath)
-		}
+			// Reuse preloaded image info if available to avoid duplicate DB lookups
+			if ei.imageInfo != nil {
+				imageInfo = ei.imageInfo
+				err = nil
+			} else {
+				imageInfo, err = imgRepo.GetByPath(dbKeyPath)
+			}
 
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				recordExists = false
@@ -352,6 +436,12 @@ func listDirectoryContents(baseDirFullPath string, requestPathPrefix string, cfg
 					continue
 				}
 				if created {
+					// apply album default tags if in album context
+					if tagRepo != nil && albumID != 0 {
+						if tagErr := tagRepo.ApplyAlbumDefaultTags(dbKeyPath, albumID); tagErr != nil {
+							log.Printf("ERROR applying album default tags for %s: %v", dbKeyPath, tagErr)
+						}
+					}
 					// fetch again to get the initialized record with pending statuses
 					imageInfo, err = imgRepo.GetByPath(dbKeyPath)
 					if err != nil {
@@ -402,6 +492,7 @@ func listDirectoryContents(baseDirFullPath string, requestPathPrefix string, cfg
 				apiFileInfo.CameraMake = imageInfo.CameraMake
 				apiFileInfo.CameraModel = imageInfo.CameraModel
 				apiFileInfo.TakenAt = imageInfo.TakenAt
+				apiFileInfo.Rating = imageInfo.Rating
 
 				if imageInfo.ThumbnailPath != nil && imageInfo.ThumbnailStatus == database.StatusDone {
 					thumbFilename := filepath.Base(*imageInfo.ThumbnailPath)
@@ -417,17 +508,20 @@ func listDirectoryContents(baseDirFullPath string, requestPathPrefix string, cfg
 			queueThumbnail := false
 			queueMetadata := false
 			queueDetection := false
+			queuePreview := false
 
 			if !recordExists || imageInfo == nil {
 				queueThumbnail = true
 				queueMetadata = true
 				queueDetection = true
+				queuePreview = true
 				log.Printf("Queuing all tasks for new or unreadable image record: %s", dbKeyPath)
 			} else if modTimeUnix > imageInfo.LastModified {
 				// file is newer than last DB update, re-queue everything
 				queueThumbnail = true
 				queueMetadata = true
 				queueDetection = true
+				queuePreview = true
 				log.Printf("Queuing all tasks for updated image file: %s (ModTime: %d > DB: %d)", dbKeyPath, modTimeUnix, imageInfo.LastModified)
 			} else {
 				// file not newer, check individual task statuses
@@ -443,9 +537,13 @@ func listDirectoryContents(baseDirFullPath string, requestPathPrefix string, cfg
 					queueDetection = true
 					log.Printf("Re-queuing detection task for %s (status: %s)", dbKeyPath, imageInfo.DetectionStatus)
 				}
+				if imageInfo.PreviewStatus != database.StatusDone && imageInfo.PreviewStatus != database.StatusNotRequired {
+					queuePreview = true
+					log.Printf("Re-queuing preview task for %s (status: %s)", dbKeyPath, imageInfo.PreviewStatus)
+				}
 			}
 
-			if queueThumbnail || queueMetadata || queueDetection {
+			if queueThumbnail || queueMetadata || queueDetection || queuePreview {
 				baseJob := workers.ImageJob{
 					OriginalImagePath:    entryFullPath,
 					OriginalRelativePath: dbKeyPath,
@@ -467,11 +565,16 @@ func listDirectoryContents(baseDirFullPath string, requestPathPrefix string, cfg
 					detectJob.TaskType = workers.TaskDetection
 					imgProc.QueueJob(detectJob)
 				}
+				if queuePreview {
+					previewJob := baseJob
+					previewJob.TaskType = workers.TaskPreview
+					imgProc.QueueJob(previewJob)
+				}
 			}
 		}
 
 		fileInfos = append(fileInfos, apiFileInfo)
 	}
 
-    return fileInfos, totalCount, nil
+	return fileInfos, totalCount, nil
 }

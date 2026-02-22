@@ -1,7 +1,6 @@
 package repository
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/camden-git/mediasysbackend/models"
@@ -17,6 +16,66 @@ func NewGormUserRepository(db *gorm.DB) UserRepository {
 	return &GormUserRepository{db: db}
 }
 
+func (r *GormUserRepository) withRolePreloads(tx *gorm.DB) *gorm.DB {
+	return tx.Preload("Roles").Preload("Roles.AlbumPermissions")
+}
+
+func (r *GormUserRepository) hydrateUserWithAlbumPermissions(user *models.User) error {
+	if user == nil {
+		return nil
+	}
+	var records []models.UserAlbumPermission
+	if err := r.db.Where("user_id = ?", user.ID).Find(&records).Error; err != nil {
+		return fmt.Errorf("failed to load user album permissions: %w", err)
+	}
+	user.AlbumPermissionsMap = make(map[string][]string)
+	for _, record := range records {
+		user.AlbumPermissionsMap[fmt.Sprint(record.AlbumID)] = append([]string(nil), record.Permissions...)
+	}
+	user.RefreshEffectivePermissions()
+	return nil
+}
+
+func (r *GormUserRepository) hydrateUsersWithAlbumPermissions(users []models.User, albumID *uint) (map[uint]models.UserAlbumPermission, error) {
+	directMap := make(map[uint]models.UserAlbumPermission)
+	if len(users) == 0 {
+		return directMap, nil
+	}
+
+	userIDs := make([]uint, 0, len(users))
+	for _, user := range users {
+		userIDs = append(userIDs, user.ID)
+	}
+
+	query := r.db.Where("user_id IN ?", userIDs)
+	if albumID != nil {
+		query = query.Where("album_id = ?", *albumID)
+	}
+
+	var records []models.UserAlbumPermission
+	if err := query.Find(&records).Error; err != nil {
+		return nil, fmt.Errorf("failed to load album permissions for users: %w", err)
+	}
+
+	grouped := make(map[uint][]models.UserAlbumPermission)
+	for _, record := range records {
+		grouped[record.UserID] = append(grouped[record.UserID], record)
+		if albumID != nil {
+			directMap[record.UserID] = record
+		}
+	}
+
+	for i := range users {
+		users[i].AlbumPermissionsMap = make(map[string][]string)
+		for _, record := range grouped[users[i].ID] {
+			users[i].AlbumPermissionsMap[fmt.Sprint(record.AlbumID)] = append([]string(nil), record.Permissions...)
+		}
+		users[i].RefreshEffectivePermissions()
+	}
+
+	return directMap, nil
+}
+
 func (r *GormUserRepository) Create(user *models.User) error {
 	return r.db.Create(user).Error
 }
@@ -24,37 +83,25 @@ func (r *GormUserRepository) Create(user *models.User) error {
 func (r *GormUserRepository) GetByID(id uint) (*models.User, error) {
 	var user models.User
 
-	err := r.db.Preload("Roles.AlbumPermissions").Preload("Roles").First(&user, id).Error
+	err := r.withRolePreloads(r.db).First(&user, id).Error
 	if err != nil {
 		return nil, err
 	}
 
-	var userAlbumPerms []models.UserAlbumPermission
-	if err := r.db.Where("user_id = ?", id).Find(&userAlbumPerms).Error; err == nil {
-		user.AlbumPermissionsMap = make(map[string][]string)
-		for _, uap := range userAlbumPerms {
-			user.AlbumPermissionsMap[fmt.Sprint(uap.AlbumID)] = uap.Permissions
-		}
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, fmt.Errorf("failed to load user album permissions: %w", err)
+	if err := r.hydrateUserWithAlbumPermissions(&user); err != nil {
+		return nil, err
 	}
 	return &user, nil
 }
 
 func (r *GormUserRepository) GetByUsername(username string) (*models.User, error) {
 	var user models.User
-	err := r.db.Preload("Roles.AlbumPermissions").Preload("Roles").Where("username = ?", username).First(&user).Error
+	err := r.withRolePreloads(r.db).Where("username = ?", username).First(&user).Error
 	if err != nil {
 		return nil, err
 	}
 
-	var userAlbumPerms []models.UserAlbumPermission
-	if err := r.db.Where("user_id = ?", user.ID).Find(&userAlbumPerms).Error; err == nil {
-		user.AlbumPermissionsMap = make(map[string][]string)
-		for _, uap := range userAlbumPerms {
-			user.AlbumPermissionsMap[fmt.Sprint(uap.AlbumID)] = uap.Permissions
-		}
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := r.hydrateUserWithAlbumPermissions(&user); err != nil {
 		return nil, fmt.Errorf("failed to load user album permissions for user %s: %w", username, err)
 	}
 	return &user, nil
@@ -79,19 +126,14 @@ func (r *GormUserRepository) Delete(id uint) error {
 func (r *GormUserRepository) ListAll() ([]models.User, error) {
 	var users []models.User
 
-	err := r.db.Preload("Roles").Find(&users).Error
-	// for i := range users {
-	// 	var userAlbumPerms []models.UserAlbumPermission
-	// 	if errDb := r.db.Where("user_id = ?", users[i].ID).Find(&userAlbumPerms).Error; errDb == nil {
-	// 		users[i].AlbumPermissionsMap = make(map[string][]string)
-	// 		for _, uap := range userAlbumPerms {
-	// 			users[i].AlbumPermissionsMap[fmt.Sprint(uap.AlbumID)] = uap.Permissions
-	// 		}
-	// 	} else if !errors.Is(errDb, gorm.ErrRecordNotFound) {
-	// 		return nil, fmt.Errorf("failed to load album permissions for user ID %d: %w", users[i].ID, errDb)
-	// 	}
-	// }
-	return users, err
+	err := r.withRolePreloads(r.db).Find(&users).Error
+	if err != nil {
+		return nil, err
+	}
+	if _, err := r.hydrateUsersWithAlbumPermissions(users, nil); err != nil {
+		return nil, err
+	}
+	return users, nil
 }
 
 func (r *GormUserRepository) AddRoleToUser(userID uint, roleID uint) error {
@@ -106,7 +148,7 @@ func (r *GormUserRepository) RemoveRoleFromUser(userID uint, roleID uint) error 
 
 func (r *GormUserRepository) GetUserRoles(userID uint) ([]models.Role, error) {
 	var user models.User
-	if err := r.db.Preload("Roles").First(&user, userID).Error; err != nil {
+	if err := r.withRolePreloads(r.db).First(&user, userID).Error; err != nil {
 		return nil, err
 	}
 
@@ -159,31 +201,24 @@ func (r *GormUserRepository) GetUserAlbumPermissions(userID uint) ([]models.User
 }
 
 // GetUsersWithAlbumPermissions returns all users who have direct album permissions for a specific album
-func (r *GormUserRepository) GetUsersWithAlbumPermissions(albumID uint) ([]models.User, error) {
+func (r *GormUserRepository) GetUsersWithAlbumPermissions(albumID uint) ([]models.User, map[uint]models.UserAlbumPermission, error) {
 	var users []models.User
 
 	// get users with direct album permissions
-	err := r.db.Joins("JOIN user_album_permissions ON users.id = user_album_permissions.user_id").
+	err := r.withRolePreloads(r.db.Joins("JOIN user_album_permissions ON users.id = user_album_permissions.user_id")).
 		Where("user_album_permissions.album_id = ?", albumID).
-		Preload("Roles").
 		Find(&users).Error
 
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	// load album permissions for each user
-	for i := range users {
-		var userAlbumPerms []models.UserAlbumPermission
-		if err := r.db.Where("user_id = ? AND album_id = ?", users[i].ID, albumID).Find(&userAlbumPerms).Error; err == nil {
-			users[i].AlbumPermissionsMap = make(map[string][]string)
-			for _, uap := range userAlbumPerms {
-				users[i].AlbumPermissionsMap[fmt.Sprint(uap.AlbumID)] = uap.Permissions
-			}
-		}
+	directMap, err := r.hydrateUsersWithAlbumPermissions(users, &albumID)
+	if err != nil {
+		return nil, nil, err
 	}
 
-	return users, nil
+	return users, directMap, nil
 }
 
 // GetUsersWithoutAlbumPermissions returns all users who don't have direct album permissions for a specific album
@@ -191,9 +226,16 @@ func (r *GormUserRepository) GetUsersWithoutAlbumPermissions(albumID uint) ([]mo
 	var users []models.User
 
 	// get users who don't have direct album permissions for this album
-	err := r.db.Where("id NOT IN (SELECT user_id FROM user_album_permissions WHERE album_id = ?)", albumID).
-		Preload("Roles").
+	err := r.withRolePreloads(r.db.Where("id NOT IN (SELECT user_id FROM user_album_permissions WHERE album_id = ?)", albumID)).
 		Find(&users).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := r.hydrateUsersWithAlbumPermissions(users, nil); err != nil {
+		return nil, err
+	}
 
 	return users, err
 }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { FileInfo } from '../../types.ts';
 import { getThumbnailUrl } from '../../api.ts';
 
@@ -7,11 +7,11 @@ interface JustifiedImageGridItemProps {
     height: number;
     width: number;
     margin: number;
-    onClick: () => void;
+    onImageClick: (image: FileInfo) => void;
 }
 
 const JustifiedImageGridItem: React.FC<JustifiedImageGridItemProps> = React.memo(
-    ({ image, height, width, margin, onClick }) => {
+    ({ image, height, width, margin, onImageClick }) => {
         const [showTooltip, setShowTooltip] = useState(false);
         const [isMobile, setIsMobile] = useState(false);
         const [isInView, setIsInView] = useState(false);
@@ -130,12 +130,10 @@ const JustifiedImageGridItem: React.FC<JustifiedImageGridItemProps> = React.memo
             }
         };
 
-        const handleClick = () => {
-            if (suppressNextClickRef.current) {
-                return;
-            }
-            onClick();
-        };
+        const handleClick = useCallback(() => {
+            if (suppressNextClickRef.current) return;
+            onImageClick(image);
+        }, [onImageClick, image]);
 
         const handleDragStart = (e: React.DragEvent) => {
             e.preventDefault();
@@ -169,6 +167,14 @@ const JustifiedImageGridItem: React.FC<JustifiedImageGridItemProps> = React.memo
                         pointerEvents: 'none',
                     }}
                 />
+                {image.rating !== undefined && image.rating !== null && image.rating >= 4 && (
+                    <div
+                        className='pointer-events-none absolute top-1.5 right-1.5 z-10 rounded bg-black/60 px-1 py-0.5 text-yellow-400'
+                        style={{ fontSize: '10px', lineHeight: 1 }}
+                    >
+                        {'★'.repeat(image.rating)}
+                    </div>
+                )}
                 {showTooltip && (
                     <div
                         className='bg-opacity-75 pointer-events-none absolute bottom-2 left-1/2 z-10 -translate-x-1/2 transform rounded bg-black px-2 py-1 text-xs text-white'

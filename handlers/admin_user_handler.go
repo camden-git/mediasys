@@ -97,19 +97,16 @@ func toUserListResponseDTO(users []models.User) []UserResponseDTO {
 // @Router /api/admin/users [get]
 // @Security BearerAuth
 func (h *AdminUserHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
+	params := ParsePaginationParams(r)
 	users, err := h.UserRepo.ListAll()
 	if err != nil {
-		http.Error(w, "Failed to retrieve users: "+err.Error(), http.StatusInternalServerError)
+		WriteAPIError(w, http.StatusInternalServerError, "UserListError", "Failed to retrieve users: "+err.Error())
 		return
 	}
 
-	responseDTOs := toUserListResponseDTO(users)
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(responseDTOs); err != nil {
-		fmt.Printf("Error encoding JSON response for ListUsers: %v\n", err)
-	}
+	pagedUsers, meta := PaginateSlice(users, params)
+	responseDTOs := toUserListResponseDTO(pagedUsers)
+	WriteAPIPaginated(w, http.StatusOK, responseDTOs, meta)
 }
 
 // GetUser godoc
@@ -128,26 +125,22 @@ func (h *AdminUserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 	userIDStr := chi.URLParam(r, "id")
 	userID, err := strconv.ParseUint(userIDStr, 10, 32)
 	if err != nil {
-		http.Error(w, "Invalid user ID format", http.StatusBadRequest)
+		WriteAPIError(w, http.StatusBadRequest, "InvalidUserID", "Invalid user ID format")
 		return
 	}
 
 	user, err := h.UserRepo.GetByID(uint(userID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			http.Error(w, "User not found", http.StatusNotFound)
+			WriteAPIError(w, http.StatusNotFound, "UserNotFound", "User not found")
 		} else {
-			http.Error(w, "Failed to retrieve user: "+err.Error(), http.StatusInternalServerError)
+			WriteAPIError(w, http.StatusInternalServerError, "UserFetchError", "Failed to retrieve user: "+err.Error())
 		}
 		return
 	}
 	userAlbumPerms, _ := h.UserRepo.GetUserAlbumPermissions(user.ID)
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(toUserResponseDTO(user, userAlbumPerms)); err != nil {
-		fmt.Printf("Error encoding JSON response for GetUser: %v\n", err)
-	}
+	WriteAPIResponse(w, http.StatusOK, toUserResponseDTO(user, userAlbumPerms))
 }
 
 // CreateUser godoc
@@ -165,25 +158,25 @@ func (h *AdminUserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 func (h *AdminUserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	var payload UserCreatePayload
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		http.Error(w, "Invalid request payload: "+err.Error(), http.StatusBadRequest)
+		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request payload: "+err.Error())
 		return
 	}
 
 	if payload.Username == "" || payload.Password == "" || payload.FirstName == "" || payload.LastName == "" {
-		http.Error(w, "Username, password, first_name, and last_name are required", http.StatusBadRequest)
+		WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Username, password, first_name, and last_name are required")
 		return
 	}
 
 	for _, pKey := range payload.GlobalPermissions {
 		if !permissions.IsValidPermissionKey(pKey) {
-			http.Error(w, fmt.Sprintf("Invalid global permission key: %s", pKey), http.StatusBadRequest)
+			WriteAPIError(w, http.StatusBadRequest, "ValidationError", fmt.Sprintf("Invalid global permission key: %s", pKey))
 			return
 		}
 	}
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(payload.Password), bcrypt.DefaultCost)
 	if err != nil {
-		http.Error(w, "Failed to hash password: "+err.Error(), http.StatusInternalServerError)
+		WriteAPIError(w, http.StatusInternalServerError, "HashingError", "Failed to hash password: "+err.Error())
 		return
 	}
 
@@ -201,9 +194,9 @@ func (h *AdminUserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 			role, err := h.RoleRepo.GetByID(roleID)
 			if err != nil {
 				if errors.Is(err, gorm.ErrRecordNotFound) {
-					http.Error(w, fmt.Sprintf("Role with ID %d not found", roleID), http.StatusBadRequest)
+					WriteAPIError(w, http.StatusBadRequest, "RoleNotFound", fmt.Sprintf("Role with ID %d not found", roleID))
 				} else {
-					http.Error(w, fmt.Sprintf("Failed to retrieve role %d: %s", roleID, err.Error()), http.StatusInternalServerError)
+					WriteAPIError(w, http.StatusInternalServerError, "RoleFetchError", fmt.Sprintf("Failed to retrieve role %d: %s", roleID, err.Error()))
 				}
 				return
 			}
@@ -212,22 +205,18 @@ func (h *AdminUserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.UserRepo.Create(user); err != nil {
-		http.Error(w, "Failed to create user: "+err.Error(), http.StatusInternalServerError)
+		WriteAPIError(w, http.StatusInternalServerError, "UserCreateError", "Failed to create user: "+err.Error())
 		return
 	}
 
 	createdUser, err := h.UserRepo.GetByUsername(user.Username)
 	if err != nil {
-		http.Error(w, "Failed to retrieve newly created user: "+err.Error(), http.StatusInternalServerError)
+		WriteAPIError(w, http.StatusInternalServerError, "UserFetchError", "Failed to retrieve newly created user: "+err.Error())
 		return
 	}
 	userAlbumPerms, _ := h.UserRepo.GetUserAlbumPermissions(createdUser.ID)
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	if err := json.NewEncoder(w).Encode(toUserResponseDTO(createdUser, userAlbumPerms)); err != nil {
-		fmt.Printf("Error encoding JSON response for CreateUser: %v\n", err)
-	}
+	WriteAPIResponse(w, http.StatusCreated, toUserResponseDTO(createdUser, userAlbumPerms))
 }
 
 // UpdateUser godoc
@@ -248,22 +237,22 @@ func (h *AdminUserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	userIDStr := chi.URLParam(r, "id")
 	userID, err := strconv.ParseUint(userIDStr, 10, 32)
 	if err != nil {
-		http.Error(w, "Invalid user ID format", http.StatusBadRequest)
+		WriteAPIError(w, http.StatusBadRequest, "InvalidUserID", "Invalid user ID format")
 		return
 	}
 
 	var payload UserUpdatePayload
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		http.Error(w, "Invalid request payload: "+err.Error(), http.StatusBadRequest)
+		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request payload: "+err.Error())
 		return
 	}
 
 	user, err := h.UserRepo.GetByID(uint(userID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			http.Error(w, "User not found", http.StatusNotFound)
+			WriteAPIError(w, http.StatusNotFound, "UserNotFound", "User not found")
 		} else {
-			http.Error(w, "Failed to retrieve user for update: "+err.Error(), http.StatusInternalServerError)
+			WriteAPIError(w, http.StatusInternalServerError, "UserFetchError", "Failed to retrieve user for update: "+err.Error())
 		}
 		return
 	}
@@ -273,14 +262,14 @@ func (h *AdminUserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 	if payload.Password != nil && *payload.Password != "" {
 		if err := user.SetPassword(*payload.Password); err != nil {
-			http.Error(w, "Failed to set new password: "+err.Error(), http.StatusInternalServerError)
+			WriteAPIError(w, http.StatusInternalServerError, "HashingError", "Failed to set new password: "+err.Error())
 			return
 		}
 	}
 	if payload.GlobalPermissions != nil {
 		for _, pKey := range *payload.GlobalPermissions {
 			if !permissions.IsValidPermissionKey(pKey) {
-				http.Error(w, fmt.Sprintf("Invalid global permission key: %s", pKey), http.StatusBadRequest)
+				WriteAPIError(w, http.StatusBadRequest, "ValidationError", fmt.Sprintf("Invalid global permission key: %s", pKey))
 				return
 			}
 		}
@@ -293,9 +282,9 @@ func (h *AdminUserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 			role, err := h.RoleRepo.GetByID(roleID)
 			if err != nil {
 				if errors.Is(err, gorm.ErrRecordNotFound) {
-					http.Error(w, fmt.Sprintf("Role with ID %d not found for update", roleID), http.StatusBadRequest)
+					WriteAPIError(w, http.StatusBadRequest, "RoleNotFound", fmt.Sprintf("Role with ID %d not found for update", roleID))
 				} else {
-					http.Error(w, fmt.Sprintf("Failed to retrieve role %d for update: %s", roleID, err.Error()), http.StatusInternalServerError)
+					WriteAPIError(w, http.StatusInternalServerError, "RoleFetchError", fmt.Sprintf("Failed to retrieve role %d for update: %s", roleID, err.Error()))
 				}
 				return
 			}
@@ -312,23 +301,19 @@ func (h *AdminUserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.UserRepo.Update(user); err != nil {
-		http.Error(w, "Failed to update user: "+err.Error(), http.StatusInternalServerError)
+		WriteAPIError(w, http.StatusInternalServerError, "UserUpdateError", "Failed to update user: "+err.Error())
 		return
 	}
 
 	// reload user to get updated fields and associations
 	updatedUser, err := h.UserRepo.GetByID(user.ID)
 	if err != nil {
-		http.Error(w, "Failed to retrieve updated user: "+err.Error(), http.StatusInternalServerError)
+		WriteAPIError(w, http.StatusInternalServerError, "UserFetchError", "Failed to retrieve updated user: "+err.Error())
 		return
 	}
 	userAlbumPerms, _ := h.UserRepo.GetUserAlbumPermissions(updatedUser.ID)
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(toUserResponseDTO(updatedUser, userAlbumPerms)); err != nil {
-		fmt.Printf("Error encoding JSON response for UpdateUser: %v\n", err)
-	}
+	WriteAPIResponse(w, http.StatusOK, toUserResponseDTO(updatedUser, userAlbumPerms))
 }
 
 // DeleteUser godoc
@@ -346,22 +331,22 @@ func (h *AdminUserHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	userIDStr := chi.URLParam(r, "id")
 	userID, err := strconv.ParseUint(userIDStr, 10, 32)
 	if err != nil {
-		http.Error(w, "Invalid user ID format", http.StatusBadRequest)
+		WriteAPIError(w, http.StatusBadRequest, "InvalidUserID", "Invalid user ID format")
 		return
 	}
 
 	_, err = h.UserRepo.GetByID(uint(userID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			http.Error(w, "User not found", http.StatusNotFound)
+			WriteAPIError(w, http.StatusNotFound, "UserNotFound", "User not found")
 			return
 		}
-		http.Error(w, "Failed to check user before delete: "+err.Error(), http.StatusInternalServerError)
+		WriteAPIError(w, http.StatusInternalServerError, "UserFetchError", "Failed to check user before delete: "+err.Error())
 		return
 	}
 
 	if err := h.UserRepo.Delete(uint(userID)); err != nil {
-		http.Error(w, "Failed to delete user: "+err.Error(), http.StatusInternalServerError)
+		WriteAPIError(w, http.StatusInternalServerError, "UserDeleteError", "Failed to delete user: "+err.Error())
 		return
 	}
 

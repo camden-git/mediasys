@@ -1,9 +1,12 @@
 import useSWR from 'swr';
 import { listRoles, getRole, getPermissionDefinitions } from '../admin/roles';
 import { AdminRoleResponse, PermissionGroupDefinition } from '../../types';
+import { PaginatedResult, PaginationRequest } from '../standard';
 
-export const useRoles = () => {
-    return useSWR<AdminRoleResponse[]>('roles', listRoles);
+const rolesKey = (params?: PaginationRequest) => ['roles', params?.page ?? 1, params?.perPage ?? undefined];
+
+export const useRoles = (params?: PaginationRequest) => {
+    return useSWR<PaginatedResult<AdminRoleResponse>>(rolesKey(params), () => listRoles(params));
 };
 
 export const useRole = (roleId: number) => {

@@ -4,8 +4,8 @@ import (
 	"image"
 	"log"
 	"math"
-    "os"
-    "strconv"
+	"os"
+	"strconv"
 
 	"gocv.io/x/gocv"
 )
@@ -60,6 +60,17 @@ func DecodeBox(rawBox [4]float32, prior PriorBox, variances [2]float32) [4]float
 	return [4]float32{x1, y1, x2, y2}
 }
 
+// DecodeLandmarks decodes the 5 facial landmark predictions using the prior.
+// Raw landmark values are offsets relative to the prior centre, scaled by variance[0].
+func DecodeLandmarks(raw [10]float32, prior PriorBox, variance float32) [10]float32 {
+	var out [10]float32
+	for j := 0; j < 5; j++ {
+		out[j*2] = prior.Cx + raw[j*2]*variance*prior.W
+		out[j*2+1] = prior.Cy + raw[j*2+1]*variance*prior.H
+	}
+	return out
+}
+
 // float32Exp is a helper for float32 exponentiation
 func float32Exp(x float32) float32 {
 	return float32(math.Exp(float64(x)))
@@ -88,47 +99,39 @@ func NewRetinaFaceDetector(modelPath string) *RetinaFaceDetector {
 
 	log.Printf("detection(retinaface): Attempting to load model: %s", modelPath)
 
-	net := gocv.ReadNet(modelPath, "")
+	net := gocv.ReadNetFromONNX(modelPath)
 	if net.Empty() {
-		log.Printf("detection(retinaface): ERROR - ReadNet returned an empty network. Check file path and integrity.")
+		log.Printf("detection(retinaface): ERROR - ReadNetFromONNX returned an empty network. Check file path and integrity.")
 		return &RetinaFaceDetector{Enabled: false}
 	}
 
-    log.Printf("detection(retinaface): successfully loaded RetinaFace model")
+	log.Printf("detection(retinaface): successfully loaded RetinaFace model")
 
-    cudaEnabled := true
-    if val := os.Getenv("CUDA_ENABLED"); val != "" {
-        if parsed, err := strconv.ParseBool(val); err == nil {
-            cudaEnabled = parsed
-        } else {
-            log.Printf("detection(retinaface): Invalid CUDA_ENABLED value '%s'; defaulting to true", val)
-        }
-    }
+	// OpenCV's CUDA backend has incomplete multi-output ONNX support — inference
+	// silently produces empty mats. Use CPU for ONNX models; it is fast enough
+	// for batch face detection. Set RETINAFACE_CUDA=true to opt in to CUDA.
+	cudaEnabled := false
+	if val := os.Getenv("RETINAFACE_CUDA"); val != "" {
+		if parsed, err := strconv.ParseBool(val); err == nil {
+			cudaEnabled = parsed
+		}
+	}
 
-    if cudaEnabled {
-        // Try to use CUDA if available
-        cudaBackendErr := net.SetPreferableBackend(gocv.NetBackendCUDA)
-        cudaTargetErr := net.SetPreferableTarget(gocv.NetTargetCUDA)
-
-        if cudaBackendErr == nil && cudaTargetErr == nil {
-            log.Println("detection(retinaface): Set backend/target to CUDA")
-        } else {
-            if cudaBackendErr != nil {
-                log.Printf("detection(retinaface): CUDA Backend not available: %v. Using default backend.", cudaBackendErr)
-            }
-            if cudaTargetErr != nil {
-                log.Printf("detection(retinaface): CUDA Target not available: %v. Using default target.", cudaTargetErr)
-            }
-
-            net.SetPreferableBackend(gocv.NetBackendDefault)
-            net.SetPreferableTarget(gocv.NetTargetCPU)
-            log.Println("detection(retinaface): Set backend/target to CPU (Default)")
-        }
-    } else {
-        net.SetPreferableBackend(gocv.NetBackendDefault)
-        net.SetPreferableTarget(gocv.NetTargetCPU)
-        log.Println("detection(retinaface): CUDA disabled via env; set backend/target to CPU")
-    }
+	if cudaEnabled {
+		cudaBackendErr := net.SetPreferableBackend(gocv.NetBackendCUDA)
+		cudaTargetErr := net.SetPreferableTarget(gocv.NetTargetCUDA)
+		if cudaBackendErr == nil && cudaTargetErr == nil {
+			log.Println("detection(retinaface): Set backend/target to CUDA")
+		} else {
+			net.SetPreferableBackend(gocv.NetBackendDefault)
+			net.SetPreferableTarget(gocv.NetTargetCPU)
+			log.Println("detection(retinaface): CUDA unavailable, using CPU")
+		}
+	} else {
+		net.SetPreferableBackend(gocv.NetBackendDefault)
+		net.SetPreferableTarget(gocv.NetTargetCPU)
+		log.Println("detection(retinaface): using CPU backend")
+	}
 
 	return &RetinaFaceDetector{
 		Net:           net,
@@ -159,148 +162,132 @@ func (r *RetinaFaceDetector) DetectFaces(img gocv.Mat) []DetectionResult {
 	imgHeight := float32(img.Rows())
 	imgWidth := float32(img.Cols())
 
-	// Manually convert to RGB before blob creation
 	blob := gocv.BlobFromImage(img, 1.0, image.Pt(r.InputSizeW, r.InputSizeH), gocv.NewScalar(104.0, 117.0, 123.0, 0), false, false)
 	defer blob.Close()
 
-	r.Net.SetInput(blob, "input")
+	r.Net.SetInput(blob, "")
 
-    // Use output names as seen in the log: bbox, confidence, landmark
-    outputNames := []string{"bbox", "confidence", "landmark"}
-    outputs := r.Net.ForwardLayers(outputNames)
-    defer func() {
-        for _, mat := range outputs {
-            mat.Close()
-        }
-    }()
-    if len(outputs) < 3 {
-        log.Printf("detection(retinaface): Expected 3 outputs (boxes, scores, landmarks), got %d", len(outputs))
-        return nil
-    }
-    // Debug: print output shapes and first few values
-	for idx, out := range outputs {
-		shape := out.Size()
-		log.Printf("detection(retinaface): Output %d shape: %v", idx, shape)
-		// Print first 10 values (flattened)
-		flat := out.Reshape(1, 1)
-		vals := []float32{}
-		for i := 0; i < flat.Cols() && i < 10; i++ {
-			vals = append(vals, flat.GetFloatAt(0, i))
+	// gocv's ForwardLayers doesn't work reliably for multi-output ONNX models.
+	// Individual Forward(name) calls share cached computation and do work.
+	// Discover the actual output layer names at runtime rather than hardcoding them.
+	allNames := r.Net.GetLayerNames()
+	outIDs := r.Net.GetUnconnectedOutLayers()
+	outputNames := make([]string, 0, len(outIDs))
+	for _, id := range outIDs {
+		if id >= 1 && id <= len(allNames) {
+			outputNames = append(outputNames, allNames[id-1])
 		}
-		flat.Close()
-		log.Printf("detection(retinaface): Output %d first values: %v", idx, vals)
 	}
-	boxes := outputs[0]
-	scores := outputs[1]
-	landmarks := outputs[2]
-	return r.parseRetinaFaceOutput(boxes, scores, landmarks, imgWidth, imgHeight)
+	if len(outputNames) < 3 {
+		log.Printf("detection(retinaface): model has %d output layers (need ≥3): %v", len(outputNames), outputNames)
+		return nil
+	}
+
+	// Run inference — Forward caches intermediate results so subsequent calls are cheap.
+	mats := make([]gocv.Mat, len(outputNames))
+	for i, name := range outputNames {
+		mats[i] = r.Net.Forward(name)
+	}
+	defer func() {
+		for i := range mats {
+			mats[i].Close()
+		}
+	}()
+
+	// Match each output to boxes / scores / landmarks by total element count.
+	// Size() doesn't work for 3D ONNX blobs in gocv; Total() always works.
+	// For 640×640 RetinaFace ResNet50: 16800 priors.
+	//   boxes:     16800 × 4  = 67200 elements
+	//   scores:    16800 × 2  = 33600 elements
+	//   landmarks: 16800 × 10 = 168000 elements
+	numPriors := len(GenerateRetinaFacePriors(r.InputSizeW, r.InputSizeH))
+
+	var boxesMat, scoresMat, landmarksMat *gocv.Mat
+	for i := range mats {
+		switch mats[i].Total() {
+		case numPriors * 4:
+			boxesMat = &mats[i]
+		case numPriors * 2:
+			scoresMat = &mats[i]
+		case numPriors * 10:
+			landmarksMat = &mats[i]
+		}
+	}
+
+	if boxesMat == nil || scoresMat == nil || landmarksMat == nil {
+		totals := make([]int, len(mats))
+		for i, m := range mats {
+			totals[i] = m.Total()
+		}
+		log.Printf("detection(retinaface): could not identify outputs (numPriors=%d, totals=%v, names=%v)", numPriors, totals, outputNames)
+		return nil
+	}
+
+	return r.parseRetinaFaceOutput(*boxesMat, *scoresMat, *landmarksMat, imgWidth, imgHeight)
 }
 
 // parseRetinaFaceOutput parses the RetinaFace model outputs (boxes, scores, landmarks)
 func (r *RetinaFaceDetector) parseRetinaFaceOutput(boxes, scores, landmarks gocv.Mat, imgWidth, imgHeight float32) []DetectionResult {
-	var detections []DetectionResult
+	// Derive numDetections from total element count (Total() works; Size()[1] doesn't for 3D blobs).
+	// boxes has numPriors×4 elements → numDetections = Total()/4
+	numDetections := boxes.Total() / 4
 
-	// Debug: Print tensor shapes
-	boxesShape := boxes.Size()
-	scoresShape := scores.Size()
-	landmarksShape := landmarks.Size()
-	log.Printf("detection(retinaface): Debug - Boxes shape: %v, Scores shape: %v, Landmarks shape: %v", boxesShape, scoresShape, landmarksShape)
-
-	// All outputs are [1, N, ...], so get N
-	numDetections := boxes.Size()[1]
-	log.Printf("detection(retinaface): Debug - Processing %d detections", numDetections)
-
-	// Reshape 3D tensors to 2D for easier access
-	// boxes: [1, N, 4] -> [N, 4]
-	boxes2D := boxes.Reshape(1, numDetections)
-	defer boxes2D.Close()
-	
-	// scores: [1, N, 2] -> [N, 2] 
-	scores2D := scores.Reshape(1, numDetections)
-	defer scores2D.Close()
-	
-	// landmarks: [1, N, 10] -> [N, 10]
-	landmarks2D := landmarks.Reshape(1, numDetections)
-	defer landmarks2D.Close()
-
-	// Generate priors for 640x640
-	priors := GenerateRetinaFacePriors(640, 640)
+	priors := GenerateRetinaFacePriors(r.InputSizeW, r.InputSizeH)
 	if len(priors) != numDetections {
-		log.Printf("detection(retinaface): WARNING - priors count (%d) != numDetections (%d)", len(priors), numDetections)
+		log.Printf("detection(retinaface): prior count %d != numDetections %d", len(priors), numDetections)
 		return nil
 	}
+
+	// Flatten each 3-D tensor [1, N, K] → [N, K] so GetFloatAt works as [row, col].
+	boxes2D := boxes.Reshape(1, numDetections)
+	defer boxes2D.Close()
+	scores2D := scores.Reshape(1, numDetections)
+	defer scores2D.Close()
+	landmarks2D := landmarks.Reshape(1, numDetections)
+	defer landmarks2D.Close()
 	variances := [2]float32{0.1, 0.2}
 
-	// Debug: Check scores above different thresholds
-	thresholds := []float32{0.1, 0.3, 0.5, 0.7, 0.9}
-	for _, threshold := range thresholds {
-		count := 0
-		for i := 0; i < numDetections; i++ {
-			scoreFace := scores2D.GetFloatAt(i, 1) // 2D access: [detection, class] where class 1 is face
-			if scoreFace > threshold {
-				count++
-			}
-		}
-		log.Printf("detection(retinaface): Debug - Scores > %.1f: %d detections", threshold, count)
-	}
-
-	// Debug: Print first 10 scores and their corresponding decoded boxes
-	log.Printf("detection(retinaface): Debug - First 10 detections (score, DECODED box coordinates):")
-	for i := 0; i < minInt(10, numDetections); i++ {
-		scoreFace := scores2D.GetFloatAt(i, 1) // 2D access: [detection, class] where class 1 is face
-		// Get raw box
-		var rawBox [4]float32
-		for j := 0; j < 4; j++ {
-			rawBox[j] = boxes2D.GetFloatAt(i, j) // 2D access: [detection, coord]
-		}
-		decoded := DecodeBox(rawBox, priors[i], variances)
-		log.Printf("detection(retinaface): Debug - Detection %d: score=%.4f, decoded_box=[%.3f,%.3f,%.3f,%.3f]",
-			i, scoreFace, decoded[0], decoded[1], decoded[2], decoded[3])
-	}
-
-	// Now process with lower threshold for debugging
-	debugThreshold := float32(0.1) // Show ALL detections for debugging
-	log.Printf("detection(retinaface): Debug - Using threshold %.3f for debugging", debugThreshold)
-
+	var detections []DetectionResult
 	for i := 0; i < numDetections; i++ {
-		scoreFace := scores2D.GetFloatAt(i, 1) // 2D access: [detection, class] where class 1 is face
-		if scoreFace < debugThreshold {
+		// Column 1 of the 2-class softmax output is the face score.
+		scoreFace := scores2D.GetFloatAt(i, 1)
+		if scoreFace < r.ConfThreshold {
 			continue
 		}
-		// Get and decode box
+
 		var rawBox [4]float32
 		for j := 0; j < 4; j++ {
-			rawBox[j] = boxes2D.GetFloatAt(i, j) // 2D access: [detection, coord]
+			rawBox[j] = boxes2D.GetFloatAt(i, j)
 		}
 		decoded := DecodeBox(rawBox, priors[i], variances)
-		x1 := decoded[0] * imgWidth
-		y1 := decoded[1] * imgHeight
-		x2 := decoded[2] * imgWidth
-		y2 := decoded[3] * imgHeight
-		// Clamp to image boundaries
-		x1 = maxFloat32(0, x1)
-		y1 = maxFloat32(0, y1)
-		x2 = minFloat32(imgWidth, x2)
-		y2 = minFloat32(imgHeight, y2)
+		x1 := maxFloat32(0, decoded[0]*imgWidth)
+		y1 := maxFloat32(0, decoded[1]*imgHeight)
+		x2 := minFloat32(imgWidth, decoded[2]*imgWidth)
+		y2 := minFloat32(imgHeight, decoded[3]*imgHeight)
 		if x2 <= x1 || y2 <= y1 {
-			if scoreFace > 0.5 {
-				log.Printf("detection(retinaface): Debug - Invalid decoded box for detection %d: [%.1f,%.1f,%.1f,%.1f]",
-					i, x1, y1, x2, y2)
-			}
 			continue
 		}
-		// Landmarks (5 points, still need to decode if model outputs encoded landmarks)
+
+		var rawLM [10]float32
+		for j := 0; j < 10; j++ {
+			rawLM[j] = landmarks2D.GetFloatAt(i, j)
+		}
+		decodedLM := DecodeLandmarks(rawLM, priors[i], variances[0])
 		var pts []Point2D
 		for j := 0; j < 5; j++ {
-			lx := landmarks2D.GetFloatAt(i, j*2+0) * imgWidth // 2D access: [detection, landmark_coord]
-			ly := landmarks2D.GetFloatAt(i, j*2+1) * imgHeight
-			pts = append(pts, Point2D{X: lx, Y: ly})
+			pts = append(pts, Point2D{
+				X: decodedLM[j*2] * imgWidth,
+				Y: decodedLM[j*2+1] * imgHeight,
+			})
 		}
-		faceArea := float32((x2 - x1) * (y2 - y1))
-		imageArea := imgWidth * imgHeight
-		relativeSize := faceArea / imageArea
-		qualityScore := scoreFace * relativeSize * 100
-		detection := DetectionResult{
+
+		if !validateLandmarkGeometry(pts, x1, y1, x2, y2) {
+			continue
+		}
+
+		faceArea := (x2 - x1) * (y2 - y1)
+		qs := scoreFace * (faceArea / (imgWidth * imgHeight)) * 100
+		detections = append(detections, DetectionResult{
 			X:            int(x1),
 			Y:            int(y1),
 			W:            int(x2 - x1),
@@ -308,32 +295,57 @@ func (r *RetinaFaceDetector) parseRetinaFaceOutput(boxes, scores, landmarks gocv
 			Confidence:   scoreFace,
 			Landmarks:    pts,
 			ModelName:    "retinaface",
-			QualityScore: &qualityScore,
-		}
-		detections = append(detections, detection)
-		if scoreFace > 0.5 {
-			log.Printf("detection(retinaface): Debug - Added detection %d: score=%.4f, box=[%d,%d,%d,%d], area=%.1f",
-				i, scoreFace, detection.X, detection.Y, detection.W, detection.H, faceArea)
-		}
+			QualityScore: &qs,
+		})
 	}
 
-	log.Printf("detection(retinaface): Parsed %d valid detections (with debug threshold %.3f)", len(detections), debugThreshold)
+	detections = r.nonMaxSuppression(detections)
+	log.Printf("detection(retinaface): found %d faces (conf≥%.2f)", len(detections), r.ConfThreshold)
+	return detections
+}
 
-	// Now filter by actual confidence threshold
-	var finalDetections []DetectionResult
-	for _, det := range detections {
-		if det.Confidence >= r.ConfThreshold {
-			finalDetections = append(finalDetections, det)
-		}
+// validateLandmarkGeometry filters phantom detections that span two nearby faces.
+// RetinaFace landmarks: [0]=left eye, [1]=right eye, [2]=nose, [3]=left mouth, [4]=right mouth.
+//
+// Two checks catch the "one eye from each person" case regardless of box shape:
+//  1. Inter-eye distance / box width > 0.65 → eyes are near opposite edges, not a single face.
+//  2. |nose_x - eye_midpoint_x| / box_width > 0.20 → nose isn't centred between the eyes.
+func validateLandmarkGeometry(pts []Point2D, x1, y1, x2, y2 float32) bool {
+	if len(pts) < 3 {
+		return true // no landmarks to check, let NMS handle it
 	}
 
-	log.Printf("detection(retinaface): Final detections after confidence threshold %.3f: %d", r.ConfThreshold, len(finalDetections))
+	boxW := x2 - x1
+	if boxW <= 0 {
+		return false
+	}
 
-	// Apply Non-Maximum Suppression to remove overlapping detections
-	finalDetections = r.nonMaxSuppression(finalDetections)
-	log.Printf("detection(retinaface): Final detections after NMS: %d", len(finalDetections))
+	leftEye := pts[0]
+	rightEye := pts[1]
+	nose := pts[2]
 
-	return finalDetections
+	// 1. Inter-eye distance should not span most of the box width.
+	interEye := rightEye.X - leftEye.X
+	if interEye < 0 {
+		interEye = -interEye
+	}
+	if interEye/boxW > 0.65 {
+		log.Printf("detection(retinaface): dropping phantom detection — inter-eye ratio %.2f", interEye/boxW)
+		return false
+	}
+
+	// 2. Nose should be roughly centred between the two eyes horizontally.
+	eyeMidX := (leftEye.X + rightEye.X) / 2
+	noseDeviation := nose.X - eyeMidX
+	if noseDeviation < 0 {
+		noseDeviation = -noseDeviation
+	}
+	if noseDeviation/boxW > 0.20 {
+		log.Printf("detection(retinaface): dropping phantom detection — nose deviation ratio %.2f", noseDeviation/boxW)
+		return false
+	}
+
+	return true
 }
 
 // nonMaxSuppression applies NMS to remove overlapping detections
@@ -406,28 +418,15 @@ func (r *RetinaFaceDetector) DetectFacesAndExtractEmbeddings(img gocv.Mat, recog
 
 	if recognitionModel != nil && recognitionModel.Enabled {
 		for i := range detections {
-			// Extract face region
-			faceRegion := img.Region(image.Rect(detections[i].X, detections[i].Y,
-				detections[i].X+detections[i].W, detections[i].Y+detections[i].H))
-
-			// DEBUG: Save the crop for face 480 in topgolf17/topgolf17-60.jpg
-			if detections[i].X == 1838 && detections[i].Y == 1005 && detections[i].W == 1368 && detections[i].H == 1881 {
-				// Save the crop as JPEG
-				gocv.IMWrite("face_crop_480.jpg", faceRegion)
-				log.Printf("DEBUG: Saved face crop for face 480 as face_crop_480.jpg")
-			}
-
-			log.Printf("detection(retinaface): Extracting embedding for face %d at [%d,%d,%d,%d]", i, detections[i].X, detections[i].Y, detections[i].W, detections[i].H)
-
-				// Extract embedding
-				embedding := recognitionModel.ExtractEmbedding(faceRegion)
-				faceRegion.Close()
+			faceRegion := img.Region(image.Rect(
+				detections[i].X, detections[i].Y,
+				detections[i].X+detections[i].W, detections[i].Y+detections[i].H,
+			))
+			embedding := recognitionModel.ExtractEmbedding(faceRegion)
+			faceRegion.Close()
 			if embedding != nil {
 				detections[i].Embedding = embedding
 				detections[i].ModelName = recognitionModel.ModelName
-				log.Printf("detection(retinaface): Successfully extracted embedding of length %d for face %d", len(embedding), i)
-			} else {
-				log.Printf("detection(retinaface): WARNING - Failed to extract embedding for face %d", i)
 			}
 		}
 	}

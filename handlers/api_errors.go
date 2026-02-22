@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
 )
@@ -20,9 +19,6 @@ type APIErrorResponse struct {
 
 // WriteAPIError writes a standardized error response with the given HTTP status, code, and detail.
 func WriteAPIError(w http.ResponseWriter, httpStatus int, code string, detail string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(httpStatus)
-
 	resp := APIErrorResponse{
 		Errors: []APIErrorDetail{
 			{
@@ -32,6 +28,5 @@ func WriteAPIError(w http.ResponseWriter, httpStatus int, code string, detail st
 			},
 		},
 	}
-
-	_ = json.NewEncoder(w).Encode(resp)
+	writeJSON(w, httpStatus, resp)
 }

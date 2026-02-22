@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { CreateInviteCodeForm } from './CreateInviteCodeForm.tsx';
 import { Heading } from '../../elements/Heading.tsx';
 import PageContentBlock from '../../elements/PageContentBlock.tsx';
@@ -8,11 +8,14 @@ import { useInviteCodes } from '../../../api/swr/useInviteCodes';
 import { useFlash } from '../../../hooks/useFlash';
 import FlashMessageRender from '../../elements/FlashMessageRender.tsx';
 import { Text, TextLink } from '../../elements/Text.tsx';
-import {Table, TableBody, TableHead, TableHeader, TableRow} from "../../elements/Table.tsx";
-import InviteCodeRow from "./InviteCodeRow.tsx";
+import { Table, TableBody, TableHead, TableHeader, TableRow } from '../../elements/Table.tsx';
+import InviteCodeRow from './InviteCodeRow.tsx';
+import { PaginationControls } from '../../elements/PaginationControls';
 
 const InviteCodeManagementContainer: React.FC = () => {
-    const { data: inviteCodes, error, isValidating } = useInviteCodes();
+    const [page, setPage] = useState(1);
+    const perPage = 25;
+    const { data: inviteCodesResult, error, isValidating } = useInviteCodes({ page, perPage });
     const { clearFlashes, clearAndAddHttpError } = useFlash();
 
     useEffect(() => {
@@ -24,7 +27,16 @@ const InviteCodeManagementContainer: React.FC = () => {
         clearAndAddHttpError({ error, key: 'invite-codes' });
     }, [error, clearFlashes, clearAndAddHttpError]);
 
-    if (!inviteCodes || (error && isValidating)) {
+    const inviteCodes = inviteCodesResult?.items ?? [];
+    const pagination = inviteCodesResult?.pagination;
+
+    useEffect(() => {
+        if (pagination && pagination.totalPages > 0 && page > pagination.totalPages) {
+            setPage(pagination.totalPages);
+        }
+    }, [pagination, page]);
+
+    if (!inviteCodesResult || (error && isValidating)) {
         return <LoadingSpinner />;
     }
 
@@ -56,12 +68,29 @@ const InviteCodeManagementContainer: React.FC = () => {
                         </TableRow>
                     </TableHead>
                     <TableBody>
-                        {inviteCodes.map((inviteCode) => (
-                            <InviteCodeRow key={inviteCode.id} inviteCode={inviteCode} />
-                        ))}
+                        {inviteCodes.length === 0 ? (
+                            <tr>
+                                <td colSpan={4} className='py-6 text-center text-sm text-gray-500'>
+                                    No invite codes found.
+                                </td>
+                            </tr>
+                        ) : (
+                            inviteCodes.map((inviteCode) => (
+                                <InviteCodeRow key={inviteCode.id} inviteCode={inviteCode} />
+                            ))
+                        )}
                     </TableBody>
                 </Table>
             </Can>
+
+            {pagination && pagination.totalPages > 1 && (
+                <PaginationControls
+                    className='mt-6'
+                    pagination={pagination}
+                    currentPage={page}
+                    onPageChange={setPage}
+                />
+            )}
         </PageContentBlock>
     );
 };

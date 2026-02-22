@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Button } from '../../elements/Button';
 import { Dialog, DialogActions, DialogBody, DialogTitle, DialogDescription } from '../../elements/Dialog';
 import { Field, FieldGroup, Label, ErrorMessage as FieldErrorMessage } from '../../elements/Fieldset';
+import { CheckboxField, Checkbox } from '../../elements/Checkbox';
 import { Input } from '../../elements/Input';
 import { Formik, Form, ErrorMessage } from 'formik';
 import * as Yup from 'yup';
@@ -26,7 +27,8 @@ interface EditUserFormProps {
 
 const EditUserForm: React.FC<EditUserFormProps> = ({ isOpen, onClose, user }) => {
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const { data: roles, isLoading: isLoadingRoles } = useRoles();
+    const { data: rolesResult, isLoading: isLoadingRoles } = useRoles({ perPage: 100 });
+    const roles = rolesResult?.items ?? [];
     const { clearFlashes, clearAndAddHttpError, addFlash } = useFlash();
 
     const [formMessage, setFormMessage] = useState<string | null>(null);
@@ -79,12 +81,14 @@ const EditUserForm: React.FC<EditUserFormProps> = ({ isOpen, onClose, user }) =>
                     }
                 }}
             >
-                {({ values, handleChange, handleBlur }) => (
+                {({ values, handleChange, handleBlur, setFieldValue }) => (
                     <Form>
-                        <DialogTitle>Edit User: {user.first_name} {user.last_name} ({user.username})</DialogTitle>
+                        <DialogTitle>
+                            Edit User: {user.first_name} {user.last_name} ({user.username})
+                        </DialogTitle>
                         <DialogDescription>Update the user's details and assigned roles.</DialogDescription>
                         <DialogBody>
-                            {formMessage && <p style={{ color: 'red', marginBottom: '1rem' }}>{formMessage}</p>}
+                            {formMessage && <FieldErrorMessage className='mb-4'>{formMessage}</FieldErrorMessage>}
                             <FieldGroup>
                                 <Field>
                                     <Label htmlFor='first_name'>First Name</Label>
@@ -140,21 +144,24 @@ const EditUserForm: React.FC<EditUserFormProps> = ({ isOpen, onClose, user }) =>
                                 </Field>
                                 <Field>
                                     <Label>Roles</Label>
-                                    {isLoadingRoles && <p>Loading roles...</p>}
-                                    <div className='mt-1 grid max-h-60 grid-cols-2 gap-2 overflow-y-auto rounded border p-2'>
-                                        {roles?.map((role: Role) => (
-                                            <label key={role.id} className='flex items-center space-x-2 text-sm'>
-                                                <input
-                                                    type='checkbox'
-                                                    name='role_ids'
-                                                    value={role.id}
-                                                    checked={values.role_ids?.includes(role.id)}
-                                                    onChange={handleChange}
+                                    <div className='mt-3 grid max-h-60 grid-cols-2 gap-2 overflow-y-auto rounded border border-zinc-950/10 p-2 dark:border-white/10'>
+                                        {roles.map((role: Role) => (
+                                            <CheckboxField key={role.id}>
+                                                <Checkbox
+                                                    checked={values.role_ids?.includes(role.id) || false}
+                                                    onChange={(checked) => {
+                                                        const current = values.role_ids || [];
+                                                        setFieldValue(
+                                                            'role_ids',
+                                                            checked
+                                                                ? [...current, role.id]
+                                                                : current.filter((id) => id !== role.id),
+                                                        );
+                                                    }}
                                                     disabled={isSubmitting}
-                                                    className='rounded'
                                                 />
-                                                <span>{role.name}</span>
-                                            </label>
+                                                <Label>{role.name}</Label>
+                                            </CheckboxField>
                                         ))}
                                     </div>
                                 </Field>

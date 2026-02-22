@@ -61,38 +61,29 @@ func NewFaceRecognitionModel(modelPath string, modelName string) *FaceRecognitio
 
 	log.Printf("recognition: successfully loaded %s model", modelName)
 
-	cudaEnabled := true
-	if val := os.Getenv("CUDA_ENABLED"); val != "" {
+	// OpenCV's CUDA backend silently produces empty output for ONNX models.
+	// Default to CPU; set ARCFACE_CUDA=true to opt in.
+	cudaEnabled := false
+	if val := os.Getenv("ARCFACE_CUDA"); val != "" {
 		if parsed, err := strconv.ParseBool(val); err == nil {
 			cudaEnabled = parsed
-		} else {
-			log.Printf("recognition: Invalid CUDA_ENABLED value '%s'; defaulting to true", val)
 		}
 	}
 
 	if cudaEnabled {
-		// Try to use CUDA if available
 		cudaBackendErr := net.SetPreferableBackend(gocv.NetBackendCUDA)
 		cudaTargetErr := net.SetPreferableTarget(gocv.NetTargetCUDA)
-
 		if cudaBackendErr == nil && cudaTargetErr == nil {
-			log.Printf("recognition: Set backend/target to CUDA for %s", modelName)
+			log.Printf("recognition: using CUDA for %s", modelName)
 		} else {
-			if cudaBackendErr != nil {
-				log.Printf("recognition: CUDA Backend not available for %s: %v. Using default backend.", modelName, cudaBackendErr)
-			}
-			if cudaTargetErr != nil {
-				log.Printf("recognition: CUDA Target not available for %s: %v. Using default target.", modelName, cudaTargetErr)
-			}
-
 			net.SetPreferableBackend(gocv.NetBackendDefault)
 			net.SetPreferableTarget(gocv.NetTargetCPU)
-			log.Printf("recognition: Set backend/target to CPU (Default) for %s", modelName)
+			log.Printf("recognition: CUDA unavailable, using CPU for %s", modelName)
 		}
 	} else {
 		net.SetPreferableBackend(gocv.NetBackendDefault)
 		net.SetPreferableTarget(gocv.NetTargetCPU)
-		log.Printf("recognition: CUDA disabled via env; set backend/target to CPU for %s", modelName)
+		log.Printf("recognition: using CPU for %s", modelName)
 	}
 
 	// Set model-specific parameters
@@ -137,182 +128,83 @@ func (f *FaceRecognitionModel) Close() {
 // ExtractEmbedding extracts a face embedding from a face region
 func (f *FaceRecognitionModel) ExtractEmbedding(faceRegion gocv.Mat) []float32 {
 	if f == nil || !f.Enabled || faceRegion.Empty() {
-		log.Printf("recognition: ExtractEmbedding called with invalid parameters - f=%v, enabled=%v, faceRegion.Empty()=%v", f != nil, f != nil && f.Enabled, faceRegion.Empty())
 		return nil
 	}
 
-	log.Printf("recognition: Starting embedding extraction for face region %dx%d", faceRegion.Cols(), faceRegion.Rows())
-
-	// Preprocess face region
 	processed := f.preprocessFace(faceRegion)
 	if processed.Empty() {
-		log.Printf("recognition: ERROR - preprocessFace returned empty matrix")
+		log.Printf("recognition: preprocessFace returned empty matrix")
 		return nil
 	}
 	defer processed.Close()
 
-	log.Printf("recognition: Preprocessed face to %dx%d", processed.Cols(), processed.Rows())
-
-	// Create input blob
-	// For ArcFace/FaceNet, we use scale factor to normalize to [0,1] range
 	var blob gocv.Mat
 	if f.ModelName == "arcface" || f.ModelName == "facenet" {
 		blob = gocv.BlobFromImage(processed, 1.0/255.0, image.Pt(f.InputSizeW, f.InputSizeH), gocv.NewScalar(0, 0, 0, 0), false, false)
-		log.Printf("recognition: Created blob for %s with scale 1.0/255.0, size %dx%d", f.ModelName, f.InputSizeW, f.InputSizeH)
 	} else {
 		blob = gocv.BlobFromImage(processed, f.ScaleFactor, image.Pt(f.InputSizeW, f.InputSizeH), f.MeanVal, false, false)
-		log.Printf("recognition: Created blob with scale %f, mean %v, size %dx%d", f.ScaleFactor, f.MeanVal, f.InputSizeW, f.InputSizeH)
 	}
 	defer blob.Close()
 
-	log.Printf("recognition: Created blob with shape %v", blob.Size())
-
-	// Debug: check blob values
-	if !blob.Empty() {
-		sizes := blob.Size()
-		if len(sizes) >= 4 {
-			log.Printf("recognition: Blob shape: [%d, %d, %d, %d]", sizes[0], sizes[1], sizes[2], sizes[3])
-			// Sample a few values from the blob
-			if sizes[0] > 0 && sizes[1] > 0 && sizes[2] > 0 && sizes[3] > 0 {
-				// For 4D blob [batch, channel, height, width], we need to calculate the offset
-				// Sample first few values
-				val1 := blob.GetFloatAt(0, 0)
-				val2 := blob.GetFloatAt(0, minInt(56*56, blob.Cols()-1))
-				val3 := blob.GetFloatAt(0, minInt(111*111, blob.Cols()-1))
-				log.Printf("recognition: Blob sample values: [0,0]=%f, [0,%d]=%f, [0,%d]=%f", val1, minInt(56*56, blob.Cols()-1), val2, minInt(111*111, blob.Cols()-1), val3)
-			}
-		}
-	}
-
 	f.Net.SetInput(blob, "")
-	log.Printf("recognition: Set input to network")
-
 	output := f.Net.Forward("")
 	defer output.Close()
 
-	log.Printf("recognition: Model output shape: %v", output.Size())
-
-	// Extract embedding vector
 	embedding := f.extractEmbeddingVector(output)
-
-	log.Printf("recognition: Extracted embedding vector of length %d", len(embedding))
-
-	// Debug: print first few values and statistics
-	if len(embedding) > 0 {
-		log.Printf("recognition: First 10 embedding values: %v", embedding[:minInt(10, len(embedding))])
-
-		// Calculate statistics
-		var min, max, sum float32
-		min = embedding[0]
-		max = embedding[0]
-		for _, val := range embedding {
-			if val < min {
-				min = val
-			}
-			if val > max {
-				max = val
-			}
-			sum += val
-		}
-		mean := sum / float32(len(embedding))
-		log.Printf("recognition: Embedding stats - min: %f, max: %f, mean: %f", min, max, mean)
-
-		// Check if all values are zero
-		allZero := true
-		for _, val := range embedding {
-			if val != 0 {
-				allZero = false
-				break
-			}
-		}
-		if allZero {
-			log.Printf("recognition: WARNING - All embedding values are zero!")
-		}
+	if len(embedding) == 0 {
+		log.Printf("recognition: empty embedding from model output shape %v", output.Size())
+		return nil
 	}
 
-	// Normalize embedding to unit length (L2 normalization)
-	if len(embedding) > 0 {
-		embedding = f.normalizeEmbedding(embedding)
-		log.Printf("recognition: Normalized embedding, first 5 values: %v", embedding[:minInt(5, len(embedding))])
-	}
-
-	return embedding
+	return f.normalizeEmbedding(embedding)
 }
 
 // preprocessFace prepares a face region for embedding extraction
 func (f *FaceRecognitionModel) preprocessFace(faceRegion gocv.Mat) gocv.Mat {
 	if faceRegion.Empty() {
-		log.Printf("recognition: ERROR - faceRegion is empty")
 		return gocv.Mat{}
 	}
 
-	log.Printf("recognition: Preprocessing face region %dx%d, channels: %d", faceRegion.Cols(), faceRegion.Rows(), faceRegion.Channels())
-
-	// Convert BGR to RGB (ArcFace expects RGB input)
+	// ArcFace expects RGB input
 	var processed gocv.Mat
 	if faceRegion.Channels() == 3 {
 		processed = gocv.NewMat()
 		gocv.CvtColor(faceRegion, &processed, gocv.ColorBGRToRGB)
-		log.Printf("recognition: Converted BGR to RGB")
 	} else {
 		processed = faceRegion.Clone()
-		log.Printf("recognition: Cloned face region (not BGR)")
 	}
 
-	// Apply face alignment if landmarks are available
-	// For now, we'll just resize the face region
 	aligned := gocv.NewMat()
 	gocv.Resize(processed, &aligned, image.Pt(f.InputSizeW, f.InputSizeH), 0, 0, gocv.InterpolationLinear)
-	log.Printf("recognition: Resized to %dx%d", aligned.Cols(), aligned.Rows())
+	processed.Close()
 
-	// For ArcFace/FaceNet, convert to float32 for better precision
 	if f.ModelName == "arcface" || f.ModelName == "facenet" {
 		normalized := gocv.NewMat()
 		aligned.ConvertTo(&normalized, gocv.MatTypeCV32F)
 		aligned.Close()
-		aligned = normalized
-		log.Printf("recognition: Converted to float32 for %s", f.ModelName)
+		return normalized
 	}
 
-	// Debug: check pixel values
-	if !aligned.Empty() {
-		// Sample a few pixel values to verify preprocessing
-		rows := aligned.Rows()
-		cols := aligned.Cols()
-		if rows > 0 && cols > 0 {
-			centerRow := rows / 2
-			centerCol := cols / 2
-			if aligned.Channels() == 3 {
-				b := aligned.GetVecbAt(centerRow, centerCol)[0]
-				g := aligned.GetVecbAt(centerRow, centerCol)[1]
-				r := aligned.GetVecbAt(centerRow, centerCol)[2]
-				log.Printf("recognition: Center pixel (BGR): [%d, %d, %d]", b, g, r)
-			} else if aligned.Type() == gocv.MatTypeCV32F {
-				val := aligned.GetFloatAt(centerRow, centerCol)
-				log.Printf("recognition: Center pixel (float32): %f", val)
-			}
-		}
-	}
-
-	processed.Close()
 	return aligned
 }
 
 // extractEmbeddingVector extracts the embedding vector from model output
 func (f *FaceRecognitionModel) extractEmbeddingVector(output gocv.Mat) []float32 {
-	sizes := output.Size()
-	if len(sizes) == 0 {
+	// Use Total() — Size() returns [] for 3D ONNX output blobs
+	total := output.Total()
+	if total == 0 {
 		return nil
 	}
 
-	// Flatten the output to get the embedding vector
+	// Flatten to [1, N] so GetFloatAt(0, i) works
 	flattened := output.Reshape(1, 1)
 	defer flattened.Close()
 
-	// Extract the embedding values
 	embeddingSize := flattened.Cols()
+	if embeddingSize == 0 {
+		embeddingSize = total
+	}
 	embedding := make([]float32, embeddingSize)
-
 	for i := 0; i < embeddingSize; i++ {
 		embedding[i] = flattened.GetFloatAt(0, i)
 	}

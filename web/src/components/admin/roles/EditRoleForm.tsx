@@ -1,16 +1,18 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Button } from '../../elements/Button';
 import { Dialog, DialogActions, DialogBody, DialogTitle, DialogDescription } from '../../elements/Dialog';
 import { Field, FieldGroup, Label, ErrorMessage as FieldErrorMessage } from '../../elements/Fieldset';
+import { CheckboxField, Checkbox } from '../../elements/Checkbox';
 import { Input } from '../../elements/Input';
 import { Formik, Form, FieldArray, ErrorMessage } from 'formik';
 import * as Yup from 'yup';
 import { AdminRoleResponse, Album, RoleUpdatePayload } from '../../../types';
 import { updateRole } from '../../../api/admin/roles';
 import { useFlash } from '../../../hooks/useFlash';
-import { useRoles, usePermissionDefinitions } from '../../../api/swr/useRoles';
+import { usePermissionDefinitions } from '../../../api/swr/useRoles';
 import { useAlbums } from '../../../api/swr/useAlbums';
 import { Select } from '../../elements/Select.tsx';
+import { useSWRConfig } from 'swr';
 
 const RoleUpdateSchema = Yup.object().shape({
     name: Yup.string().required('Role name is required.'),
@@ -27,16 +29,27 @@ const RoleUpdateSchema = Yup.object().shape({
 interface EditRoleFormProps {
     isOpen: boolean;
     onClose: () => void;
-    role: AdminRoleResponse; // The role to edit
+    role?: AdminRoleResponse; // The role to edit
 }
 
 const EditRoleForm: React.FC<EditRoleFormProps> = ({ isOpen, onClose, role }) => {
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [permissionFilter, setPermissionFilter] = useState('');
 
     const { addFlash, clearFlashes } = useFlash();
-    const { mutate } = useRoles();
+    const { mutate } = useSWRConfig();
     const { data: permissionDefinitions } = usePermissionDefinitions();
     const { albums, isLoading: isLoadingAlbums, error: albumError } = useAlbums();
+
+    useEffect(() => {
+        if (!isOpen) {
+            setPermissionFilter('');
+        }
+    }, [isOpen]);
+
+    if (!isOpen || !role) {
+        return null;
+    }
 
     // Set initial values from the role prop
     const initialValues: RoleUpdatePayload = {
@@ -63,10 +76,15 @@ const EditRoleForm: React.FC<EditRoleFormProps> = ({ isOpen, onClose, role }) =>
         return perms.sort((a, b) => a.name.localeCompare(b.name));
     };
 
-    const globalPermissionsOptions = getPermissionsByScope('global');
-    const albumPermissionsOptions = getPermissionsByScope('album');
+    const filteredPermissions = (scope: 'global' | 'album') => {
+        const list = getPermissionsByScope(scope);
+        if (!permissionFilter.trim()) return list;
+        const query = permissionFilter.trim().toLowerCase();
+        return list.filter((perm) => perm.name.toLowerCase().includes(query) || perm.key.toLowerCase().includes(query));
+    };
 
-    if (!isOpen) return null;
+    const globalPermissionsOptions = filteredPermissions('global');
+    const albumPermissionsOptions = filteredPermissions('album');
 
     return (
         <Dialog open={isOpen} onClose={onClose} size='2xl'>
@@ -79,12 +97,9 @@ const EditRoleForm: React.FC<EditRoleFormProps> = ({ isOpen, onClose, role }) =>
                     clearFlashes('role-edit');
 
                     try {
-                        const updatedRole = await updateRole(role.id, values);
+                        await updateRole(role.id, values);
 
-                        mutate((currentData) => {
-                            if (!currentData) return [updatedRole];
-                            return currentData.map((r) => (r.id === updatedRole.id ? updatedRole : r));
-                        }, false);
+                        mutate((key) => Array.isArray(key) && key[0] === 'roles');
 
                         addFlash({
                             key: 'role-edit',
@@ -124,49 +139,67 @@ const EditRoleForm: React.FC<EditRoleFormProps> = ({ isOpen, onClose, role }) =>
                                 </Field>
 
                                 <Field>
+                                    <Label htmlFor='permission-filter'>Filter Permissions</Label>
+                                    <Input
+                                        id='permission-filter'
+                                        type='search'
+                                        value={permissionFilter}
+                                        placeholder='Search permissions by name or key…'
+                                        onChange={(event) => setPermissionFilter(event.target.value)}
+                                        disabled={!permissionDefinitions}
+                                    />
+                                </Field>
+
+                                <Field>
                                     <Label>Global Permissions</Label>
-                                    {!permissionDefinitions && <p>Loading permissions...</p>}
-                                    <div className='mt-1 grid max-h-60 grid-cols-2 gap-2 overflow-y-auto rounded border p-2'>
+                                    <div className='mt-3 grid max-h-60 grid-cols-2 gap-2 overflow-y-auto rounded border border-zinc-950/10 p-2 dark:border-white/10'>
                                         {globalPermissionsOptions.map((perm) => (
-                                            <label key={perm.key} className='flex items-center space-x-2 text-sm'>
-                                                <input
-                                                    type='checkbox'
-                                                    name='global_permissions'
-                                                    value={perm.key}
+                                            <CheckboxField key={perm.key}>
+                                                <Checkbox
                                                     checked={values.global_permissions?.includes(perm.key)}
-                                                    onChange={handleChange}
+                                                    onChange={(checked) => {
+                                                        const current = values.global_permissions ?? [];
+                                                        setFieldValue(
+                                                            'global_permissions',
+                                                            checked
+                                                                ? [...current, perm.key]
+                                                                : current.filter((k) => k !== perm.key),
+                                                        );
+                                                    }}
                                                     disabled={isSubmitting}
-                                                    className='rounded'
                                                 />
-                                                <span>
+                                                <Label>
                                                     {perm.name}{' '}
-                                                    <span className='text-xs text-gray-500'>({perm.key})</span>
-                                                </span>
-                                            </label>
+                                                    <span className='text-xs text-zinc-500'>({perm.key})</span>
+                                                </Label>
+                                            </CheckboxField>
                                         ))}
                                     </div>
                                 </Field>
 
                                 <Field>
                                     <Label>Global Album Permissions</Label>
-                                    {!permissionDefinitions && <p>Loading permissions...</p>}
-                                    <div className='mt-1 grid max-h-60 grid-cols-2 gap-2 overflow-y-auto rounded border p-2'>
+                                    <div className='mt-3 grid max-h-60 grid-cols-2 gap-2 overflow-y-auto rounded border border-zinc-950/10 p-2 dark:border-white/10'>
                                         {albumPermissionsOptions.map((perm) => (
-                                            <label key={perm.key} className='flex items-center space-x-2 text-sm'>
-                                                <input
-                                                    type='checkbox'
-                                                    name='global_album_permissions'
-                                                    value={perm.key}
+                                            <CheckboxField key={perm.key}>
+                                                <Checkbox
                                                     checked={values.global_album_permissions?.includes(perm.key)}
-                                                    onChange={handleChange}
+                                                    onChange={(checked) => {
+                                                        const current = values.global_album_permissions ?? [];
+                                                        setFieldValue(
+                                                            'global_album_permissions',
+                                                            checked
+                                                                ? [...current, perm.key]
+                                                                : current.filter((k) => k !== perm.key),
+                                                        );
+                                                    }}
                                                     disabled={isSubmitting}
-                                                    className='rounded'
                                                 />
-                                                <span>
+                                                <Label>
                                                     {perm.name}{' '}
-                                                    <span className='text-xs text-gray-500'>({perm.key})</span>
-                                                </span>
-                                            </label>
+                                                    <span className='text-xs text-zinc-500'>({perm.key})</span>
+                                                </Label>
+                                            </CheckboxField>
                                         ))}
                                     </div>
                                 </Field>
@@ -242,28 +275,31 @@ const EditRoleForm: React.FC<EditRoleFormProps> = ({ isOpen, onClose, role }) =>
                                                         </Field>
                                                         <Field>
                                                             <Label>Permissions for this Album</Label>
-                                                            <div className='mt-1 grid max-h-40 grid-cols-2 gap-2 overflow-y-auto rounded border p-2'>
+                                                            <div className='mt-3 grid max-h-40 grid-cols-2 gap-2 overflow-y-auto rounded border border-zinc-950/10 p-2 dark:border-white/10'>
                                                                 {albumPermissionsOptions.map((perm) => (
-                                                                    <label
-                                                                        key={perm.key}
-                                                                        className='flex items-center space-x-2 text-sm'
-                                                                    >
-                                                                        <input
-                                                                            type='checkbox'
-                                                                            name={`album_permissions.${index}.permissions`}
-                                                                            value={perm.key}
+                                                                    <CheckboxField key={perm.key}>
+                                                                        <Checkbox
                                                                             checked={ap.permissions.includes(perm.key)}
-                                                                            onChange={handleChange}
+                                                                            onChange={(checked) => {
+                                                                                const current = ap.permissions;
+                                                                                setFieldValue(
+                                                                                    `album_permissions.${index}.permissions`,
+                                                                                    checked
+                                                                                        ? [...current, perm.key]
+                                                                                        : current.filter(
+                                                                                              (k) => k !== perm.key,
+                                                                                          ),
+                                                                                );
+                                                                            }}
                                                                             disabled={isSubmitting}
-                                                                            className='rounded'
                                                                         />
-                                                                        <span>
+                                                                        <Label>
                                                                             {perm.name}{' '}
-                                                                            <span className='text-xs text-gray-500'>
+                                                                            <span className='text-xs text-zinc-500'>
                                                                                 ({perm.key})
                                                                             </span>
-                                                                        </span>
-                                                                    </label>
+                                                                        </Label>
+                                                                    </CheckboxField>
                                                                 ))}
                                                             </div>
                                                             <ErrorMessage

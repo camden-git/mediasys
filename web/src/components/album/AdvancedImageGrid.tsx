@@ -92,7 +92,7 @@ const AdvancedImageGrid: React.FC<AdvancedImageGridProps> = ({
                                 height={row.height}
                                 width={calculatedWidth}
                                 margin={margin}
-                                onClick={() => onImageClick(image)}
+                                onImageClick={onImageClick}
                             />
                         );
                     })}

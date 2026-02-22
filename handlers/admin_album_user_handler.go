@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 
 	"github.com/camden-git/mediasysbackend/models"
@@ -23,11 +24,22 @@ func NewAdminAlbumUserHandler(userRepo repository.UserRepository, albumRepo repo
 	return &AdminAlbumUserHandler{UserRepo: userRepo, AlbumRepo: albumRepo}
 }
 
+// RolePermissionContribution describes album permissions inherited from a role.
+type RolePermissionContribution struct {
+	RoleID        uint     `json:"role_id"`
+	RoleName      string   `json:"role_name"`
+	ForAllAlbums  []string `json:"for_all_albums,omitempty"`
+	AlbumSpecific []string `json:"album_specific,omitempty"`
+}
+
 // AlbumUserPermissionResponse represents a user with their album permissions
 type AlbumUserPermissionResponse struct {
-	User                models.User                 `json:"user"`
-	Permissions         []string                    `json:"permissions"`
-	UserAlbumPermission *models.UserAlbumPermission `json:"user_album_permission,omitempty"`
+	User                 models.User                  `json:"user"`
+	Permissions          []string                     `json:"permissions"`
+	DirectPermissions    []string                     `json:"direct_permissions,omitempty"`
+	InheritedPermissions []string                     `json:"inherited_permissions,omitempty"`
+	RoleContributions    []RolePermissionContribution `json:"role_contributions,omitempty"`
+	UserAlbumPermission  *models.UserAlbumPermission  `json:"user_album_permission,omitempty"`
 }
 
 // AddUserToAlbumPayload represents the payload for adding a user to an album
@@ -39,6 +51,84 @@ type AddUserToAlbumPayload struct {
 // UpdateUserAlbumPermissionsPayload represents the payload for updating user album permissions
 type UpdateUserAlbumPermissionsPayload struct {
 	Permissions []string `json:"permissions"`
+}
+
+func uniqueSortedStrings(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	set := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		set[value] = struct{}{}
+	}
+	if len(set) == 0 {
+		return nil
+	}
+	result := make([]string, 0, len(set))
+	for value := range set {
+		result = append(result, value)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func computeInheritedPermissions(effective []string, direct []string) []string {
+	if len(effective) == 0 {
+		return nil
+	}
+	if len(direct) == 0 {
+		return effective
+	}
+	directSet := make(map[string]struct{}, len(direct))
+	for _, perm := range direct {
+		directSet[perm] = struct{}{}
+	}
+	inherited := make([]string, 0, len(effective))
+	for _, perm := range effective {
+		if _, exists := directSet[perm]; !exists {
+			inherited = append(inherited, perm)
+		}
+	}
+	if len(inherited) == 0 {
+		return nil
+	}
+	return inherited
+}
+
+func buildRoleContributions(user models.User, albumID uint) []RolePermissionContribution {
+	if len(user.Roles) == 0 {
+		return nil
+	}
+	contributions := make([]RolePermissionContribution, 0, len(user.Roles))
+	for _, role := range user.Roles {
+		if role == nil {
+			continue
+		}
+		forAll := uniqueSortedStrings(role.GlobalAlbumPermissions)
+		var albumSpecific []string
+		for _, rap := range role.AlbumPermissions {
+			if rap.AlbumID == albumID {
+				albumSpecific = append(albumSpecific, rap.Permissions...)
+			}
+		}
+		albumSpecific = uniqueSortedStrings(albumSpecific)
+		if len(forAll) == 0 && len(albumSpecific) == 0 {
+			continue
+		}
+		contributions = append(contributions, RolePermissionContribution{
+			RoleID:        role.ID,
+			RoleName:      role.Name,
+			ForAllAlbums:  forAll,
+			AlbumSpecific: albumSpecific,
+		})
+	}
+	if len(contributions) == 0 {
+		return nil
+	}
+	return contributions
 }
 
 // GetAlbumUsers returns all users who have permissions for a specific album
@@ -59,7 +149,7 @@ func (h *AdminAlbumUserHandler) GetAlbumUsers(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	users, err := h.UserRepo.GetUsersWithAlbumPermissions(uint(albumID))
+	users, directPermissionsByUser, err := h.UserRepo.GetUsersWithAlbumPermissions(uint(albumID))
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve album users: " + err.Error()})
 		return
@@ -67,14 +157,52 @@ func (h *AdminAlbumUserHandler) GetAlbumUsers(w http.ResponseWriter, r *http.Req
 
 	// build response with user permissions
 	response := make([]AlbumUserPermissionResponse, 0, len(users))
+	seenUserIDs := make(map[uint]struct{}, len(users))
 	for _, user := range users {
-		userAlbumPerm, _ := h.UserRepo.GetUserAlbumPermission(user.ID, uint(albumID))
+		seenUserIDs[user.ID] = struct{}{}
+		var (
+			userAlbumPerm   *models.UserAlbumPermission
+			directPermSlice []string
+		)
+
+		if direct, ok := directPermissionsByUser[user.ID]; ok {
+			directCopy := direct
+			userAlbumPerm = &directCopy
+			directPermSlice = append(directPermSlice, direct.Permissions...)
+		}
+
+		effectivePerms := user.GetAlbumPermissions(uint(albumID))
+		directPermSlice = uniqueSortedStrings(directPermSlice)
+		inheritedPerms := computeInheritedPermissions(effectivePerms, directPermSlice)
 
 		response = append(response, AlbumUserPermissionResponse{
-			User:                user,
-			Permissions:         user.GetAlbumPermissions(uint(albumID)),
-			UserAlbumPermission: userAlbumPerm,
+			User:                 user,
+			Permissions:          effectivePerms,
+			DirectPermissions:    directPermSlice,
+			InheritedPermissions: inheritedPerms,
+			RoleContributions:    buildRoleContributions(user, uint(albumID)),
+			UserAlbumPermission:  userAlbumPerm,
 		})
+	}
+
+	// include users who inherit album access exclusively via roles or global album permissions
+	allUsers, err := h.UserRepo.ListAll()
+	if err == nil {
+		for _, user := range allUsers {
+			if _, alreadyAdded := seenUserIDs[user.ID]; alreadyAdded {
+				continue
+			}
+			effectivePerms := user.GetAlbumPermissions(uint(albumID))
+			if len(effectivePerms) == 0 {
+				continue
+			}
+			response = append(response, AlbumUserPermissionResponse{
+				User:                 user,
+				Permissions:          effectivePerms,
+				InheritedPermissions: computeInheritedPermissions(effectivePerms, nil),
+				RoleContributions:    buildRoleContributions(user, uint(albumID)),
+			})
+		}
 	}
 
 	writeJSON(w, http.StatusOK, response)

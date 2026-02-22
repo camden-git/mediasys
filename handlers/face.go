@@ -14,16 +14,17 @@ import (
 	"github.com/camden-git/mediasysbackend/config"
 	"github.com/camden-git/mediasysbackend/models"
 	"github.com/camden-git/mediasysbackend/repository"
-	"github.com/camden-git/mediasysbackend/services"
 	"github.com/go-chi/chi/v5"
 	"gorm.io/gorm"
 )
 
 type FaceHandler struct {
 	FaceRepo               repository.FaceRepositoryInterface
+	EmbeddingRepo          repository.FaceEmbeddingRepositoryInterface
 	PersonRepo             repository.PersonRepositoryInterface
+	ImageRepo              repository.ImageRepositoryInterface
 	Cfg                    config.Config
-	FaceRecognitionService *services.FaceRecognitionService
+	FaceRecognitionService *FaceRecognitionService
 }
 
 func (fh *FaceHandler) AddFace(w http.ResponseWriter, r *http.Request) {
@@ -65,7 +66,7 @@ func (fh *FaceHandler) AddFace(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	cleanRelativePath := filepath.Clean(req.ImagePath)
+	cleanRelativePath := filepath.Clean(strings.TrimLeft(req.ImagePath, "/"))
 	if filepath.IsAbs(cleanRelativePath) || strings.HasPrefix(cleanRelativePath, "..") {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "image_path must be relative and cannot use '..'"})
 		return
@@ -116,7 +117,7 @@ func (fh *FaceHandler) ListFacesByImage(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid URL encoding for path parameter"})
 		return
 	}
-	cleanRelativePath := filepath.Clean(imagePath)
+	cleanRelativePath := filepath.Clean(strings.TrimLeft(imagePath, "/"))
 	if filepath.IsAbs(cleanRelativePath) || strings.HasPrefix(cleanRelativePath, "..") {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "image_path must be relative and cannot use '..'"})
 		return
@@ -259,6 +260,12 @@ func (fh *FaceHandler) DeleteFace(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid face ID format"})
 		return
 	}
+	// Delete embedding first (before the face row it references)
+	if fh.EmbeddingRepo != nil {
+		if err := fh.EmbeddingRepo.DeleteByFaceID(uint(faceID)); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Printf("Warning: failed to delete embedding for face %d: %v", faceID, err)
+		}
+	}
 	err = fh.FaceRepo.Delete(uint(faceID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -347,20 +354,81 @@ func (fh *FaceHandler) GetUntaggedFaces(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	q := r.URL.Query()
+
 	// Get limit from query parameter, default to 20
-	limitStr := r.URL.Query().Get("limit")
 	limit := 20
-	if limitStr != "" {
+	if limitStr := q.Get("limit"); limitStr != "" {
 		if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 {
 			limit = parsedLimit
 		}
 	}
 
-	untaggedFaces, err := fh.FaceRecognitionService.GetUntaggedFacesWithSuggestions(limit)
+	// Build filter
+	filter := repository.UntaggedFaceFilter{
+		SortBy:    "created_at",
+		SortOrder: "desc",
+	}
+
+	if v := q.Get("min_quality"); v != "" {
+		if f, err := strconv.ParseFloat(v, 32); err == nil {
+			f32 := float32(f)
+			filter.MinQuality = &f32
+		}
+	}
+	if v := q.Get("min_confidence"); v != "" {
+		if f, err := strconv.ParseFloat(v, 32); err == nil {
+			f32 := float32(f)
+			filter.MinConfidence = &f32
+		}
+	}
+	if v := q.Get("sort_by"); v == "quality" || v == "confidence" || v == "created_at" {
+		filter.SortBy = v
+	}
+	if v := q.Get("sort_order"); v == "asc" || v == "desc" {
+		filter.SortOrder = v
+	}
+	if q.Get("group_by_image") == "true" {
+		filter.GroupByImage = true
+	}
+
+	untaggedFaces, err := fh.FaceRecognitionService.GetUntaggedFacesWithSuggestions(limit, filter)
 	if err != nil {
 		log.Printf("Error getting untagged faces with suggestions: %v", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to get untagged faces"})
 		return
+	}
+
+	// Enrich results with original image dimensions so the frontend can
+	// correctly normalise pixel-space bounding-box coordinates.
+	if fh.ImageRepo != nil && len(untaggedFaces) > 0 {
+		// Collect unique image paths
+		seen := make(map[string]bool)
+		var paths []string
+		for _, f := range untaggedFaces {
+			if p, ok := f["image_path"].(string); ok && !seen[p] {
+				seen[p] = true
+				paths = append(paths, p)
+			}
+		}
+
+		images, imgErr := fh.ImageRepo.GetImagesByPaths(paths)
+		if imgErr == nil {
+			dims := make(map[string][2]int, len(images))
+			for _, img := range images {
+				if img.Width != nil && img.Height != nil {
+					dims[img.OriginalPath] = [2]int{*img.Width, *img.Height}
+				}
+			}
+			for i, f := range untaggedFaces {
+				if p, ok := f["image_path"].(string); ok {
+					if d, found := dims[p]; found {
+						untaggedFaces[i]["image_width"] = d[0]
+						untaggedFaces[i]["image_height"] = d[1]
+					}
+				}
+			}
+		}
 	}
 
 	writeJSON(w, http.StatusOK, untaggedFaces)
@@ -405,8 +473,8 @@ func (fh *FaceHandler) TagFace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Tag the face with auto-tagging of similar faces
-	err = fh.FaceRecognitionService.TagFaceWithPerson(uint(faceID), req.PersonID)
+	// Tag the face with auto-tagging of similar faces; manual tagging counts as confirmed
+	err = fh.FaceRecognitionService.TagFaceWithPerson(uint(faceID), req.PersonID, true)
 	if err != nil {
 		log.Printf("Error tagging face %d with person %d: %v", faceID, req.PersonID, err)
 
@@ -455,8 +523,8 @@ func (fh *FaceHandler) AutoTagFace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Tag the face with the suggested person
-	err = fh.FaceRecognitionService.TagFaceWithPerson(uint(faceID), *personID)
+	// Tag the face with the suggested person; auto-tagging is never confirmed
+	err = fh.FaceRecognitionService.TagFaceWithPerson(uint(faceID), *personID, false)
 	if err != nil {
 		log.Printf("Error auto-tagging face %d with person %d: %v", faceID, *personID, err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to auto-tag face"})
@@ -473,6 +541,73 @@ func (fh *FaceHandler) AutoTagFace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, response)
+}
+
+// SuggestFace returns the best person suggestion for a face without tagging it
+func (fh *FaceHandler) SuggestFace(w http.ResponseWriter, r *http.Request) {
+	if fh.FaceRecognitionService == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Face recognition service not available"})
+		return
+	}
+
+	idStr := chi.URLParam(r, "face_id")
+	faceID, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid face ID format"})
+		return
+	}
+
+	similarFaces, err := fh.FaceRecognitionService.FindSimilarFaces(uint(faceID), 10)
+	if err != nil {
+		if strings.Contains(err.Error(), "failed to get target face embedding") {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Face does not have an embedding"})
+		} else {
+			log.Printf("Error finding similar faces for suggest on face %d: %v", faceID, err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to compute suggestion"})
+		}
+		return
+	}
+
+	// Count person occurrences among similar faces
+	personCounts := make(map[uint]int)
+	personNames := make(map[uint]string)
+	personSimilarities := make(map[uint]float32)
+
+	for _, sf := range similarFaces {
+		if sf.PersonID != nil {
+			personCounts[*sf.PersonID]++
+			if sf.PersonName != nil {
+				personNames[*sf.PersonID] = *sf.PersonName
+			}
+			if sf.Similarity > personSimilarities[*sf.PersonID] {
+				personSimilarities[*sf.PersonID] = sf.Similarity
+			}
+		}
+	}
+
+	var bestPersonID *uint
+	var bestPersonName *string
+	maxCount := 0
+	var bestSimilarity float32
+
+	for personID, count := range personCounts {
+		similarity := personSimilarities[personID]
+		if count > maxCount || (count == maxCount && similarity > bestSimilarity) {
+			maxCount = count
+			bestSimilarity = similarity
+			pid := personID
+			bestPersonID = &pid
+			name := personNames[personID]
+			bestPersonName = &name
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"suggested_person_id":   bestPersonID,
+		"suggested_person_name": bestPersonName,
+		"suggestion_count":      maxCount,
+		"confidence":            bestSimilarity,
+	})
 }
 
 // DebugFaces returns debug information about faces in the database

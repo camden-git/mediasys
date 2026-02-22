@@ -1,9 +1,12 @@
 package models
 
 import (
-	"golang.org/x/crypto/bcrypt"
+	"sort"
 	"strconv"
 	"time"
+
+	"github.com/camden-git/mediasysbackend/permissions"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // User represents an artist or administrator in the system
@@ -27,6 +30,20 @@ type User struct {
 	AlbumPermissionsMap map[string][]string `json:"album_permissions_map" gorm:"-"` // not directly mapped, handled by logic
 	CreatedAt           time.Time           `json:"created_at"`
 	UpdatedAt           time.Time           `json:"updated_at"`
+
+	EffectivePermissions *UserEffectivePermissions `json:"effective_permissions,omitempty" gorm:"-"` // computed at runtime
+}
+
+// AlbumPermissionGrants describes album-scoped permissions, broken down by whether they apply globally or to specific albums.
+type AlbumPermissionGrants struct {
+	ForAll  []string          `json:"for_all,omitempty"`
+	ByAlbum map[uint][]string `json:"by_album,omitempty"`
+}
+
+// UserEffectivePermissions captures the deduplicated set of permissions a user has after combining direct assignments and roles.
+type UserEffectivePermissions struct {
+	Global []string              `json:"global,omitempty"`
+	Album  AlbumPermissionGrants `json:"album,omitempty"`
 }
 
 // UserAlbumPermission defines the relationship and permissions a user has for a specific album
@@ -57,77 +74,184 @@ func (u *User) CheckPassword(password string) bool {
 	return err == nil
 }
 
-// HasGlobalPermission checks if the user has a specific global permission, considering both direct permissions and permissions from roles
-func (u *User) HasGlobalPermission(permission string) bool {
-	// check direct global permissions
-	for _, p := range u.GlobalPermissions {
-		if p == permission {
-			return true
+func (u *User) ensureEffectivePermissions() {
+	if u.EffectivePermissions != nil {
+		return
+	}
+	effective := u.computeEffectivePermissions()
+	u.EffectivePermissions = &effective
+}
+
+// RefreshEffectivePermissions recomputes the effective permissions for the user.
+func (u *User) RefreshEffectivePermissions() {
+	effective := u.computeEffectivePermissions()
+	u.EffectivePermissions = &effective
+}
+
+// computeEffectivePermissions merges permissions from four sources in order:
+//  1. User direct global permissions (GlobalPermissions field)
+//  2. Role global permissions (role.GlobalPermissions for each assigned role)
+//  3. Role album permissions — global-album (role.GlobalAlbumPermissions) and per-album (role.AlbumPermissions)
+//  4. User direct album permissions (AlbumPermissionsMap, loaded from UserAlbumPermission table)
+func (u *User) computeEffectivePermissions() UserEffectivePermissions {
+	globalSet := make(map[string]struct{})
+	albumForAllSet := make(map[string]struct{})
+	albumScopedSet := make(map[uint]map[string]struct{})
+
+	addGlobal := func(perm string) {
+		if perm == "" {
+			return
+		}
+		if def, ok := permissions.GetPermissionDefinition(perm); ok && def.Scope == permissions.ScopeGlobal {
+			globalSet[perm] = struct{}{}
 		}
 	}
 
-	// check global permissions from roles
-	// assumes u.Roles is preloaded
+	addAlbumScoped := func(albumID uint, perm string) {
+		if perm == "" {
+			return
+		}
+		if def, ok := permissions.GetPermissionDefinition(perm); ok && def.Scope == permissions.ScopeAlbum {
+			if _, exists := albumScopedSet[albumID]; !exists {
+				albumScopedSet[albumID] = make(map[string]struct{})
+			}
+			albumScopedSet[albumID][perm] = struct{}{}
+		}
+	}
+
+	addAlbumGlobal := func(perm string) {
+		if perm == "" {
+			return
+		}
+		if def, ok := permissions.GetPermissionDefinition(perm); ok && def.Scope == permissions.ScopeAlbum {
+			albumForAllSet[perm] = struct{}{}
+		}
+	}
+
+	for _, perm := range u.GlobalPermissions {
+		addGlobal(perm)
+	}
+
 	for _, role := range u.Roles {
 		if role == nil {
 			continue
 		}
-		for _, p := range role.GlobalPermissions {
-			if p == permission {
-				return true
+		for _, perm := range role.GlobalPermissions {
+			addGlobal(perm)
+		}
+		for _, perm := range role.GlobalAlbumPermissions {
+			addAlbumGlobal(perm)
+		}
+		for _, rap := range role.AlbumPermissions {
+			for _, perm := range rap.Permissions {
+				addAlbumScoped(rap.AlbumID, perm)
 			}
+		}
+	}
+
+	for albumStr, perms := range u.AlbumPermissionsMap {
+		if len(perms) == 0 {
+			continue
+		}
+		albumID64, err := strconv.ParseUint(albumStr, 10, 64)
+		if err != nil {
+			continue
+		}
+		albumID := uint(albumID64)
+		for _, perm := range perms {
+			addAlbumScoped(albumID, perm)
+		}
+	}
+
+	effective := UserEffectivePermissions{
+		Global: toSortedSlice(globalSet),
+		Album: AlbumPermissionGrants{
+			ForAll:  toSortedSlice(albumForAllSet),
+			ByAlbum: make(map[uint][]string),
+		},
+	}
+
+	for albumID, perms := range albumScopedSet {
+		effective.Album.ByAlbum[albumID] = toSortedSlice(perms)
+	}
+
+	if len(effective.Album.ByAlbum) == 0 {
+		effective.Album.ByAlbum = nil
+	}
+	if len(effective.Album.ForAll) == 0 {
+		effective.Album.ForAll = nil
+	}
+	if len(effective.Global) == 0 {
+		effective.Global = nil
+	}
+
+	return effective
+}
+
+func toSortedSlice(set map[string]struct{}) []string {
+	if len(set) == 0 {
+		return nil
+	}
+	result := make([]string, 0, len(set))
+	for perm := range set {
+		result = append(result, perm)
+	}
+	sort.Strings(result)
+	return result
+}
+
+// HasGlobalPermission checks if the user has a specific global permission, considering both direct permissions and permissions from roles
+func (u *User) HasGlobalPermission(permission string) bool {
+	u.ensureEffectivePermissions()
+	if u.EffectivePermissions == nil {
+		return false
+	}
+	for _, perm := range u.EffectivePermissions.Global {
+		if perm == permission {
+			return true
 		}
 	}
 	return false
 }
 
-// getAllAlbumPermissionsSet collects all unique album-specific permissions for a user from direct assignments and all assigned roles for a specific album.
-// Assumes u.AlbumPermissionsMap is populated for direct permissions, and u.Roles with their respective Role.AlbumPermissions are preloaded.
-func (u *User) getAllAlbumPermissionsSet(albumID uint) map[string]struct{} {
-	allPerms := make(map[string]struct{})
-
-	if directPerms, ok := u.AlbumPermissionsMap[strconv.Itoa(int(albumID))]; ok {
-		for _, p := range directPerms {
-			allPerms[p] = struct{}{}
-		}
-	}
-
-	for _, role := range u.Roles {
-		if role == nil {
-			continue
-		}
-
-		for _, p := range role.GlobalAlbumPermissions {
-			allPerms[p] = struct{}{}
-		}
-
-		for _, rap := range role.AlbumPermissions {
-			if rap.AlbumID == albumID {
-				for _, p := range rap.Permissions {
-					allPerms[p] = struct{}{}
-				}
-			}
-		}
-	}
-	return allPerms
-}
-
 // GetAlbumPermissions returns a slice of unique permissions for a specific album, considering both direct user permissions and permissions from roles
 func (u *User) GetAlbumPermissions(albumID uint) []string {
-	permSet := u.getAllAlbumPermissionsSet(albumID)
+	u.ensureEffectivePermissions()
+	if u.EffectivePermissions == nil {
+		return []string{}
+	}
+	permSet := make(map[string]struct{})
+	for _, perm := range u.EffectivePermissions.Album.ForAll {
+		permSet[perm] = struct{}{}
+	}
+	if scoped, ok := u.EffectivePermissions.Album.ByAlbum[albumID]; ok {
+		for _, perm := range scoped {
+			permSet[perm] = struct{}{}
+		}
+	}
 	if len(permSet) == 0 {
 		return []string{}
 	}
-	permissions := make([]string, 0, len(permSet))
-	for p := range permSet {
-		permissions = append(permissions, p)
-	}
-	return permissions
+	return toSortedSlice(permSet)
 }
 
 // HasAlbumPermission checks if the user has a specific permission for a given album, considering both direct user permissions and permissions from roles
 func (u *User) HasAlbumPermission(albumID uint, permission string) bool {
-	permSet := u.getAllAlbumPermissionsSet(albumID)
-	_, ok := permSet[permission]
-	return ok
+	u.ensureEffectivePermissions()
+	if u.EffectivePermissions == nil {
+		return false
+	}
+	for _, perm := range u.EffectivePermissions.Album.ForAll {
+		if perm == permission {
+			return true
+		}
+	}
+	if scoped, ok := u.EffectivePermissions.Album.ByAlbum[albumID]; ok {
+		for _, perm := range scoped {
+			if perm == permission {
+				return true
+			}
+		}
+	}
+	return false
 }

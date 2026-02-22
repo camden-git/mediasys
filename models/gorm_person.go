@@ -8,6 +8,8 @@ type Person struct {
 	CreatedAt   int64  `gorm:"not null" json:"created_at"` // Stored as INTEGER in SQLite, Unix timestamp
 	UpdatedAt   int64  `gorm:"not null" json:"updated_at"` // Stored as INTEGER in SQLite, Unix timestamp
 
+	KeyPhotoFaceID *uint `gorm:"index" json:"key_photo_face_id,omitempty"`
+
 	// Relationships
 	// omitempty will hide these if they are not preloaded or are empty
 	Aliases []Alias `gorm:"foreignKey:PersonID;constraint:OnDelete:CASCADE" json:"aliases,omitempty"`

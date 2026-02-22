@@ -6,7 +6,8 @@ import "gorm.io/gorm"
 // It corresponds to the 'faces' table.
 type Face struct {
 	ID        uint   `gorm:"primaryKey;autoIncrement" json:"id"`
-	PersonID  *uint  `gorm:"index" json:"person_id,omitempty"` // Nullable foreign key to people table
+	PersonID  *uint  `gorm:"index" json:"person_id,omitempty"`        // Nullable foreign key to people table
+	Confirmed bool   `gorm:"not null;default:false" json:"confirmed"` // true when a human has explicitly confirmed the face assignment
 	ImagePath string `gorm:"not null;index" json:"image_path"`
 	X1        int    `gorm:"not null" json:"x1"`
 	Y1        int    `gorm:"not null" json:"y1"`

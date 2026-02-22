@@ -1,11 +1,10 @@
 import React, { useEffect } from 'react';
-import { Routes, Route, useParams, useLocation } from 'react-router-dom';
+import { Routes, Route, useParams } from 'react-router-dom';
 import { useStoreActions, useStoreState, Actions, State } from 'easy-peasy';
 import { StoreModel } from '../store';
 import AlbumView from '../components/album/AlbumView.tsx';
 import { StackedLayout } from '../components/elements/StackedLayout.tsx';
-import { Navbar, NavbarItem, NavbarSection, NavbarSpacer } from '../components/elements/Navbar.tsx';
-import { InboxIcon, MagnifyingGlassIcon } from '@heroicons/react/20/solid';
+import { Navbar, NavbarItem, NavbarSection } from '../components/elements/Navbar.tsx';
 import { Sidebar, SidebarBody, SidebarItem, SidebarSection } from '../components/elements/Sidebar.tsx';
 
 const navItems = [{ label: 'Index', url: '/' }];
@@ -13,7 +12,6 @@ const navItems = [{ label: 'Index', url: '/' }];
 const AlbumRouter: React.FC = () => {
     const params = useParams<{ identifier: string }>();
     const identifier = params.identifier;
-    const location = useLocation();
 
     const fetchAlbumDataAndContents = useStoreActions(
         (actions: Actions<StoreModel>) => actions.contentView.fetchAlbumDataAndContents,
@@ -25,7 +23,7 @@ const AlbumRouter: React.FC = () => {
         if (identifier) {
             fetchAlbumDataAndContents(identifier);
         }
-    }, [identifier, location.pathname, fetchAlbumDataAndContents]);
+    }, [identifier, fetchAlbumDataAndContents]);
 
     if (identifier && isLoading) {
         return (
@@ -66,15 +64,6 @@ const AlbumRouter: React.FC = () => {
                             </NavbarItem>
                         ))}
                     </NavbarSection>
-                    <NavbarSpacer />
-                    <NavbarSection>
-                        <NavbarItem to='/search' aria-label='Search'>
-                            <MagnifyingGlassIcon />
-                        </NavbarItem>
-                        <NavbarItem to='/inbox' aria-label='Inbox'>
-                            <InboxIcon />
-                        </NavbarItem>
-                    </NavbarSection>
                 </Navbar>
             }
             sidebar={
@@ -93,6 +82,7 @@ const AlbumRouter: React.FC = () => {
         >
             <Routes>
                 <Route index element={<AlbumView />} />
+                <Route path="image/*" element={<AlbumView />} />
             </Routes>
         </StackedLayout>
     );
