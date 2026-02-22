@@ -98,7 +98,14 @@ const PeopleManagementContainer: React.FC = () => {
                     <Button onClick={handleCreate} disabled={creating || !newName.trim()}>
                         {creating ? 'Saving…' : 'Save'}
                     </Button>
-                    <Button plain onClick={() => { setShowCreate(false); setNewName(''); setCreateError(null); }}>
+                    <Button
+                        plain
+                        onClick={() => {
+                            setShowCreate(false);
+                            setNewName('');
+                            setCreateError(null);
+                        }}
+                    >
                         Cancel
                     </Button>
                 </div>

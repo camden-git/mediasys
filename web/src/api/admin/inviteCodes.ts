@@ -2,7 +2,9 @@ import http from '../http';
 import { AdminInviteCodeResponse, InviteCodeCreatePayload } from '../../types';
 import { ApiResponse, PaginatedResult, PaginationRequest, toPaginatedResult, toPaginationQuery } from '../standard';
 
-export const listInviteCodes = async (params?: PaginationRequest): Promise<PaginatedResult<AdminInviteCodeResponse>> => {
+export const listInviteCodes = async (
+    params?: PaginationRequest,
+): Promise<PaginatedResult<AdminInviteCodeResponse>> => {
     const response = await http.get<ApiResponse<AdminInviteCodeResponse[]>>('/admin/invite-codes', {
         params: toPaginationQuery(params),
     });

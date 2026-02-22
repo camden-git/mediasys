@@ -83,12 +83,7 @@ export function DefaultTagsSection() {
                             <DescriptionTerm>{t.tag_key}</DescriptionTerm>
                             <DescriptionDetails>
                                 {t.tag_value}
-                                <Button
-                                    type='button'
-                                    plain
-                                    onClick={() => removeTag(idx)}
-                                    aria-label='Remove tag'
-                                >
+                                <Button type='button' plain onClick={() => removeTag(idx)} aria-label='Remove tag'>
                                     <TrashIcon className='size-4' />
                                 </Button>
                             </DescriptionDetails>

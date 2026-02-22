@@ -2,7 +2,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format } from 'date-fns';
 import { FileInfo, FaceData } from '../../types.ts';
-import { getOriginalImageUrl, getThumbnailUrl, getPreviewImageUrl, getFacesForImage, getPersonKeyPhotoUrl } from '../../api.ts';
+import {
+    getOriginalImageUrl,
+    getThumbnailUrl,
+    getPreviewImageUrl,
+    getFacesForImage,
+    getPersonKeyPhotoUrl,
+} from '../../api.ts';
 import MetadataPanel from './MetadataPanel';
 import LoadingSpinner from '../elements/LoadingSpinner';
 import {
@@ -409,7 +415,6 @@ const ImageLightbox: React.FC<ImageLightboxProps> = ({
                                             </motion.span>
                                         </motion.div>
                                         <Heading invert>{image.name}</Heading>
-
                                     </div>
 
                                     <Text>

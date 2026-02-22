@@ -57,7 +57,12 @@ interface FaceLightboxModalProps {
     onNavigate: (index: number) => void;
     onTagged: (faceId: number) => void;
     onDeleted: (faceId: number) => void;
-    onSuggestionUpdated: (faceId: number, personId: number | null, personName: string | null, suggestionCount: number) => void;
+    onSuggestionUpdated: (
+        faceId: number,
+        personId: number | null,
+        personName: string | null,
+        suggestionCount: number,
+    ) => void;
 }
 
 const FaceLightboxModal: React.FC<FaceLightboxModalProps> = ({
@@ -114,8 +119,13 @@ const FaceLightboxModal: React.FC<FaceLightboxModalProps> = ({
     useEffect(() => {
         const handleKey = (e: KeyboardEvent) => {
             if (e.key === 'Escape') onClose();
-            else if (e.key === 'ArrowLeft' && currentIndex > 0) { e.preventDefault(); onNavigate(currentIndex - 1); }
-            else if (e.key === 'ArrowRight' && currentIndex < faces.length - 1) { e.preventDefault(); onNavigate(currentIndex + 1); }
+            else if (e.key === 'ArrowLeft' && currentIndex > 0) {
+                e.preventDefault();
+                onNavigate(currentIndex - 1);
+            } else if (e.key === 'ArrowRight' && currentIndex < faces.length - 1) {
+                e.preventDefault();
+                onNavigate(currentIndex + 1);
+            }
         };
         window.addEventListener('keydown', handleKey);
         return () => window.removeEventListener('keydown', handleKey);
@@ -131,9 +141,9 @@ const FaceLightboxModal: React.FC<FaceLightboxModalProps> = ({
     const origH = face.image_height;
     const hasDims = previewLoaded && layout.w > 0 && origW && origH;
 
-    const boxLeft   = hasDims ? layout.x + (face.x1 / origW!) * layout.w : 0;
-    const boxTop    = hasDims ? layout.y + (face.y1 / origH!) * layout.h : 0;
-    const boxWidth  = hasDims ? ((face.x2 - face.x1) / origW!) * layout.w : 0;
+    const boxLeft = hasDims ? layout.x + (face.x1 / origW!) * layout.w : 0;
+    const boxTop = hasDims ? layout.y + (face.y1 / origH!) * layout.h : 0;
+    const boxWidth = hasDims ? ((face.x2 - face.x1) / origW!) * layout.w : 0;
     const boxHeight = hasDims ? ((face.y2 - face.y1) / origH!) * layout.h : 0;
 
     // Zoom transform: scale the inner wrapper so the face (+ ZOOM_PADDING) fills the container.
@@ -148,12 +158,12 @@ const FaceLightboxModal: React.FC<FaceLightboxModalProps> = ({
 
     if (hasDims && boxWidth > 0 && boxHeight > 0 && containerW > 0 && containerH > 0) {
         zoom = Math.min(
-            containerW / (boxWidth  * ZOOM_PADDING),
+            containerW / (boxWidth * ZOOM_PADDING),
             containerH / (boxHeight * ZOOM_PADDING),
             20, // sanity cap
         );
-        const faceCX = boxLeft  + boxWidth  / 2;
-        const faceCY = boxTop   + boxHeight / 2;
+        const faceCX = boxLeft + boxWidth / 2;
+        const faceCY = boxTop + boxHeight / 2;
         tx = zoom * (containerW / 2 - faceCX);
         ty = zoom * (containerH / 2 - faceCY);
     }
@@ -207,16 +217,22 @@ const FaceLightboxModal: React.FC<FaceLightboxModalProps> = ({
                     {/* Image container — clips the zoomed inner wrapper */}
                     <div ref={containerRef} className='relative min-h-0 flex-1 overflow-hidden'>
                         {/* Side nav arrows sit above the zoomed content */}
-                        <div className='pointer-events-none absolute inset-y-0 left-0 right-0 z-10 flex items-center justify-between px-4'>
+                        <div className='pointer-events-none absolute inset-y-0 right-0 left-0 z-10 flex items-center justify-between px-4'>
                             <button
-                                onClick={(e) => { e.stopPropagation(); canPrev && onNavigate(currentIndex - 1); }}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    canPrev && onNavigate(currentIndex - 1);
+                                }}
                                 disabled={!canPrev}
                                 className='pointer-events-auto flex h-12 w-10 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-sm transition-opacity hover:bg-black/60 disabled:opacity-0'
                             >
                                 <ChevronLeftIcon className='h-7 w-7' />
                             </button>
                             <button
-                                onClick={(e) => { e.stopPropagation(); canNext && onNavigate(currentIndex + 1); }}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    canNext && onNavigate(currentIndex + 1);
+                                }}
                                 disabled={!canNext}
                                 className='pointer-events-auto flex h-12 w-10 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-sm transition-opacity hover:bg-black/60 disabled:opacity-0'
                             >

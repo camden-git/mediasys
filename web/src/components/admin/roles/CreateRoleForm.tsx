@@ -67,9 +67,7 @@ const CreateRoleForm: React.FC<CreateRoleFormProps> = ({ isOpen, onClose }) => {
             return list;
         }
         const query = permissionFilter.trim().toLowerCase();
-        return list.filter(
-            (perm) => perm.name.toLowerCase().includes(query) || perm.key.toLowerCase().includes(query),
-        );
+        return list.filter((perm) => perm.name.toLowerCase().includes(query) || perm.key.toLowerCase().includes(query));
     };
 
     const globalPermissionsOptions = filterPermissions(permissionOptions.global);

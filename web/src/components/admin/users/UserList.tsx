@@ -73,9 +73,7 @@ const UserList: React.FC = () => {
                             <TableRow key={user.id} href={`/admin/users/${user.id}`}>
                                 <TableCell>{`${user.first_name} ${user.last_name}`.trim()}</TableCell>
                                 <TableCell>{user.username}</TableCell>
-                                <TableCell>
-                                    {user.roles?.map((role) => role.name).join(', ') || 'No roles'}
-                                </TableCell>
+                                <TableCell>{user.roles?.map((role) => role.name).join(', ') || 'No roles'}</TableCell>
                                 <TableCell>{new Date(user.created_at).toLocaleDateString()}</TableCell>
                             </TableRow>
                         ))}

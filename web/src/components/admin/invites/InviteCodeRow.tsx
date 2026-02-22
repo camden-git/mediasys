@@ -29,6 +29,3 @@ const InviteCodeRow: React.FC<InviteCodeRowProps> = ({ inviteCode }) => {
 };
 
 export default InviteCodeRow;
-
-
-

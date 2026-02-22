@@ -23,7 +23,7 @@ const CollectionView: React.FC = () => {
     }, [slug]);
 
     if (isLoading) return <LoadingSpinner />;
-    if (error) return <p className='text-red-500 p-8'>{error}</p>;
+    if (error) return <p className='p-8 text-red-500'>{error}</p>;
     if (!collection) return null;
 
     return (
@@ -53,7 +53,7 @@ const CollectionView: React.FC = () => {
                     {collection.filters.map((f) => (
                         <span
                             key={f.id}
-                            className='rounded-full bg-gray-100 dark:bg-gray-800 px-3 py-1 font-mono text-xs text-gray-600 dark:text-gray-300'
+                            className='rounded-full bg-gray-100 px-3 py-1 font-mono text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-300'
                         >
                             {f.tag_key} = {f.tag_value}
                         </span>

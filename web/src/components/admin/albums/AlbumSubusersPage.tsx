@@ -210,11 +210,12 @@ const AlbumSubusersPage: React.FC = () => {
                                     <TableCell>
                                         <div className='space-y-3'>
                                             <div>
-                                                <div className='text-xs font-semibold uppercase tracking-wide text-gray-500'>
+                                                <div className='text-xs font-semibold tracking-wide text-gray-500 uppercase'>
                                                     Direct
                                                 </div>
                                                 <div className='mt-1 flex flex-wrap gap-1'>
-                                                    {userData.direct_permissions && userData.direct_permissions.length > 0 ? (
+                                                    {userData.direct_permissions &&
+                                                    userData.direct_permissions.length > 0 ? (
                                                         renderPermissionTags(
                                                             userData.direct_permissions,
                                                             'bg-blue-100 text-blue-800',
@@ -224,22 +225,23 @@ const AlbumSubusersPage: React.FC = () => {
                                                     )}
                                                 </div>
                                             </div>
-                                            {userData.inherited_permissions && userData.inherited_permissions.length > 0 && (
-                                                <div>
-                                                    <div className='text-xs font-semibold uppercase tracking-wide text-gray-500'>
-                                                        Inherited
+                                            {userData.inherited_permissions &&
+                                                userData.inherited_permissions.length > 0 && (
+                                                    <div>
+                                                        <div className='text-xs font-semibold tracking-wide text-gray-500 uppercase'>
+                                                            Inherited
+                                                        </div>
+                                                        <div className='mt-1 flex flex-wrap gap-1'>
+                                                            {renderPermissionTags(
+                                                                userData.inherited_permissions,
+                                                                'bg-purple-100 text-purple-800',
+                                                            )}
+                                                        </div>
                                                     </div>
-                                                    <div className='mt-1 flex flex-wrap gap-1'>
-                                                        {renderPermissionTags(
-                                                            userData.inherited_permissions,
-                                                            'bg-purple-100 text-purple-800',
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            )}
+                                                )}
                                             {userData.role_contributions && userData.role_contributions.length > 0 && (
                                                 <div className='rounded-md border border-gray-100 p-3 text-xs text-gray-600'>
-                                                    <div className='font-semibold uppercase tracking-wide text-gray-500'>
+                                                    <div className='font-semibold tracking-wide text-gray-500 uppercase'>
                                                         Role-derived
                                                     </div>
                                                     <ul className='mt-2 space-y-2'>

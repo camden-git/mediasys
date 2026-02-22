@@ -50,9 +50,7 @@ const PersonView: React.FC = () => {
         thumbnail_path: getPreviewImageUrl(path),
     }));
 
-    const selectedIndex = selectedImage
-        ? imageFiles.findIndex((f) => f.path === selectedImage.path)
-        : -1;
+    const selectedIndex = selectedImage ? imageFiles.findIndex((f) => f.path === selectedImage.path) : -1;
 
     const handleImageClick = useCallback((img: FileInfo) => {
         setSelectedImage(img);

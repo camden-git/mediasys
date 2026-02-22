@@ -48,9 +48,7 @@ const AlbumManagementContainer: React.FC = () => {
                     <Heading level={4} className='text-lg font-semibold'>
                         No albums yet
                     </Heading>
-                    <Text className='mt-2 text-sm text-gray-600'>
-                        Create your first album to get started.
-                    </Text>
+                    <Text className='mt-2 text-sm text-gray-600'>Create your first album to get started.</Text>
                 </div>
             ) : (
                 <Table>
@@ -106,7 +104,6 @@ const AlbumManagementContainer: React.FC = () => {
                     </TableBody>
                 </Table>
             )}
-
         </PageContentBlock>
     );
 };

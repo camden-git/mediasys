@@ -1,6 +1,6 @@
 import React from 'react';
 import CountdownTimer from './CountdownTimer';
-import {formatDate, getUrgencyLevel} from "../../lib/formatters.ts";
+import { formatDate, getUrgencyLevel } from '../../lib/formatters.ts';
 
 interface DateDisplayProps {
     dateString: string;
@@ -8,13 +8,9 @@ interface DateDisplayProps {
     className?: string;
 }
 
-const DateDisplay: React.FC<DateDisplayProps> = ({ 
-    dateString, 
-    showCountdown = false, 
-    className = '' 
-}) => {
+const DateDisplay: React.FC<DateDisplayProps> = ({ dateString, showCountdown = false, className = '' }) => {
     const urgencyLevel = getUrgencyLevel(dateString);
-    
+
     const getUrgencyClasses = () => {
         switch (urgencyLevel) {
             case 'critical':
@@ -28,11 +24,9 @@ const DateDisplay: React.FC<DateDisplayProps> = ({
 
     return (
         <div className={`${className}`}>
-            <div className={getUrgencyClasses()}>
-                {formatDate(dateString)}
-            </div>
+            <div className={getUrgencyClasses()}>{formatDate(dateString)}</div>
             {showCountdown && (
-                <div className="text-sm mt-1">
+                <div className='mt-1 text-sm'>
                     <CountdownTimer targetDate={dateString} />
                 </div>
             )}
@@ -41,9 +35,3 @@ const DateDisplay: React.FC<DateDisplayProps> = ({
 };
 
 export default DateDisplay;
-
-
-
-
-
-

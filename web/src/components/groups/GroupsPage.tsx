@@ -27,26 +27,24 @@ const GroupsPage: React.FC = () => {
     }, []);
 
     if (isLoading) return <LoadingSpinner />;
-    if (error) return <p className='text-red-500 p-8'>{error}</p>;
+    if (error) return <p className='p-8 text-red-500'>{error}</p>;
 
     return (
         <div className='mx-auto max-w-6xl px-4 py-12'>
-            <h1 className='text-3xl font-bold mb-8 text-gray-950 dark:text-white'>Event Collections</h1>
-            {groups.length === 0 && (
-                <p className='text-gray-500 dark:text-gray-400'>No collections yet.</p>
-            )}
+            <h1 className='mb-8 text-3xl font-bold text-gray-950 dark:text-white'>Event Collections</h1>
+            {groups.length === 0 && <p className='text-gray-500 dark:text-gray-400'>No collections yet.</p>}
             <div className='grid gap-6 sm:grid-cols-2 lg:grid-cols-3'>
                 {groups.map((group) => (
                     <Link
                         key={group.id}
                         to={`/groups/${group.slug}`}
-                        className='group relative overflow-hidden rounded-xl bg-gray-100 dark:bg-gray-800 hover:shadow-lg transition-shadow'
+                        className='group relative overflow-hidden rounded-xl bg-gray-100 transition-shadow hover:shadow-lg dark:bg-gray-800'
                     >
                         {group.banner_image_path && (
                             <img
                                 src={getBannerUrl(group.banner_image_path)}
                                 alt=''
-                                className='h-40 w-full object-cover opacity-70 group-hover:opacity-90 transition-opacity'
+                                className='h-40 w-full object-cover opacity-70 transition-opacity group-hover:opacity-90'
                             />
                         )}
                         {!group.banner_image_path && (
@@ -55,7 +53,7 @@ const GroupsPage: React.FC = () => {
                         <div className='p-4'>
                             <h2 className='text-lg font-semibold text-gray-950 dark:text-white'>{group.name}</h2>
                             {group.description && (
-                                <p className='mt-1 text-sm text-gray-500 dark:text-gray-400 line-clamp-2'>
+                                <p className='mt-1 line-clamp-2 text-sm text-gray-500 dark:text-gray-400'>
                                     {group.description}
                                 </p>
                             )}

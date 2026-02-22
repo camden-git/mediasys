@@ -32,7 +32,7 @@ const GroupView: React.FC = () => {
     }, [slug]);
 
     if (isLoading) return <LoadingSpinner />;
-    if (error) return <p className='text-red-500 p-8'>{error}</p>;
+    if (error) return <p className='p-8 text-red-500'>{error}</p>;
     if (!group) return null;
 
     return (
@@ -83,13 +83,13 @@ const GroupView: React.FC = () => {
                             <Link
                                 key={album.id}
                                 to={`/album/${album.slug}`}
-                                className='group overflow-hidden rounded-xl bg-gray-100 hover:shadow-md transition-shadow dark:bg-gray-800'
+                                className='group overflow-hidden rounded-xl bg-gray-100 transition-shadow hover:shadow-md dark:bg-gray-800'
                             >
                                 {album.banner_image_path && (
                                     <img
                                         src={getBannerUrl(album.banner_image_path)}
                                         alt=''
-                                        className='h-32 w-full object-cover opacity-70 group-hover:opacity-90 transition-opacity'
+                                        className='h-32 w-full object-cover opacity-70 transition-opacity group-hover:opacity-90'
                                     />
                                 )}
                                 {!album.banner_image_path && (
@@ -98,7 +98,9 @@ const GroupView: React.FC = () => {
                                 <div className='p-3'>
                                     <p className='font-medium text-gray-950 dark:text-white'>{album.name}</p>
                                     {album.location && (
-                                        <p className='text-xs text-gray-400 dark:text-gray-500 mt-0.5'>{album.location}</p>
+                                        <p className='mt-0.5 text-xs text-gray-400 dark:text-gray-500'>
+                                            {album.location}
+                                        </p>
                                     )}
                                 </div>
                             </Link>

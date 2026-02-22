@@ -169,6 +169,3 @@ export const withQueryBuilderParams = (
         page: data.page,
     };
 };
-
-
-

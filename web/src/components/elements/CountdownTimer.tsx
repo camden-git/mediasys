@@ -20,7 +20,7 @@ const CountdownTimer: React.FC<CountdownTimerProps> = ({ targetDate, className =
 
     const getClassName = () => {
         const baseClasses = 'font-medium transition-colors duration-200';
-        
+
         switch (urgencyLevel) {
             case 'critical':
                 return `${baseClasses} text-red-600 ${timeRemaining.total > 0 ? 'animate-pulse' : ''}`;
@@ -31,17 +31,7 @@ const CountdownTimer: React.FC<CountdownTimerProps> = ({ targetDate, className =
         }
     };
 
-    return (
-        <span className={`${getClassName()} ${className}`}>
-            {formatTimeRemaining(timeRemaining)}
-        </span>
-    );
+    return <span className={`${getClassName()} ${className}`}>{formatTimeRemaining(timeRemaining)}</span>;
 };
 
 export default CountdownTimer;
-
-
-
-
-
-

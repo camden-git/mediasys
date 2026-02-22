@@ -33,20 +33,16 @@ const PeoplePage: React.FC = () => {
     return (
         <div className='mx-auto max-w-6xl px-4 py-12'>
             <h1 className='mb-8 text-3xl font-bold text-gray-950 dark:text-white'>People</h1>
-            {people.length === 0 && (
-                <p className='text-gray-500 dark:text-gray-400'>No people tagged yet.</p>
-            )}
+            {people.length === 0 && <p className='text-gray-500 dark:text-gray-400'>No people tagged yet.</p>}
             <div className='grid gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5'>
                 {people.map((person) => (
                     <Link
                         key={person.id}
                         to={`/people/${person.id}`}
-                        className='flex flex-col items-center gap-2 rounded-xl p-4 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-center'
+                        className='flex flex-col items-center gap-2 rounded-xl p-4 text-center transition-colors hover:bg-gray-100 dark:hover:bg-gray-800'
                     >
                         <UserCircleIcon className='size-16 text-gray-300 dark:text-gray-600' />
-                        <span className='text-sm font-medium text-gray-950 dark:text-white'>
-                            {person.primary_name}
-                        </span>
+                        <span className='text-sm font-medium text-gray-950 dark:text-white'>{person.primary_name}</span>
                     </Link>
                 ))}
             </div>

@@ -19,14 +19,9 @@ export const Avatar: React.FC<AvatarProps> = ({ src, initials, className, alt = 
             style={style}
         >
             {showImg ? (
-                <img
-                    src={src}
-                    alt={alt}
-                    className='h-full w-full object-cover'
-                    onError={() => setImgError(true)}
-                />
+                <img src={src} alt={alt} className='h-full w-full object-cover' onError={() => setImgError(true)} />
             ) : (
-                <span className='text-xs font-semibold leading-none text-white'>{initials}</span>
+                <span className='text-xs leading-none font-semibold text-white'>{initials}</span>
             )}
         </span>
     );

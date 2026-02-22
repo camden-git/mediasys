@@ -44,17 +44,14 @@ const OverviewContainer: React.FC = () => {
     const refreshTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
     const pendingRefreshRef = React.useRef(false);
 
-    const scheduleRefresh = React.useCallback(
-        (fetchFn: () => void) => {
-            pendingRefreshRef.current = true;
-            if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
-            refreshTimerRef.current = setTimeout(() => {
-                pendingRefreshRef.current = false;
-                fetchFn();
-            }, 1000);
-        },
-        [],
-    );
+    const scheduleRefresh = React.useCallback((fetchFn: () => void) => {
+        pendingRefreshRef.current = true;
+        if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+        refreshTimerRef.current = setTimeout(() => {
+            pendingRefreshRef.current = false;
+            fetchFn();
+        }, 1000);
+    }, []);
 
     React.useEffect(() => {
         try {
@@ -242,9 +239,7 @@ const OverviewContainer: React.FC = () => {
         if (images.length === 0) return <div className='py-6 text-sm text-gray-500'>No photos in this album yet.</div>;
 
         if (viewMode === 'cascading') {
-            return (
-                <AdvancedImageGrid images={images} targetRowHeight={scale} boxSpacing={6} onImageClick={() => {}} />
-            );
+            return <AdvancedImageGrid images={images} targetRowHeight={scale} boxSpacing={6} onImageClick={() => {}} />;
         }
 
         if (viewMode === 'grid') {
@@ -255,7 +250,9 @@ const OverviewContainer: React.FC = () => {
                     style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${Math.round(tile)}px, 1fr))` }}
                 >
                     {images.map((img) => {
-                        const backgroundImage = img.thumbnail_path ? `url(${getThumbnailUrl(img.thumbnail_path)})` : undefined;
+                        const backgroundImage = img.thumbnail_path
+                            ? `url(${getThumbnailUrl(img.thumbnail_path)})`
+                            : undefined;
                         return (
                             <div key={img.path} className='group relative overflow-hidden rounded border bg-gray-100'>
                                 <div
@@ -265,7 +262,7 @@ const OverviewContainer: React.FC = () => {
                                 <div className='pointer-events-none absolute inset-0 bg-black/0 transition group-hover:bg-black/20' />
                                 <button
                                     onClick={() => handleDeleteImage(img)}
-                                    className='absolute right-2 top-2 hidden rounded bg-white/90 p-1 text-red-600 shadow group-hover:block'
+                                    className='absolute top-2 right-2 hidden rounded bg-white/90 p-1 text-red-600 shadow group-hover:block'
                                     title={`Delete ${img.name}`}
                                 >
                                     <TrashIcon className='h-4 w-4' />
@@ -308,9 +305,7 @@ const OverviewContainer: React.FC = () => {
                                     </div>
                                 </TableCell>
                                 <TableCell className='max-w-[28rem] truncate'>{img.name}</TableCell>
-                                <TableCell>
-                                    {img.width && img.height ? `${img.width}×${img.height}` : '—'}
-                                </TableCell>
+                                <TableCell>{img.width && img.height ? `${img.width}×${img.height}` : '—'}</TableCell>
                                 <TableCell>{(img.size / 1024).toFixed(0)} KB</TableCell>
                                 <TableCell>{new Date(img.mod_time * 1000).toLocaleString()}</TableCell>
                                 <TableCell>
@@ -337,7 +332,10 @@ const OverviewContainer: React.FC = () => {
     };
     const formatEta = (sec: number): string => {
         if (sec < 60) return `${sec} second${sec === 1 ? '' : 's'} remaining`;
-        if (sec < 3600) { const m = Math.ceil(sec / 60); return `${m} minute${m === 1 ? '' : 's'} remaining`; }
+        if (sec < 3600) {
+            const m = Math.ceil(sec / 60);
+            return `${m} minute${m === 1 ? '' : 's'} remaining`;
+        }
         const h = Math.floor(sec / 3600);
         const m = Math.ceil((sec % 3600) / 60);
         return `${h}h ${m}m remaining`;
@@ -365,9 +363,7 @@ const OverviewContainer: React.FC = () => {
     const elapsedSec = uploadStartRef.current ? (Date.now() - uploadStartRef.current) / 1000 : 0;
     const uploadRate = elapsedSec > 1 ? uploadedBytes / elapsedSec : 0; // bytes/sec
     const remainingBytes = Math.max(0, totalBytes - uploadedBytes);
-    const etaSec = isUploading && uploadRate > 0 && remainingBytes > 0
-        ? Math.ceil(remainingBytes / uploadRate)
-        : null;
+    const etaSec = isUploading && uploadRate > 0 && remainingBytes > 0 ? Math.ceil(remainingBytes / uploadRate) : null;
 
     // Processing ETA — task-based, active when upload is done but processing is ongoing
     const completedTasks = itemList.reduce(
@@ -375,32 +371,48 @@ const OverviewContainer: React.FC = () => {
         0,
     );
     const totalTasks = totalFiles * TOTAL_TASKS;
-    const processingElapsedSec = processingStartRef.current
-        ? (Date.now() - processingStartRef.current) / 1000
-        : 0;
+    const processingElapsedSec = processingStartRef.current ? (Date.now() - processingStartRef.current) / 1000 : 0;
     const processingRate = processingElapsedSec > 2 ? completedTasks / processingElapsedSec : 0; // tasks/sec
     const remainingTasks = Math.max(0, totalTasks - completedTasks);
     const processingEtaSec =
-        !isUploading && processingRate > 0 && remainingTasks > 0
-            ? Math.ceil(remainingTasks / processingRate)
-            : null;
+        !isUploading && processingRate > 0 && remainingTasks > 0 ? Math.ceil(remainingTasks / processingRate) : null;
 
     const getBadge = (it: ItemState) => {
         const doneCount = Object.values(it.tasks).filter((s) => s === 'done').length;
         const hasError = Boolean(it.error) || Object.values(it.tasks).includes('error');
         if (hasError) {
-            return <span className='inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700'>Error</span>;
+            return (
+                <span className='inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700'>
+                    Error
+                </span>
+            );
         }
         if (doneCount === TOTAL_TASKS) {
-            return <span className='inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700'>Done</span>;
+            return (
+                <span className='inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700'>
+                    Done
+                </span>
+            );
         }
         if (it.currentTask && it.currentTask !== 'upload') {
-            return <span className='inline-flex items-center gap-1 rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-700'>Processing</span>;
+            return (
+                <span className='inline-flex items-center gap-1 rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-700'>
+                    Processing
+                </span>
+            );
         }
         if (it.uploading) {
-            return <span className='inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700'>Uploading</span>;
+            return (
+                <span className='inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700'>
+                    Uploading
+                </span>
+            );
         }
-        return <span className='inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600'>Queued</span>;
+        return (
+            <span className='inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600'>
+                Queued
+            </span>
+        );
     };
 
     const getFilePct = (it: ItemState) => {
@@ -495,7 +507,7 @@ const OverviewContainer: React.FC = () => {
                                     <button
                                         type='button'
                                         onClick={handleClearCompleted}
-                                        className='text-xs text-gray-500 hover:text-gray-700 underline'
+                                        className='text-xs text-gray-500 underline hover:text-gray-700'
                                     >
                                         Clear completed
                                     </button>
@@ -503,11 +515,13 @@ const OverviewContainer: React.FC = () => {
                             </div>
 
                             {/* Per-file rows */}
-                            <div className='divide-y max-h-64 overflow-auto'>
+                            <div className='max-h-64 divide-y overflow-auto'>
                                 {itemList
                                     .sort((a, b) => {
-                                        const aDone = Object.values(a.tasks).filter((s) => s === 'done').length === TOTAL_TASKS;
-                                        const bDone = Object.values(b.tasks).filter((s) => s === 'done').length === TOTAL_TASKS;
+                                        const aDone =
+                                            Object.values(a.tasks).filter((s) => s === 'done').length === TOTAL_TASKS;
+                                        const bDone =
+                                            Object.values(b.tasks).filter((s) => s === 'done').length === TOTAL_TASKS;
                                         if (aDone !== bDone) return Number(aDone) - Number(bDone);
                                         return a.path.localeCompare(b.path);
                                     })
@@ -519,7 +533,10 @@ const OverviewContainer: React.FC = () => {
                                             <div key={it.path} className='flex items-center gap-3 px-4 py-2.5'>
                                                 {getBadge(it)}
                                                 <div className='min-w-0 flex-1'>
-                                                    <div className='truncate text-xs text-gray-700 mb-1' title={displayName}>
+                                                    <div
+                                                        className='mb-1 truncate text-xs text-gray-700'
+                                                        title={displayName}
+                                                    >
                                                         {displayName}
                                                     </div>
                                                     <div className='h-1.5 w-full overflow-hidden rounded-full bg-gray-100'>
@@ -540,7 +557,7 @@ const OverviewContainer: React.FC = () => {
                         <div className='border-b border-gray-200 px-6 py-4'>
                             <h2 className='text-lg font-medium text-gray-900'>Photos</h2>
                         </div>
-                        <div className='px-6 py-4 space-y-4'>
+                        <div className='space-y-4 px-6 py-4'>
                             <Toolbar />
                             {renderContent()}
                         </div>

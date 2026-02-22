@@ -82,7 +82,7 @@ const AlbumRouter: React.FC = () => {
         >
             <Routes>
                 <Route index element={<AlbumView />} />
-                <Route path="image/*" element={<AlbumView />} />
+                <Route path='image/*' element={<AlbumView />} />
             </Routes>
         </StackedLayout>
     );

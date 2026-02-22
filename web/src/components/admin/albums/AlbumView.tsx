@@ -3,10 +3,7 @@ import { useStoreState } from '../../../store/hooks';
 import { formatDistanceToNow } from 'date-fns';
 import { getBannerUrl } from '../../../api.ts';
 import { Heading } from '../../elements/Heading';
-import {
-    DescriptionList,
-    DescriptionItem,
-} from '../../elements/DescriptionList';
+import { DescriptionList, DescriptionItem } from '../../elements/DescriptionList';
 
 const AlbumView: React.FC = () => {
     const album = useStoreState((state) => state.albumContext.data!);
@@ -27,22 +24,19 @@ const AlbumView: React.FC = () => {
                         details={
                             <span
                                 className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                                    album.is_hidden
-                                        ? 'bg-yellow-100 text-yellow-800'
-                                        : 'bg-green-100 text-green-800'
+                                    album.is_hidden ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'
                                 }`}
                             >
                                 {album.is_hidden ? 'Hidden' : 'Visible'}
                             </span>
                         }
                     />
-                    {album.description && (
-                        <DescriptionItem term='Description' details={album.description} />
-                    )}
-                    {album.location && (
-                        <DescriptionItem term='Location' details={album.location} />
-                    )}
-                    <DescriptionItem term='Sort Order' details={<span className='capitalize'>{album.sort_order}</span>} />
+                    {album.description && <DescriptionItem term='Description' details={album.description} />}
+                    {album.location && <DescriptionItem term='Location' details={album.location} />}
+                    <DescriptionItem
+                        term='Sort Order'
+                        details={<span className='capitalize'>{album.sort_order}</span>}
+                    />
                     <DescriptionItem
                         term='Created'
                         details={formatDistanceToNow(new Date(album.created_at * 1000), { addSuffix: true })}
@@ -87,10 +81,7 @@ const AlbumView: React.FC = () => {
                         }
                     />
                     {album.zip_size && (
-                        <DescriptionItem
-                            term='Size'
-                            details={`${(album.zip_size / 1024 / 1024).toFixed(2)} MB`}
-                        />
+                        <DescriptionItem term='Size' details={`${(album.zip_size / 1024 / 1024).toFixed(2)} MB`} />
                     )}
                     {album.zip_last_generated_at && (
                         <DescriptionItem

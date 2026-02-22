@@ -100,11 +100,21 @@ const FaceTaggingContainer: React.FC = () => {
 
     const handleDeleted = (faceId: number) => handleTagged(faceId);
 
-    const handleSuggestionUpdated = (faceId: number, personId: number | null, personName: string | null, suggestionCount: number) => {
+    const handleSuggestionUpdated = (
+        faceId: number,
+        personId: number | null,
+        personName: string | null,
+        suggestionCount: number,
+    ) => {
         setFaces((prev) =>
             prev.map((f) =>
                 f.face_id === faceId
-                    ? { ...f, suggested_person_id: personId, suggested_person_name: personName, suggestion_count: suggestionCount }
+                    ? {
+                          ...f,
+                          suggested_person_id: personId,
+                          suggested_person_name: personName,
+                          suggestion_count: suggestionCount,
+                      }
                     : f,
             ),
         );
@@ -198,7 +208,9 @@ const FaceTaggingContainer: React.FC = () => {
                     <p className='mb-4 text-sm text-zinc-500'>
                         {displayFaces.length} face{displayFaces.length !== 1 ? 's' : ''} to review
                     </p>
-                    <div className={`grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 ${fetching ? 'opacity-50' : ''}`}>
+                    <div
+                        className={`grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 ${fetching ? 'opacity-50' : ''}`}
+                    >
                         {displayFaces.map((face, i) => (
                             <div
                                 key={face.face_id}
@@ -214,7 +226,7 @@ const FaceTaggingContainer: React.FC = () => {
                                     imageHeight={face.image_height}
                                     onClick={() => setLightboxIndex(i)}
                                 />
-                                <span className='absolute right-1.5 top-1.5 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] text-white'>
+                                <span className='absolute top-1.5 right-1.5 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] text-white'>
                                     {Math.round(face.detection_confidence * 100)}%
                                 </span>
                                 {face.suggested_person_name && (

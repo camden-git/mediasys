@@ -36,7 +36,7 @@ const CollectionFiltersEditor: React.FC<CollectionFiltersEditorProps> = ({ filte
             </p>
 
             {filters.length > 0 && (
-                <div className='divide-y divide-zinc-200 dark:divide-zinc-700 rounded border border-zinc-200 dark:border-zinc-700'>
+                <div className='divide-y divide-zinc-200 rounded border border-zinc-200 dark:divide-zinc-700 dark:border-zinc-700'>
                     {filters.map((f, idx) => (
                         <div key={idx} className='flex items-center justify-between px-3 py-2 text-sm'>
                             <span>
@@ -59,12 +59,7 @@ const CollectionFiltersEditor: React.FC<CollectionFiltersEditorProps> = ({ filte
             )}
 
             <div className='flex gap-2'>
-                <Input
-                    type='text'
-                    placeholder='tag key'
-                    value={newKey}
-                    onChange={(e) => setNewKey(e.target.value)}
-                />
+                <Input type='text' placeholder='tag key' value={newKey} onChange={(e) => setNewKey(e.target.value)} />
                 <Input
                     type='text'
                     placeholder='tag value'

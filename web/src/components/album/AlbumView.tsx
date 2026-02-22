@@ -70,17 +70,14 @@ const AlbumView: React.FC = () => {
     const [highlightsMode, setHighlightsMode] = useState(searchParams.get('highlights') === '1');
     const [highlightsListing, setHighlightsListing] = useState<typeof directoryListing>(null);
 
-    const folderPrefix = currentAlbum?.folder_path
-        ? currentAlbum.folder_path.replace(/\/?$/, '/')
-        : null;
+    const folderPrefix = currentAlbum?.folder_path ? currentAlbum.folder_path.replace(/\/?$/, '/') : null;
 
     const encodeImagePath = (path: string) => {
         const stripped = (folderPrefix ? path.replace(folderPrefix, '') : path).replace(/^\//, '');
         return stripped.split('/').map(encodeURIComponent).join('/');
     };
 
-    const normalizePath = (path: string) =>
-        (folderPrefix ? path.replace(folderPrefix, '') : path).replace(/^\//, '');
+    const normalizePath = (path: string) => (folderPrefix ? path.replace(folderPrefix, '') : path).replace(/^\//, '');
 
     const sentinelRef = useRef<HTMLDivElement | null>(null);
     const isFetchingMoreRef = useRef(false);
@@ -171,7 +168,7 @@ const AlbumView: React.FC = () => {
             return;
         }
 
-        const found = imageFiles.find(f => normalizePath(f.path) === imagePathFromUrl);
+        const found = imageFiles.find((f) => normalizePath(f.path) === imagePathFromUrl);
         if (found) {
             setSelectedImage(found);
             return;
@@ -217,10 +214,13 @@ const AlbumView: React.FC = () => {
         }
     }, [imageFiles.length, canLoadMore, loadMore]);
 
-    const handleImageClick = useCallback((image: FileInfo) => {
-        setSelectedImage(image);
-        navigate(`/album/${identifier}/image/${encodeImagePath(image.path)}`, { replace: false });
-    }, [navigate, identifier]);
+    const handleImageClick = useCallback(
+        (image: FileInfo) => {
+            setSelectedImage(image);
+            navigate(`/album/${identifier}/image/${encodeImagePath(image.path)}`, { replace: false });
+        },
+        [navigate, identifier],
+    );
 
     const handleCloseLightbox = useCallback(() => {
         setSelectedImage(null);

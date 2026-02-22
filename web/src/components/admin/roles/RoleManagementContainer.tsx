@@ -188,7 +188,9 @@ const RoleManagementContainer: React.FC = () => {
                                                     <DropdownItem to={`/admin/roles/${role.id}`}>View</DropdownItem>
                                                 </Can>
                                                 <Can permission='role.edit'>
-                                                    <DropdownItem onClick={() => setRoleForEdit(role)}>Edit</DropdownItem>
+                                                    <DropdownItem onClick={() => setRoleForEdit(role)}>
+                                                        Edit
+                                                    </DropdownItem>
                                                 </Can>
                                                 <DropdownSeparator />
                                                 <Can permission='role.delete'>

@@ -8,7 +8,15 @@ import PageContentBlock from '../../elements/PageContentBlock.tsx';
 import LoadingSpinner from '../../elements/LoadingSpinner';
 import FaceThumbnail from '../faces/shared/FaceThumbnail';
 import { Person, Alias } from '../../../types';
-import { getPersonById, updatePerson, getPersonAliases, addPersonAlias, deletePersonAlias, setPersonKeyPhoto, getPersonKeyPhotoUrl } from '../../../api';
+import {
+    getPersonById,
+    updatePerson,
+    getPersonAliases,
+    addPersonAlias,
+    deletePersonAlias,
+    setPersonKeyPhoto,
+    getPersonKeyPhotoUrl,
+} from '../../../api';
 
 const PersonAdminView: React.FC = () => {
     const { id } = useParams<{ id: string }>();
@@ -217,22 +225,19 @@ const PersonAdminView: React.FC = () => {
 
             <div>
                 <Heading level={2}>Aliases</Heading>
-                <Text className='mt-1 mb-4 text-sm text-zinc-500'>
-                    Alternate names this person may be known by.
-                </Text>
+                <Text className='mt-1 mb-4 text-sm text-zinc-500'>Alternate names this person may be known by.</Text>
 
                 {aliases.length === 0 ? (
                     <p className='mb-4 text-sm text-zinc-400'>No aliases yet.</p>
                 ) : (
                     <ul className='mb-4 space-y-2'>
                         {aliases.map((alias) => (
-                            <li key={alias.id} className='flex items-center justify-between rounded-md border border-zinc-200 px-3 py-2 dark:border-zinc-700'>
+                            <li
+                                key={alias.id}
+                                className='flex items-center justify-between rounded-md border border-zinc-200 px-3 py-2 dark:border-zinc-700'
+                            >
                                 <span className='text-sm'>{alias.name}</span>
-                                <Button
-                                    plain
-                                    className='text-red-600 text-sm'
-                                    onClick={() => handleDeleteAlias(alias)}
-                                >
+                                <Button plain className='text-sm text-red-600' onClick={() => handleDeleteAlias(alias)}>
                                     Remove
                                 </Button>
                             </li>

@@ -1,4 +1,16 @@
-import { Album, Alias, AlbumGroup, DirectoryListing, FaceData, LoginPayload, Person, RegisterPayload, UntaggedFaceResult, User, AuthResponse } from './types';
+import {
+    Album,
+    Alias,
+    AlbumGroup,
+    DirectoryListing,
+    FaceData,
+    LoginPayload,
+    Person,
+    RegisterPayload,
+    UntaggedFaceResult,
+    User,
+    AuthResponse,
+} from './types';
 
 const getAuthToken = (): string | null => localStorage.getItem('authToken');
 
@@ -111,7 +123,11 @@ export const getAlbumDetails = async (identifier: string, signal?: AbortSignal):
     return (await response.json()) as Album;
 };
 
-export const getAlbumContents = async (identifier: string, params?: { offset?: number; limit?: number }, signal?: AbortSignal): Promise<DirectoryListing> => {
+export const getAlbumContents = async (
+    identifier: string,
+    params?: { offset?: number; limit?: number },
+    signal?: AbortSignal,
+): Promise<DirectoryListing> => {
     const encodedIdentifier = encodeURIComponent(identifier);
     const search = new URLSearchParams();
     if (params?.offset !== undefined) search.set('offset', String(params.offset));
@@ -282,7 +298,10 @@ export interface UntaggedFaceParams {
     group_by_image?: boolean;
 }
 
-export const getUntaggedFaces = async (params: UntaggedFaceParams = {}, signal?: AbortSignal): Promise<UntaggedFaceResult[]> => {
+export const getUntaggedFaces = async (
+    params: UntaggedFaceParams = {},
+    signal?: AbortSignal,
+): Promise<UntaggedFaceResult[]> => {
     const qs = new URLSearchParams();
     if (params.limit != null) qs.set('limit', String(params.limit));
     if (params.min_quality != null) qs.set('min_quality', String(params.min_quality));
@@ -305,7 +324,14 @@ export const deleteFace = async (faceId: number): Promise<void> => {
     await apiClient(`/faces/${faceId}`, { method: 'DELETE' });
 };
 
-export const suggestFace = async (faceId: number): Promise<{ suggested_person_id: number | null; suggested_person_name: string | null; suggestion_count: number; confidence: number }> => {
+export const suggestFace = async (
+    faceId: number,
+): Promise<{
+    suggested_person_id: number | null;
+    suggested_person_name: string | null;
+    suggestion_count: number;
+    confidence: number;
+}> => {
     const response = await apiClient(`/faces/${faceId}/suggest`);
     return await response.json();
 };

@@ -30,6 +30,3 @@ const DownloadDialog: React.FC<DownloadDialogProps> = ({ open, onClose, albumNam
 );
 
 export default DownloadDialog;
-
-
-

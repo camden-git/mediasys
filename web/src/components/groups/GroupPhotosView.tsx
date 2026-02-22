@@ -70,7 +70,9 @@ const GroupPhotosView: React.FC = () => {
         if (!sentinelRef.current) return;
         const el = sentinelRef.current;
         const observer = new IntersectionObserver(
-            (entries) => { if (entries[0].isIntersecting) void loadMore(); },
+            (entries) => {
+                if (entries[0].isIntersecting) void loadMore();
+            },
             { rootMargin: '0px 0px 300px 0px', threshold: 0.01 },
         );
         observer.observe(el);
@@ -119,11 +121,13 @@ const GroupPhotosView: React.FC = () => {
 
             <div className='mb-4 flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400'>
                 <PhotoIcon className='size-4' />
-                <span>{total} photo{total !== 1 ? 's' : ''}</span>
+                <span>
+                    {total} photo{total !== 1 ? 's' : ''}
+                </span>
                 {highlightsMode && <span className='text-yellow-500'>(4★+)</span>}
             </div>
 
-            {error && <p className='text-red-500 mb-4'>{error}</p>}
+            {error && <p className='mb-4 text-red-500'>{error}</p>}
 
             {!isLoading && imageFiles.length === 0 && !error && (
                 <p className='text-gray-500 dark:text-gray-400'>

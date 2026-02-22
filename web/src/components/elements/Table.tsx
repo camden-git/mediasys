@@ -102,7 +102,7 @@ export function TableCell({ className, children, ...props }: React.ComponentProp
             {...props}
             className={clsx(
                 className,
-                    'relative px-4 first:pl-[var(--gutter,theme(spacing.2))] last:pr-[var(--gutter,theme(spacing.2))]',
+                'relative px-4 first:pl-[var(--gutter,theme(spacing.2))] last:pr-[var(--gutter,theme(spacing.2))]',
                 !striped && 'border-b border-zinc-950/5 dark:border-white/5',
                 grid && 'border-l border-l-zinc-950/5 first:border-l-0 dark:border-l-white/5',
                 dense ? 'py-2.5' : 'py-4',

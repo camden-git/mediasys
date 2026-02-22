@@ -75,18 +75,24 @@ const MetadataPanel: React.FC<MetadataPanelProps> = ({ isOpen, onClose, image, f
                         <div className='space-y-4 text-sm'>
                             {/* File Info */}
                             <div className='border-b border-white/10 pb-4'>
-                                <p className='mb-1 text-xs font-semibold uppercase tracking-wider text-white/40'>File</p>
+                                <p className='mb-1 text-xs font-semibold tracking-wider text-white/40 uppercase'>
+                                    File
+                                </p>
                                 {image.width && image.height && (
-                                    <p className='text-white/70'>{image.width} × {image.height} px</p>
+                                    <p className='text-white/70'>
+                                        {image.width} × {image.height} px
+                                    </p>
                                 )}
                                 <p className='text-white/70'>{bytesToString(image.size)}</p>
-                                <p className='mt-1 break-all text-xs text-white/40'>{image.path}</p>
+                                <p className='mt-1 text-xs break-all text-white/40'>{image.path}</p>
                             </div>
 
                             {/* Date/Time */}
                             {(image.taken_at || image.mod_time) && (
                                 <div className='border-b border-white/10 pb-4'>
-                                    <p className='mb-1 text-xs font-semibold uppercase tracking-wider text-white/40'>Date</p>
+                                    <p className='mb-1 text-xs font-semibold tracking-wider text-white/40 uppercase'>
+                                        Date
+                                    </p>
                                     {image.taken_at && (
                                         <p className='text-white/70'>
                                             <span className='text-white/50'>Taken</span> {formatDate(image.taken_at)}
@@ -106,7 +112,9 @@ const MetadataPanel: React.FC<MetadataPanelProps> = ({ isOpen, onClose, image, f
                                 image.iso ||
                                 image.focal_length) && (
                                 <div className='border-b border-white/10 pb-4'>
-                                    <p className='mb-1 text-xs font-semibold uppercase tracking-wider text-white/40'>Camera</p>
+                                    <p className='mb-1 text-xs font-semibold tracking-wider text-white/40 uppercase'>
+                                        Camera
+                                    </p>
                                     {(image.camera_make || image.camera_model) && (
                                         <p className='font-medium text-white'>
                                             {[image.camera_make, image.camera_model].filter(Boolean).join(' ')}
@@ -135,8 +143,10 @@ const MetadataPanel: React.FC<MetadataPanelProps> = ({ isOpen, onClose, image, f
                             {/* Star Rating */}
                             {image.rating !== undefined && image.rating !== null && (
                                 <div className='border-b border-white/10 pb-4'>
-                                    <p className='mb-1 text-xs font-semibold uppercase tracking-wider text-white/40'>Rating</p>
-                                    <p className='text-yellow-400 text-base tracking-wide'>
+                                    <p className='mb-1 text-xs font-semibold tracking-wider text-white/40 uppercase'>
+                                        Rating
+                                    </p>
+                                    <p className='text-base tracking-wide text-yellow-400'>
                                         {'★'.repeat(image.rating)}
                                         <span className='text-white/20'>{'★'.repeat(5 - image.rating)}</span>
                                     </p>
@@ -146,7 +156,9 @@ const MetadataPanel: React.FC<MetadataPanelProps> = ({ isOpen, onClose, image, f
                             {/* Tags */}
                             {image.tags && image.tags.length > 0 && (
                                 <div className='border-b border-white/10 pb-4'>
-                                    <p className='mb-2 text-xs font-semibold uppercase tracking-wider text-white/40'>Tags</p>
+                                    <p className='mb-2 text-xs font-semibold tracking-wider text-white/40 uppercase'>
+                                        Tags
+                                    </p>
                                     <div className='flex flex-wrap gap-1'>
                                         {image.tags.map((t) => {
                                             const colorClass =
@@ -172,10 +184,15 @@ const MetadataPanel: React.FC<MetadataPanelProps> = ({ isOpen, onClose, image, f
                             {/* People */}
                             {people.length > 0 && (
                                 <div className='pb-4'>
-                                    <p className='mb-2 text-xs font-semibold uppercase tracking-wider text-white/40'>People</p>
+                                    <p className='mb-2 text-xs font-semibold tracking-wider text-white/40 uppercase'>
+                                        People
+                                    </p>
                                     <ul className='space-y-1'>
                                         {people.map((p) => (
-                                            <li key={p.name} className='flex items-center justify-between text-white/80'>
+                                            <li
+                                                key={p.name}
+                                                className='flex items-center justify-between text-white/80'
+                                            >
                                                 <span>{p.name}</span>
                                                 {p.count > 1 && (
                                                     <span className='text-xs text-white/40'>{p.count} faces</span>

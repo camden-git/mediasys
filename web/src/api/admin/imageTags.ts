@@ -10,12 +10,16 @@ export const getImageTags = async (imagePath: string): Promise<ImageTag[]> => {
 };
 
 export const addManualTag = async (imagePath: string, tagKey: string, tagValue: string): Promise<ImageTag[]> => {
-    const response = await http.post<ApiResponse<ImageTag[]>>('/admin/images/tags', {
-        tag_key: tagKey,
-        tag_value: tagValue,
-    }, {
-        params: { path: imagePath },
-    });
+    const response = await http.post<ApiResponse<ImageTag[]>>(
+        '/admin/images/tags',
+        {
+            tag_key: tagKey,
+            tag_value: tagValue,
+        },
+        {
+            params: { path: imagePath },
+        },
+    );
     return response.data.data;
 };
 

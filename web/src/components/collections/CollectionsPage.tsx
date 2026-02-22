@@ -38,7 +38,7 @@ const CollectionsPage: React.FC = () => {
                         <Link
                             key={c.id}
                             to={`/collections/${c.slug}`}
-                            className='group overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700 transition-shadow hover:shadow-md'
+                            className='group overflow-hidden rounded-lg border border-gray-200 transition-shadow hover:shadow-md dark:border-gray-700'
                         >
                             {c.banner_image_path && (
                                 <div className='aspect-video overflow-hidden bg-gray-100 dark:bg-gray-800'>
@@ -52,7 +52,7 @@ const CollectionsPage: React.FC = () => {
                             <div className='p-4'>
                                 <h2 className='font-semibold'>{c.name}</h2>
                                 {c.description && (
-                                    <p className='mt-1 text-sm text-gray-500 dark:text-gray-400 line-clamp-2'>
+                                    <p className='mt-1 line-clamp-2 text-sm text-gray-500 dark:text-gray-400'>
                                         {c.description}
                                     </p>
                                 )}
@@ -61,7 +61,7 @@ const CollectionsPage: React.FC = () => {
                                         {c.filters.slice(0, 3).map((f) => (
                                             <span
                                                 key={f.id}
-                                                className='rounded bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 font-mono text-xs text-gray-600 dark:text-gray-300'
+                                                className='rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs text-gray-600 dark:bg-gray-700 dark:text-gray-300'
                                             >
                                                 {f.tag_key}/{f.tag_value}
                                             </span>

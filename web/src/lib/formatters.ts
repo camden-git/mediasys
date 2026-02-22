@@ -97,19 +97,19 @@ function formatTimeRemaining(timeRemaining: ReturnType<typeof getTimeRemaining>)
  */
 function getUrgencyLevel(targetDate: string): 'normal' | 'warning' | 'critical' {
     const timeRemaining = getTimeRemaining(targetDate);
-    
+
     if (timeRemaining.isExpired) {
         return 'critical';
     }
 
     const totalHours = timeRemaining.total / (1000 * 60 * 60);
-    
+
     if (totalHours < 1) {
         return 'critical';
     } else if (totalHours < 24) {
         return 'warning';
     }
-    
+
     return 'normal';
 }
 

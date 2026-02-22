@@ -3,11 +3,7 @@ import { listUsers, getUser, updateUser } from '../admin/users';
 import { AdminUserResponse, UserUpdatePayload } from '../../types';
 import { PaginatedResult, PaginationRequest } from '../standard';
 
-const usersKey = (params?: PaginationRequest) => [
-    'users',
-    params?.page ?? 1,
-    params?.perPage ?? undefined,
-];
+const usersKey = (params?: PaginationRequest) => ['users', params?.page ?? 1, params?.perPage ?? undefined];
 
 export const useUsers = (params?: PaginationRequest) => {
     return useSWR<PaginatedResult<AdminUserResponse>>(usersKey(params), () => listUsers(params));

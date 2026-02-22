@@ -17,7 +17,12 @@ interface FaceTaggingPanelProps {
     face: UntaggedFaceResult;
     onTagged: (faceId: number) => void;
     onDeleted: (faceId: number) => void;
-    onSuggestionUpdated: (faceId: number, personId: number | null, personName: string | null, suggestionCount: number) => void;
+    onSuggestionUpdated: (
+        faceId: number,
+        personId: number | null,
+        personName: string | null,
+        suggestionCount: number,
+    ) => void;
 }
 
 const FaceTaggingPanel: React.FC<FaceTaggingPanelProps> = ({ face, onTagged, onDeleted, onSuggestionUpdated }) => {
@@ -43,7 +48,7 @@ const FaceTaggingPanel: React.FC<FaceTaggingPanelProps> = ({ face, onTagged, onD
         };
         window.addEventListener('keydown', handleKey);
         return () => window.removeEventListener('keydown', handleKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [face.suggested_person_id, busy]);
 
     const handleQueryChange = (q: string) => {
@@ -123,7 +128,12 @@ const FaceTaggingPanel: React.FC<FaceTaggingPanelProps> = ({ face, onTagged, onD
         setError(null);
         try {
             const result = await suggestFace(face.face_id);
-            onSuggestionUpdated(face.face_id, result.suggested_person_id, result.suggested_person_name, result.suggestion_count);
+            onSuggestionUpdated(
+                face.face_id,
+                result.suggested_person_id,
+                result.suggested_person_name,
+                result.suggestion_count,
+            );
         } catch (e: any) {
             setError(e.message);
         } finally {
@@ -196,10 +206,16 @@ const FaceTaggingPanel: React.FC<FaceTaggingPanelProps> = ({ face, onTagged, onD
                         ) : (
                             <ComboboxOption value={opt}>
                                 <Avatar
-                                    src={(opt as Person).key_photo_face_id ? getPersonKeyPhotoUrl((opt as Person).id) : undefined}
+                                    src={
+                                        (opt as Person).key_photo_face_id
+                                            ? getPersonKeyPhotoUrl((opt as Person).id)
+                                            : undefined
+                                    }
                                     initials={(opt as Person).primary_name[0]?.toUpperCase()}
                                     className='rounded'
-                                    style={{ backgroundColor: `hsl(${((opt as Person).id * 137.508) % 360}, 55%, 40%)` }}
+                                    style={{
+                                        backgroundColor: `hsl(${((opt as Person).id * 137.508) % 360}, 55%, 40%)`,
+                                    }}
                                     alt=''
                                 />
                                 <ComboboxLabel>{(opt as Person).primary_name}</ComboboxLabel>
@@ -229,15 +245,16 @@ const FaceTaggingPanel: React.FC<FaceTaggingPanelProps> = ({ face, onTagged, onD
 
             {/* Toggle / Recalculate / Delete row */}
             <div className='flex gap-2'>
-                <Button
-                    plain
-                    onClick={() => setShowNewPerson((v) => !v)}
-                    className='flex-1 text-xs'
-                    disabled={busy}
-                >
+                <Button plain onClick={() => setShowNewPerson((v) => !v)} className='flex-1 text-xs' disabled={busy}>
                     {showNewPerson ? 'Cancel' : 'New person…'}
                 </Button>
-                <Button plain onClick={handleRecalculate} className='text-xs' disabled={busy} title='Recalculate suggestion using updated face embeddings'>
+                <Button
+                    plain
+                    onClick={handleRecalculate}
+                    className='text-xs'
+                    disabled={busy}
+                    title='Recalculate suggestion using updated face embeddings'
+                >
                     Recalculate
                 </Button>
                 <Button plain onClick={handleDelete} className='text-xs text-red-600' disabled={busy}>
