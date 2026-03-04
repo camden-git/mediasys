@@ -1,13 +1,9 @@
-import { useStoreActions } from '../store/hooks';
+import { useUIStore } from '../store/useUIStore';
 
 export const useFlash = () => {
-    const addFlash = useStoreActions((actions: any) => actions.ui.addFlash);
-    const clearFlashes = useStoreActions((actions: any) => actions.ui.clearFlashes);
-    const clearAndAddHttpError = useStoreActions((actions: any) => actions.ui.clearAndAddHttpError);
+    const addFlash = useUIStore((s) => s.addFlash);
+    const clearFlashes = useUIStore((s) => s.clearFlashes);
+    const clearAndAddHttpError = useUIStore((s) => s.clearAndAddHttpError);
 
-    return {
-        addFlash,
-        clearFlashes,
-        clearAndAddHttpError,
-    };
+    return { addFlash, clearFlashes, clearAndAddHttpError };
 };

@@ -1,30 +1,22 @@
-import { useStoreState, useStoreActions } from './hooks';
+import { useAlbumContextStore, useAlbumId, useAlbumName, useAlbumSlug, useAlbumData } from './useAlbumContextStore';
 import { AdminAlbumResponse } from '../api/admin/albums';
 
 export const useAlbumContext = () => {
-    const album = useStoreState((state) => state.albumContext.data);
-    const isLoading = useStoreState((state) => state.albumContext.isLoading);
-    const error = useStoreState((state) => state.albumContext.error);
-
-    const setAlbum = useStoreActions((actions) => actions.albumContext.setAlbum);
-    const setIsLoading = useStoreActions((actions) => actions.albumContext.setIsLoading);
-    const setError = useStoreActions((actions) => actions.albumContext.setError);
-    const clearAlbum = useStoreActions((actions) => actions.albumContext.clearAlbum);
+    const album = useAlbumContextStore((s) => s.data);
+    const setAlbum = useAlbumContextStore((s) => s.setAlbum);
+    const clearAlbum = useAlbumContextStore((s) => s.clearAlbum);
 
     return {
         album,
-        isLoading,
-        error,
         setAlbum,
-        setIsLoading,
-        setError,
         clearAlbum,
+        // Legacy compatibility
+        isLoading: false,
+        error: null as string | null,
+        setIsLoading: (_: boolean) => {},
+        setError: (_: string | null) => {},
     };
 };
 
-// convenience hooks for specific album properties - these are guaranteed to be non-null
-// when used in components rendered by the router
-export const useAlbumId = (): number => useStoreState((state) => state.albumContext.data!.id);
-export const useAlbumName = (): string => useStoreState((state) => state.albumContext.data!.name);
-export const useAlbumSlug = (): string => useStoreState((state) => state.albumContext.data!.slug);
-export const useAlbumData = (): AdminAlbumResponse => useStoreState((state) => state.albumContext.data!);
+export { useAlbumId, useAlbumName, useAlbumSlug, useAlbumData };
+export type { AdminAlbumResponse };

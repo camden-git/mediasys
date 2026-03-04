@@ -1,13 +1,14 @@
-import { useStoreActions, useStoreState } from '../../../../store/hooks';
+import { useAlbumContextStore } from '../../../../store/useAlbumContextStore';
+import { useUIStore } from '../../../../store/useUIStore';
 import HeaderedContent from '../../../elements/HeaderedContent.tsx';
 import { addAlbumBanner, deleteAlbumBanner, getAlbum, reorderAlbumBanners } from '../../../../api/admin/albums';
 import { BannerManager } from '../../shared/BannerManager';
 
 export function BannerUpload() {
-    const albumId = useStoreState((state) => state.albumContext.data!.id);
-    const banners = useStoreState((state) => state.albumContext.data?.banners ?? []);
-    const { addFlash } = useStoreActions((actions) => actions.ui);
-    const { setAlbum } = useStoreActions((actions) => actions.albumContext);
+    const albumId = useAlbumContextStore((s) => s.data!.id);
+    const banners = useAlbumContextStore((s) => s.data?.banners ?? []);
+    const addFlash = useUIStore((s) => s.addFlash);
+    const setAlbum = useAlbumContextStore((s) => s.setAlbum);
 
     const refreshAlbum = async () => {
         setAlbum(await getAlbum(albumId));

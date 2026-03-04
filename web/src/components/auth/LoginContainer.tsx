@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Turnstile } from '@marsidev/react-turnstile';
-import { useStoreActions, useStoreState } from '../../store/hooks';
+import { useAuthStore } from '../../store/useAuthStore';
 import { useNavigate } from 'react-router-dom';
 import { Heading } from '../elements/Heading.tsx';
 import FormikFieldComponent from '../elements/FormikField.tsx';
@@ -18,8 +18,8 @@ export const LoginContainer: React.FC = () => {
     const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
     const siteKey = (import.meta as any).env.VITE_TURNSTILE_SITE_KEY as string | undefined;
 
-    const login = useStoreActions((actions: any) => actions.auth.login);
-    const isAuthenticated = useStoreState((state: any) => state.auth.isAuthenticated);
+    const login = useAuthStore((s) => s.login);
+    const isAuthenticated = useAuthStore((s) => s.isAuthenticated());
     const navigate = useNavigate();
     const { clearFlashes, clearAndAddHttpError } = useFlash();
 

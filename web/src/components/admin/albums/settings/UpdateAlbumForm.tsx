@@ -1,6 +1,7 @@
 import { Formik, Form } from 'formik';
 import * as Yup from 'yup';
-import { useStoreActions, useStoreState } from '../../../../store/hooks';
+import { useAlbumContextStore } from '../../../../store/useAlbumContextStore';
+import { useUIStore } from '../../../../store/useUIStore';
 import { UpdateAlbumPayload, updateAlbum as updateAlbumAPI } from '../../../../api/admin/albums';
 import { Field, FieldGroup, Label, Description } from '../../../elements/Fieldset';
 import { Checkbox } from '../../../elements/Checkbox';
@@ -19,10 +20,10 @@ const validationSchema = Yup.object({
 });
 
 export function UpdateAlbumForm() {
-    const album = useStoreState((state) => state.albumContext.data!);
-    const albumId = useStoreState((state) => state.albumContext.data!.id);
-    const { addFlash } = useStoreActions((actions) => actions.ui);
-    const { setAlbum } = useStoreActions((actions) => actions.albumContext);
+    const album = useAlbumContextStore((s) => s.data!);
+    const albumId = useAlbumContextStore((s) => s.data!.id);
+    const addFlash = useUIStore((s) => s.addFlash);
+    const setAlbum = useAlbumContextStore((s) => s.setAlbum);
 
     const initialValues: UpdateAlbumPayload = {
         name: album.name,

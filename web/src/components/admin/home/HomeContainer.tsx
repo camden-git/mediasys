@@ -1,13 +1,19 @@
 import React from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { useStoreActions, useStoreState } from 'easy-peasy';
+import { useAuthStore } from '../../../store/useAuthStore';
 import PageContentBlock from '../../elements/PageContentBlock.tsx';
 import { Can } from '../../elements/Can.tsx';
 
 const HomeContainer: React.FC = () => {
-    const user = useStoreState((state: any) => state.auth.user);
-    const effectivePermissions = useStoreState((state: any) => state.auth.currentUserPermissions);
-    const logout = useStoreActions((actions: any) => actions.auth.logout);
+    const user = useAuthStore((s) => s.user);
+    const effectivePermissions = React.useMemo(() => {
+        if (!user) return [];
+        const perms = new Set<string>();
+        user.global_permissions?.forEach((p) => perms.add(p));
+        user.roles?.forEach((role) => role.global_permissions?.forEach((p) => perms.add(p)));
+        return Array.from(perms);
+    }, [user]);
+    const logout = useAuthStore((s) => s.logout);
     const navigate = useNavigate();
 
     const handleLogout = () => {

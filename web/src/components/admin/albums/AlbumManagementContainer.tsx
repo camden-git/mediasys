@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { useAlbums } from '../../../api/swr/useAlbums';
+import { useAdminAlbums } from '../../../api/query/useAlbums';
 import { Button } from '../../elements/Button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../elements/Table';
 import LoadingSpinner from '../../elements/LoadingSpinner';
@@ -12,7 +12,7 @@ import { Heading } from '../../elements/Heading';
 import { Text } from '../../elements/Text';
 
 const AlbumManagementContainer: React.FC = () => {
-    const { albums, isLoading, error } = useAlbums();
+    const { albums, isLoading, error } = useAdminAlbums();
 
     if (isLoading) {
         return (

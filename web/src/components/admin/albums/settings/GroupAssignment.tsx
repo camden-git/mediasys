@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { useStoreActions, useStoreState } from '../../../../store/hooks';
+import { useAlbumContextStore } from '../../../../store/useAlbumContextStore';
+import { useUIStore } from '../../../../store/useUIStore';
 import { Button } from '../../../elements/Button';
 import HeaderedContent from '../../../elements/HeaderedContent.tsx';
 import { Field, Label, Description } from '../../../elements/Fieldset';
@@ -8,10 +9,10 @@ import { listGroups, setAlbumGroup } from '../../../../api/admin/groups';
 import { AlbumGroup } from '../../../../types';
 
 export function GroupAssignment() {
-    const album = useStoreState((state) => state.albumContext.data!);
+    const album = useAlbumContextStore((s) => s.data!);
     const albumId = album.id;
-    const { addFlash } = useStoreActions((actions) => actions.ui);
-    const { setAlbum } = useStoreActions((actions) => actions.albumContext);
+    const addFlash = useUIStore((s) => s.addFlash);
+    const setAlbum = useAlbumContextStore((s) => s.setAlbum);
 
     const [groups, setGroups] = useState<AlbumGroup[]>([]);
     const [selectedGroupId, setSelectedGroupId] = useState<string>(album.group_id?.toString() ?? '');

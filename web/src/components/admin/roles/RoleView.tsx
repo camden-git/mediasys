@@ -7,8 +7,8 @@ import ContentBlock from '../../elements/PageContentBlock.tsx';
 import { Button } from '../../elements/Button';
 import { Can } from '../../elements/Can';
 import EditRoleForm from './EditRoleForm';
-import { useRole } from '../../../api/swr/useRoles';
-import { useUsers } from '../../../api/swr/useUsers';
+import { useRole } from '../../../api/query/useRoles';
+import { useUsers } from '../../../api/query/useUsers';
 import { useFlash } from '../../../hooks/useFlash';
 import FlashMessageRender from '../../elements/FlashMessageRender';
 import { getRoleUsers, addUserToRole, removeUserFromRole } from '../../../api/admin/roles';
@@ -24,7 +24,7 @@ const RoleView: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const roleId = id ? parseInt(id, 10) : 0;
 
-    const { data: role, error, isValidating } = useRole(roleId);
+    const { data: role, error, isFetching: isValidating } = useRole(roleId);
     const { data: allUsersResult } = useUsers({ perPage: 500 });
     const allUsers = allUsersResult?.items ?? [];
     const { addFlash, clearFlashes, clearAndAddHttpError } = useFlash();

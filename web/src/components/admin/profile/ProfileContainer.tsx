@@ -1,14 +1,15 @@
 import React from 'react';
 import { Formik, Form } from 'formik';
 import * as Yup from 'yup';
-import { useStoreActions, useStoreState } from '../../../store/hooks';
+import { useAuthStore } from '../../../store/useAuthStore';
+import { useUIStore } from '../../../store/useUIStore';
 import { updateProfile } from '../../../api/auth';
 import { FieldGroup } from '../../elements/Fieldset';
 import HeaderedContent from '../../elements/HeaderedContent';
 import FormikFieldComponent from '../../elements/FormikField';
 import FlashMessageRender from '../../elements/FlashMessageRender';
 import { UnsavedChangesBar } from '../../elements/UnsavedChangesBar';
-import { AuthenticatedUser } from '../../../store/authModel';
+import { AuthenticatedUser } from '../../../store/useAuthStore';
 
 const profileInfoSchema = Yup.object({
     first_name: Yup.string().required('First name is required'),
@@ -25,9 +26,9 @@ const changePasswordSchema = Yup.object({
 });
 
 const ProfileContainer: React.FC = () => {
-    const user = useStoreState((state) => state.auth.user);
-    const { setUser } = useStoreActions((actions) => actions.auth);
-    const { addFlash } = useStoreActions((actions) => actions.ui);
+    const user = useAuthStore((s) => s.user);
+    const setUser = useAuthStore((s) => s.setUser);
+    const addFlash = useUIStore((s) => s.addFlash);
 
     if (!user) return null;
 

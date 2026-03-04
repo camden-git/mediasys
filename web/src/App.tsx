@@ -1,6 +1,6 @@
 import React, { Suspense, useEffect } from 'react';
 import { Routes, Route, BrowserRouter } from 'react-router-dom';
-import { useStoreActions } from './store/hooks';
+import { useAuthStore } from './store/useAuthStore';
 import ProgressBar from './components/elements/ProgressBar';
 
 const IndexRouter = React.lazy(() => import('./routes/IndexRouter'));
@@ -16,7 +16,7 @@ const PersonView = React.lazy(() => import('./components/people/PersonView'));
 const CollectionRouter = React.lazy(() => import('./routes/CollectionRouter'));
 
 function App() {
-    const initializeAuth = useStoreActions((actions: any) => actions.auth.initializeAuth);
+    const initializeAuth = useAuthStore((s) => s.initializeAuth);
 
     useEffect(() => {
         initializeAuth();

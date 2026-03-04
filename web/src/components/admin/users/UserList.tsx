@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Button } from '../../elements/Button';
 import { Can } from '../../elements/Can';
 import CreateUserForm from './CreateUserForm';
-import { useUsers } from '../../../api/swr/useUsers';
+import { useUsers } from '../../../api/query/useUsers';
 import { useFlash } from '../../../hooks/useFlash';
 import FlashMessageRender from '../../elements/FlashMessageRender';
 import LoadingSpinner from '../../elements/LoadingSpinner';
@@ -17,7 +17,7 @@ const UserList: React.FC = () => {
     const [page, setPage] = useState(1);
     const perPage = DEFAULT_PER_PAGE;
 
-    const { data: userResult, error, isValidating } = useUsers({ page, perPage });
+    const { data: userResult, error, isFetching } = useUsers({ page, perPage });
     const { clearFlashes, clearAndAddHttpError } = useFlash();
     const [isCreateModalOpen, setCreateModalOpen] = useState(false);
 
@@ -38,7 +38,7 @@ const UserList: React.FC = () => {
         }
     }, [pagination, page]);
 
-    if (!userResult || (error && isValidating)) {
+    if (!userResult || (error && isFetching)) {
         return <LoadingSpinner />;
     }
 

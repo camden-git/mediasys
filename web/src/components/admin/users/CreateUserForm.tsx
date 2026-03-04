@@ -9,8 +9,9 @@ import * as Yup from 'yup';
 import { Role, UserCreatePayload } from '../../../types';
 import { createUser } from '../../../api/admin/users';
 import { useFlash } from '../../../hooks/useFlash';
-import { useRoles } from '../../../api/swr/useRoles';
-import { useSWRConfig } from 'swr';
+import { useRoles } from '../../../api/query/useRoles';
+import { useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '../../../lib/queryKeys';
 
 const UserCreationSchema = Yup.object().shape({
     username: Yup.string().required('Username is required.'),
@@ -28,7 +29,7 @@ interface CreateUserFormProps {
 const CreateUserForm: React.FC<CreateUserFormProps> = ({ isOpen, onClose }) => {
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    const { mutate } = useSWRConfig();
+    const queryClient = useQueryClient();
     const { addFlash, clearFlashes } = useFlash();
     const { data: rolesResult } = useRoles({ perPage: 100 });
     const roles = rolesResult?.items ?? [];
@@ -54,8 +55,7 @@ const CreateUserForm: React.FC<CreateUserFormProps> = ({ isOpen, onClose }) => {
 
                     try {
                         await createUser(values);
-
-                        mutate((key) => Array.isArray(key) && key[0] === 'users');
+                        queryClient.invalidateQueries({ queryKey: queryKeys.users.all() });
 
                         addFlash({
                             key: 'users',

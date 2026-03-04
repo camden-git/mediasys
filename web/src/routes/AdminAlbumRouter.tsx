@@ -8,7 +8,6 @@ import { Sidebar, SidebarBody, SidebarItem, SidebarSection } from '../components
 import AlbumView from '../components/admin/albums/AlbumView.tsx';
 import AlbumSubusersPage from '../components/admin/albums/AlbumSubusersPage.tsx';
 import { Can } from '../components/elements/Can.tsx';
-import { useAlbums } from '../api/swr/useAlbums';
 import LoadingSpinner from '../components/elements/LoadingSpinner';
 import {
     Dropdown,
@@ -19,8 +18,10 @@ import {
     DropdownMenu,
 } from '../components/elements/Dropdown.tsx';
 import { ChevronDownIcon, Cog8ToothIcon } from '@heroicons/react/16/solid';
-import { useStoreState, useStoreActions } from '../store/hooks';
-import { getAlbumBySlug } from '../api/admin/albums';
+import { useAlbumContextStore } from '../store/useAlbumContextStore';
+import { useQuery } from '@tanstack/react-query';
+import { getAlbumBySlug, listAlbums } from '../api/admin/albums';
+import { queryKeys } from '../lib/queryKeys';
 import OverviewContainer from '../components/admin/albums/overview/OverviewContainer.tsx';
 import { SettingsContainer } from '../components/admin/albums/settings/SettingsContainer.tsx';
 import AlbumFaceTaggingContainer from '../components/admin/albums/faces/AlbumFaceTaggingContainer.tsx';
@@ -34,38 +35,32 @@ export interface AdminAlbumRouteDefinition {
 
 const AdminAlbumRouter: React.FC = () => {
     const { slug } = useParams<{ slug: string }>();
-    const { albums } = useAlbums();
-    const album = useStoreState((state) => state.albumContext.data);
-    const isLoading = useStoreState((state) => state.albumContext.isLoading);
-    const error = useStoreState((state) => state.albumContext.error);
-    const setAlbum = useStoreActions((actions) => actions.albumContext.setAlbum);
-    const setIsLoading = useStoreActions((actions) => actions.albumContext.setIsLoading);
-    const setError = useStoreActions((actions) => actions.albumContext.setError);
-    const clearAlbum = useStoreActions((actions) => actions.albumContext.clearAlbum);
-    const albumName = useStoreState((state) => state.albumContext.data?.name);
+    const setAlbum = useAlbumContextStore((s) => s.setAlbum);
+    const clearAlbum = useAlbumContextStore((s) => s.clearAlbum);
+    const albumContext = useAlbumContextStore((s) => s.data);
+    const albumName = albumContext?.name;
+
+    const { data: albumsData } = useQuery({
+        queryKey: queryKeys.albums.list(),
+        queryFn: listAlbums,
+    });
+    const albums = albumsData ?? [];
+
+    const { data, isLoading, error } = useQuery({
+        queryKey: queryKeys.albums.bySlug(slug!),
+        queryFn: () => getAlbumBySlug(slug!),
+        enabled: !!slug,
+    });
 
     useEffect(() => {
-        if (slug) {
-            setIsLoading(true);
-            setError(null);
+        if (data) setAlbum(data);
+    }, [data, setAlbum]);
 
-            getAlbumBySlug(slug)
-                .then((albumData) => {
-                    setAlbum(albumData);
-                })
-                .catch((err) => {
-                    setError(err.response?.data?.error || 'Failed to load album');
-                    console.error('Failed to load album:', err);
-                })
-                .finally(() => {
-                    setIsLoading(false);
-                });
-        } else {
-            clearAlbum();
-        }
-    }, [slug, setAlbum, setIsLoading, setError, clearAlbum]);
+    useEffect(() => {
+        return () => clearAlbum();
+    }, [slug, clearAlbum]);
 
-    if (isLoading || (!album && !error)) {
+    if (isLoading || (!data && !error) || !albumContext) {
         return (
             <div className='flex h-64 items-center justify-center'>
                 <LoadingSpinner />
@@ -74,7 +69,7 @@ const AdminAlbumRouter: React.FC = () => {
     }
 
     if (error) {
-        return <div className='text-center text-red-600'>Error loading album: {error}</div>;
+        return <div className='text-center text-red-600'>Error loading album: {(error as Error).message}</div>;
     }
 
     const navItems: AdminAlbumRouteDefinition[] = [

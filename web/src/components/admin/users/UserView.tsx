@@ -7,7 +7,7 @@ import ContentBlock from '../../elements/PageContentBlock.tsx';
 import { Button } from '../../elements/Button';
 import { Can } from '../../elements/Can';
 import EditUserForm from './EditUserForm';
-import { useUser } from '../../../api/swr/useUsers';
+import { useUser } from '../../../api/query/useUsers';
 import { useFlash } from '../../../hooks/useFlash';
 import FlashMessageRender from '../../elements/FlashMessageRender';
 import LoadingSpinner from '../../elements/LoadingSpinner';
@@ -16,7 +16,7 @@ const UserView: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const userId = id ? parseInt(id, 10) : 0;
 
-    const { data: user, error, isValidating } = useUser(userId);
+    const { data: user, error, isFetching } = useUser(userId);
     const { clearFlashes, clearAndAddHttpError } = useFlash();
     const [isEditModalOpen, setEditModalOpen] = useState(false);
 
@@ -29,7 +29,7 @@ const UserView: React.FC = () => {
         clearAndAddHttpError({ error, key: 'user-view' });
     }, [error, clearFlashes, clearAndAddHttpError]);
 
-    if (!user || (error && isValidating)) {
+    if (!user || (error && isFetching)) {
         return <LoadingSpinner />;
     }
 

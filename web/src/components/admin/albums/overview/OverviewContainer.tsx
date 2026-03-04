@@ -1,5 +1,5 @@
 import React from 'react';
-import { useStoreState } from '../../../../store/hooks.ts';
+import { useAlbumContextStore } from '../../../../store/useAlbumContextStore';
 import { getBannerUrl } from '../../../../api.ts';
 import { Heading } from '../../../elements/Heading.tsx';
 import { CameraIcon, MapPinIcon, PhotoIcon } from '@heroicons/react/16/solid';
@@ -15,7 +15,7 @@ const REQUIRED_TASKS = ['thumbnail', 'metadata', 'detection'];
 const TOTAL_TASKS = REQUIRED_TASKS.length;
 
 const OverviewContainer: React.FC = () => {
-    const album = useStoreState((state) => state.albumContext.data!);
+    const album = useAlbumContextStore((s) => s.data!);
     type ItemState = {
         path: string;
         uploading?: boolean;

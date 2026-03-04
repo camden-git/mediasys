@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useStoreActions } from '../../store/hooks';
+import { useAuthStore } from '../../store/useAuthStore';
 import { useNavigate } from 'react-router-dom';
 import { Heading } from '../elements/Heading.tsx';
 import FormikFieldComponent from '../elements/FormikField.tsx';
@@ -15,7 +15,7 @@ export const RegisterForm: React.FC = () => {
     const [isRegistering, setIsRegistering] = useState(false);
     const [registrationSuccess, setRegistrationSuccess] = useState(false);
 
-    const register = useStoreActions((actions: any) => actions.auth.register);
+    const register = useAuthStore((s) => s.register);
     const navigate = useNavigate();
     const { clearFlashes, addFlash, clearAndAddHttpError } = useFlash();
 

@@ -4,7 +4,7 @@ import { Heading } from '../../elements/Heading.tsx';
 import PageContentBlock from '../../elements/PageContentBlock.tsx';
 import { Can } from '../../elements/Can.tsx';
 import LoadingSpinner from '../../elements/LoadingSpinner.tsx';
-import { useInviteCodes } from '../../../api/swr/useInviteCodes';
+import { useInviteCodes } from '../../../api/query/useInviteCodes';
 import { useFlash } from '../../../hooks/useFlash';
 import FlashMessageRender from '../../elements/FlashMessageRender.tsx';
 import { Text, TextLink } from '../../elements/Text.tsx';
@@ -15,7 +15,7 @@ import { PaginationControls } from '../../elements/PaginationControls';
 const InviteCodeManagementContainer: React.FC = () => {
     const [page, setPage] = useState(1);
     const perPage = 25;
-    const { data: inviteCodesResult, error, isValidating } = useInviteCodes({ page, perPage });
+    const { data: inviteCodesResult, error, isFetching } = useInviteCodes({ page, perPage });
     const { clearFlashes, clearAndAddHttpError } = useFlash();
 
     useEffect(() => {
@@ -36,7 +36,7 @@ const InviteCodeManagementContainer: React.FC = () => {
         }
     }, [pagination, page]);
 
-    if (!inviteCodesResult || (error && isValidating)) {
+    if (!inviteCodesResult || (error && isFetching)) {
         return <LoadingSpinner />;
     }
 

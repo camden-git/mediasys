@@ -2,8 +2,10 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Formik, Form } from 'formik';
 import * as Yup from 'yup';
-import { useStoreActions } from '../../../store/hooks';
-import { CreateAlbumPayload } from '../../../api/admin/albums';
+import { CreateAlbumPayload, createAlbum as createAlbumAPI } from '../../../api/admin/albums';
+import { useUIStore } from '../../../store/useUIStore';
+import { useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '../../../lib/queryKeys';
 import { Button } from '../../elements/Button';
 import { Input } from '../../elements/Input';
 import { Field, FieldGroup, Label, Description, ErrorMessage } from '../../elements/Fieldset';
@@ -25,8 +27,8 @@ const validationSchema = Yup.object({
 
 const CreateAlbumForm: React.FC = () => {
     const navigate = useNavigate();
-    const { createAlbum } = useStoreActions((actions) => actions.adminAlbums);
-    const { addFlash } = useStoreActions((actions) => actions.ui);
+    const addFlash = useUIStore((s) => s.addFlash);
+    const queryClient = useQueryClient();
 
     const initialValues: CreateAlbumPayload = {
         name: '',
@@ -49,14 +51,16 @@ const CreateAlbumForm: React.FC = () => {
                 initialValues={initialValues}
                 validationSchema={validationSchema}
                 onSubmit={async (values, { setSubmitting }) => {
-                    createAlbum({
-                        payload: values,
-                        addFlash,
-                        onSuccess: () => {
-                            navigate('/admin/albums');
-                        },
-                    });
-                    setSubmitting(false);
+                    try {
+                        await createAlbumAPI(values);
+                        queryClient.invalidateQueries({ queryKey: queryKeys.albums.all() });
+                        addFlash({ key: 'album-created', type: 'success', title: 'Created', message: 'Album created successfully' });
+                        navigate('/admin/albums');
+                    } catch (err: any) {
+                        addFlash({ key: 'album-created-error', type: 'error', title: 'Error', message: err.message || 'Failed to create album' });
+                    } finally {
+                        setSubmitting(false);
+                    }
                 }}
             >
                 {({

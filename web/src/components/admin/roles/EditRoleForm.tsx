@@ -9,10 +9,11 @@ import * as Yup from 'yup';
 import { AdminRoleResponse, RoleUpdatePayload } from '../../../types';
 import { updateRole } from '../../../api/admin/roles';
 import { useFlash } from '../../../hooks/useFlash';
-import { usePermissionDefinitions } from '../../../api/swr/useRoles';
-import { useAlbums } from '../../../api/swr/useAlbums';
+import { usePermissionDefinitions } from '../../../api/query/useRoles';
+import { useAdminAlbums } from '../../../api/query/useAlbums';
 import { Select } from '../../elements/Select.tsx';
-import { useSWRConfig } from 'swr';
+import { useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '../../../lib/queryKeys';
 
 const RoleUpdateSchema = Yup.object().shape({
     name: Yup.string().required('Role name is required.'),
@@ -37,9 +38,9 @@ const EditRoleForm: React.FC<EditRoleFormProps> = ({ isOpen, onClose, role }) =>
     const [permissionFilter, setPermissionFilter] = useState('');
 
     const { addFlash, clearFlashes } = useFlash();
-    const { mutate } = useSWRConfig();
+    const queryClient = useQueryClient();
     const { data: permissionDefinitions } = usePermissionDefinitions();
-    const { albums, isLoading: isLoadingAlbums, error: albumError } = useAlbums();
+    const { albums, isLoading: isLoadingAlbums, error: albumError } = useAdminAlbums();
 
     useEffect(() => {
         if (!isOpen) {
@@ -98,8 +99,7 @@ const EditRoleForm: React.FC<EditRoleFormProps> = ({ isOpen, onClose, role }) =>
 
                     try {
                         await updateRole(role.id, values);
-
-                        mutate((key) => Array.isArray(key) && key[0] === 'roles');
+                        queryClient.invalidateQueries({ queryKey: queryKeys.roles.all() });
 
                         addFlash({
                             key: 'role-edit',

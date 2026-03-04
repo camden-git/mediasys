@@ -7,8 +7,8 @@ import { Input } from '../../elements/Input';
 import { Formik, Form, ErrorMessage } from 'formik';
 import * as Yup from 'yup';
 import { AdminUserResponse, Role, UserUpdatePayload } from '../../../types';
-import { updateUserMutation } from '../../../api/swr/useUsers';
-import { useRoles } from '../../../api/swr/useRoles';
+import { useUpdateUser } from '../../../api/query/useUsers';
+import { useRoles } from '../../../api/query/useRoles';
 import { useFlash } from '../../../hooks/useFlash';
 
 const UserUpdateSchema = Yup.object().shape({
@@ -30,6 +30,7 @@ const EditUserForm: React.FC<EditUserFormProps> = ({ isOpen, onClose, user }) =>
     const { data: rolesResult, isLoading: isLoadingRoles } = useRoles({ perPage: 100 });
     const roles = rolesResult?.items ?? [];
     const { clearFlashes, clearAndAddHttpError, addFlash } = useFlash();
+    const updateUser = useUpdateUser();
 
     const [formMessage, setFormMessage] = useState<string | null>(null);
 
@@ -60,7 +61,7 @@ const EditUserForm: React.FC<EditUserFormProps> = ({ isOpen, onClose, user }) =>
                     setIsSubmitting(true);
 
                     try {
-                        await updateUserMutation(user.id, values);
+                        await updateUser.mutateAsync({ id: user.id, payload: values });
 
                         addFlash({
                             key: 'edit-user-form',

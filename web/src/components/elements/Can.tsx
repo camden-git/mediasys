@@ -1,5 +1,5 @@
 import React from 'react';
-import { useStoreState } from '../../store/hooks';
+import { useAuthStore } from '../../store/useAuthStore';
 
 interface CanProps {
     permission: string | string[] | null;
@@ -21,7 +21,14 @@ const matchesPermission = (perm: string, userPerms: string[]): boolean => {
 };
 
 export const Can: React.FC<CanProps> = ({ permission, requireAll = false, children }) => {
-    const currentUserPermissions = useStoreState((state: any) => state.auth.currentUserPermissions);
+    const user = useAuthStore((s) => s.user);
+    const currentUserPermissions = React.useMemo(() => {
+        if (!user) return [];
+        const perms = new Set<string>();
+        user.global_permissions?.forEach((p) => perms.add(p));
+        user.roles?.forEach((role) => role.global_permissions?.forEach((p) => perms.add(p)));
+        return Array.from(perms);
+    }, [user]);
 
     // null or undefined means "allow access"
     if (permission == null) {

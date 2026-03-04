@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, Fragment } from 'react';
-import { useStoreActions, useStoreState } from '../../store/hooks';
+import { useProgressStore } from '../../store/useProgressStore';
 import { randomInt } from '../../lib/helpers';
 import { Transition } from '@headlessui/react';
 
@@ -9,9 +9,9 @@ const ProgressBar: React.FC = () => {
     const interval = useRef<Timer>(null) as React.MutableRefObject<Timer>;
     const timeout = useRef<Timer>(null) as React.MutableRefObject<Timer>;
     const [visible, setVisible] = useState(false);
-    const progress = useStoreState((state) => state.progress.progress);
-    const continuous = useStoreState((state) => state.progress.continuous);
-    const setProgress = useStoreActions((actions) => actions.progress.setProgress);
+    const progress = useProgressStore((s) => s.progress);
+    const continuous = useProgressStore((s) => s.continuous);
+    const setProgress = useProgressStore((s) => s.setProgress);
 
     useEffect(() => {
         return () => {

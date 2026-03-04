@@ -1,11 +1,10 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { Routes, Route, useParams } from 'react-router-dom';
-import { useStoreActions, useStoreState, Actions, State } from 'easy-peasy';
-import { StoreModel } from '../store';
 import AlbumView from '../components/album/AlbumView.tsx';
 import { StackedLayout } from '../components/elements/StackedLayout.tsx';
 import { Navbar, NavbarItem, NavbarSection } from '../components/elements/Navbar.tsx';
 import { Sidebar, SidebarBody, SidebarItem, SidebarSection } from '../components/elements/Sidebar.tsx';
+import { usePublicAlbumDetail } from '../api/query/usePublicAlbum';
 
 const navItems = [{ label: 'Index', url: '/' }];
 
@@ -13,17 +12,7 @@ const AlbumRouter: React.FC = () => {
     const params = useParams<{ identifier: string }>();
     const identifier = params.identifier;
 
-    const fetchAlbumDataAndContents = useStoreActions(
-        (actions: Actions<StoreModel>) => actions.contentView.fetchAlbumDataAndContents,
-    );
-
-    const isLoading = useStoreState((state: State<StoreModel>) => state.contentView.isLoading);
-
-    useEffect(() => {
-        if (identifier) {
-            fetchAlbumDataAndContents(identifier);
-        }
-    }, [identifier, fetchAlbumDataAndContents]);
+    const { isLoading } = usePublicAlbumDetail(identifier);
 
     if (identifier && isLoading) {
         return (

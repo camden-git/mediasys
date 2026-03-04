@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useStoreActions, useStoreState } from '../../../../store/hooks';
+import { useAlbumContextStore } from '../../../../store/useAlbumContextStore';
+import { useUIStore } from '../../../../store/useUIStore';
+import { deleteAlbum as deleteAlbumAPI } from '../../../../api/admin/albums';
 import { Button } from '../../../elements/Button';
 import { Dialog, DialogActions, DialogBody, DialogDescription, DialogTitle } from '../../../elements/Dialog';
 import { Field, Label } from '../../../elements/Fieldset';
@@ -8,23 +10,27 @@ import { Input } from '../../../elements/Input';
 import HeaderedContent from '../../../elements/HeaderedContent';
 
 export function DeleteAlbumSection() {
-    const album = useStoreState((state) => state.albumContext.data!);
-    const { deleteAlbum } = useStoreActions((actions) => actions.adminAlbums);
-    const { addFlash } = useStoreActions((actions) => actions.ui);
+    const album = useAlbumContextStore((s) => s.data!);
+    const addFlash = useUIStore((s) => s.addFlash);
     const navigate = useNavigate();
 
     const [isOpen, setIsOpen] = useState(false);
     const [confirmName, setConfirmName] = useState('');
 
-    const handleDelete = () => {
-        deleteAlbum({
-            id: album.id,
-            addFlash,
-            onSuccess: () => {
-                setIsOpen(false);
-                navigate('/admin/albums');
-            },
-        });
+    const handleDelete = async () => {
+        try {
+            await deleteAlbumAPI(album.id);
+            addFlash({ key: 'album-deleted', type: 'success', title: 'Deleted', message: 'Album deleted successfully' });
+            setIsOpen(false);
+            navigate('/admin/albums');
+        } catch (err: any) {
+            addFlash({
+                key: 'album-deleted-error',
+                type: 'error',
+                title: 'Error',
+                message: err.message || 'Failed to delete album',
+            });
+        }
     };
 
     const handleClose = () => {

@@ -8,13 +8,14 @@ import { AdminRoleResponse } from '../../../types';
 import { Button } from '../../elements/Button';
 import CreateRoleForm from './CreateRoleForm';
 import EditRoleForm from './EditRoleForm';
-import { useRoles } from '../../../api/swr/useRoles';
+import { useRoles } from '../../../api/query/useRoles';
 import { useFlash } from '../../../hooks/useFlash';
 import FlashMessageRender from '../../elements/FlashMessageRender';
 import { deleteRole } from '../../../api/admin/roles';
 import { Input } from '../../elements/Input';
 import { Text } from '../../elements/Text.tsx';
-import { mutate } from 'swr';
+import { useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '../../../lib/queryKeys';
 import { PaginationControls } from '../../elements/PaginationControls';
 import { Dropdown, DropdownButton, DropdownItem, DropdownMenu, DropdownSeparator } from '../../elements/Dropdown';
 import { EllipsisHorizontalIcon } from '@heroicons/react/20/solid';
@@ -25,7 +26,8 @@ const DEFAULT_PER_PAGE = 25;
 const RoleManagementContainer: React.FC = () => {
     const [page, setPage] = useState(1);
     const perPage = DEFAULT_PER_PAGE;
-    const { data: rolesResult, error, isValidating } = useRoles({ page, perPage });
+    const queryClient = useQueryClient();
+    const { data: rolesResult, error, isFetching } = useRoles({ page, perPage });
     const { clearFlashes, clearAndAddHttpError, addFlash } = useFlash();
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
@@ -57,7 +59,7 @@ const RoleManagementContainer: React.FC = () => {
         if (!roleForDelete) return;
         try {
             await deleteRole(roleForDelete.id);
-            mutate((key) => Array.isArray(key) && key[0] === 'roles');
+            queryClient.invalidateQueries({ queryKey: queryKeys.roles.all() });
             addFlash({
                 key: 'roles',
                 type: 'success',
@@ -88,7 +90,7 @@ const RoleManagementContainer: React.FC = () => {
         });
     }, [roles, searchQuery]);
 
-    if (!rolesResult || (error && isValidating)) {
+    if (!rolesResult || (error && isFetching)) {
         return <LoadingSpinner />;
     }
 

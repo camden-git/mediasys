@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Can } from '../../elements/Can';
-import { useAlbumUsers, useAvailableUsers } from '../../../api/swr/useAlbums';
+import { useAlbumUsers, useAvailableUsers } from '../../../api/query/useAlbums';
 import {
     addUserToAlbum,
     updateUserAlbumPermissions,
@@ -17,11 +17,11 @@ import { Select } from '../../elements/Select';
 import { Checkbox } from '../../elements/Checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../elements/Table';
 import LoadingSpinner from '../../elements/LoadingSpinner';
-import { usePermissionDefinitions } from '../../../api/swr/useRoles';
-import { useStoreState } from '../../../store/hooks';
+import { usePermissionDefinitions } from '../../../api/query/useRoles';
+import { useAlbumContextStore } from '../../../store/useAlbumContextStore';
 
 const AlbumSubusersPage: React.FC = () => {
-    const albumId = useStoreState((state) => state.albumContext.data!.id);
+    const albumId = useAlbumContextStore((s) => s.data!.id);
     const { addFlash } = useFlash();
 
     const {

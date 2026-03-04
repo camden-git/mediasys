@@ -1,5 +1,5 @@
 import React, { Fragment } from 'react';
-import { useStoreState } from '../../store/hooks';
+import { useUIStore } from '../../store/useUIStore';
 import Notification from './Notification.tsx';
 
 interface FlashMessageRenderProps {
@@ -8,7 +8,7 @@ interface FlashMessageRenderProps {
 }
 
 const FlashMessageRender: React.FC<FlashMessageRenderProps> = ({ byKey }) => {
-    const flashes = useStoreState((state) => state.ui.flashes);
+    const flashes = useUIStore((s) => s.flashes);
     const filteredFlashes = flashes.filter((flash) => flash.key === byKey);
 
     if (filteredFlashes.length === 0) {

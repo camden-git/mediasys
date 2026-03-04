@@ -1,8 +1,13 @@
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
-import store from '../store';
 import { ApiErrorDetail, ApiErrorResponse, httpErrorToHuman } from './standard';
 
 const getAuthToken = (): string | null => localStorage.getItem('authToken');
+
+type ProgressCbs = { onStart: () => void; onComplete: () => void };
+let _progressCbs: ProgressCbs | null = null;
+export const registerProgressCallbacks = (cb: ProgressCbs) => {
+    _progressCbs = cb;
+};
 
 const http: AxiosInstance = axios.create({
     timeout: 20000,
@@ -13,7 +18,7 @@ const http: AxiosInstance = axios.create({
 
 http.interceptors.request.use((req) => {
     if (!req.url?.endsWith('/resources')) {
-        store.getActions().progress.startContinuous();
+        _progressCbs?.onStart();
     }
 
     // Add auth token if available
@@ -43,13 +48,13 @@ http.interceptors.request.use((req) => {
 http.interceptors.response.use(
     (resp: AxiosResponse) => {
         if (!resp.request?.url?.endsWith('/resources')) {
-            store.getActions().progress.setComplete();
+            _progressCbs?.onComplete();
         }
 
         return resp;
     },
     (error) => {
-        store.getActions().progress.setComplete();
+        _progressCbs?.onComplete();
 
         const parsePayload = (payload: unknown): ApiErrorResponse | undefined => {
             if (!payload) {

@@ -1,12 +1,12 @@
 import React from 'react';
-import { useStoreState } from '../../../store/hooks';
+import { useAlbumContextStore } from '../../../store/useAlbumContextStore';
 import { formatDistanceToNow } from 'date-fns';
 import { getBannerUrl } from '../../../api.ts';
 import { Heading } from '../../elements/Heading';
 import { DescriptionList, DescriptionItem } from '../../elements/DescriptionList';
 
 const AlbumView: React.FC = () => {
-    const album = useStoreState((state) => state.albumContext.data!);
+    const album = useAlbumContextStore((s) => s.data!);
 
     return (
         <div className='space-y-8'>

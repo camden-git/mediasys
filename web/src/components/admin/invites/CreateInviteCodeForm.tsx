@@ -8,7 +8,8 @@ import FormikFieldComponent from '../../elements/FormikField.tsx';
 import { useFlash } from '../../../hooks/useFlash';
 import { createInviteCode } from '../../../api/admin/inviteCodes';
 import { InviteCodeCreatePayload } from '../../../types';
-import { useSWRConfig } from 'swr';
+import { useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '../../../lib/queryKeys';
 
 interface CreateInviteCodeFormValues {
     expiresAt: string;
@@ -41,7 +42,7 @@ export const CreateInviteCodeForm: React.FC = () => {
     const [isOpen, setIsOpen] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const { addFlash, clearFlashes } = useFlash();
-    const { mutate } = useSWRConfig();
+    const queryClient = useQueryClient();
 
     return (
         <>
@@ -71,7 +72,7 @@ export const CreateInviteCodeForm: React.FC = () => {
 
                         try {
                             await createInviteCode(payload);
-                            mutate((key) => Array.isArray(key) && key[0] === 'invite-codes');
+                            queryClient.invalidateQueries({ queryKey: queryKeys.inviteCodes.all() });
                             resetForm();
                             setIsOpen(false);
                         } catch (error: any) {
