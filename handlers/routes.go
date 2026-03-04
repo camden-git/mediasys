@@ -74,6 +74,7 @@ func RegisterRoutes(r chi.Router, deps AppDependencies) {
 					return AuthMiddleware(deps.UserRepo, next)
 				})
 				r.Get("/me", deps.AuthHandler.CurrentUser)
+				r.Put("/me", deps.AuthHandler.UpdateProfile)
 			})
 		})
 

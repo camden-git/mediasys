@@ -221,6 +221,62 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"message": "User registered successfully. Please log in."})
 }
 
+type UpdateProfilePayload struct {
+	FirstName       *string `json:"first_name"`
+	LastName        *string `json:"last_name"`
+	Username        *string `json:"username"`
+	CurrentPassword *string `json:"current_password"`
+	NewPassword     *string `json:"new_password"`
+}
+
+func (h *AuthHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
+	user, ok := r.Context().Value(UserContextKey).(*models.User)
+	if !ok || user == nil {
+		WriteAPIError(w, http.StatusInternalServerError, "ContextUserError", "User not found in context")
+		return
+	}
+
+	var payload UpdateProfilePayload
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		WriteAPIError(w, http.StatusBadRequest, "InvalidPayloadException", "Invalid request payload")
+		return
+	}
+
+	if payload.NewPassword != nil {
+		if payload.CurrentPassword == nil || *payload.CurrentPassword == "" {
+			WriteAPIError(w, http.StatusBadRequest, "ValidationException", "current_password is required to set a new password")
+			return
+		}
+		if !user.CheckPassword(*payload.CurrentPassword) {
+			WriteAPIError(w, http.StatusUnauthorized, "DisplayException", "Current password is incorrect")
+			return
+		}
+		if err := user.SetPassword(*payload.NewPassword); err != nil {
+			WriteAPIError(w, http.StatusInternalServerError, "HashingException", "Failed to hash new password")
+			return
+		}
+	}
+
+	if payload.FirstName != nil {
+		user.FirstName = *payload.FirstName
+	}
+	if payload.LastName != nil {
+		user.LastName = *payload.LastName
+	}
+	if payload.Username != nil {
+		user.Username = *payload.Username
+	}
+
+	if err := h.UserRepo.Update(user); err != nil {
+		WriteAPIError(w, http.StatusInternalServerError, "PersistenceException", "Failed to update profile: "+err.Error())
+		return
+	}
+
+	userForResponse := *user
+	userForResponse.PasswordHash = ""
+	WriteAPIResponse(w, http.StatusOK, userForResponse)
+}
+
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Logged out successfully. Please discard your token."})

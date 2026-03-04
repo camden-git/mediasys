@@ -20,7 +20,7 @@ const AdminAlbumContentBlock: React.FC<AdminAlbumContentBlockProps> = ({
         if (title) {
             document.title = album.name + ' - ' + title;
         }
-    }, [title]);
+    }, [title, album.name]);
 
     return (
         <>

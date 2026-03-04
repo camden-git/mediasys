@@ -71,7 +71,7 @@ const apiClient = async (url: string, options: RequestInit = {}, signal?: AbortS
                     errorMessage = errorBody.message;
                 }
             }
-        } catch (_jsonErr) {
+        } catch {
             // Fallback: try text body
             try {
                 const text = await response.text();

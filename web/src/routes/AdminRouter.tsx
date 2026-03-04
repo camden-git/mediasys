@@ -18,6 +18,7 @@ import PersonAdminView from '../components/admin/people/PersonAdminView.tsx';
 import FaceTaggingContainer from '../components/admin/faces/FaceTaggingContainer.tsx';
 import GroupManagementContainer from '../components/admin/groups/GroupManagementContainer.tsx';
 import CollectionManagementContainer from '../components/admin/collections/CollectionManagementContainer.tsx';
+import ProfileContainer from '../components/admin/profile/ProfileContainer.tsx';
 
 export interface RouteDefinition {
     path: string;
@@ -111,6 +112,12 @@ const navItems: AdminRouteDefinition[] = [
         permission: 'collection.manage',
         name: 'Collections',
         component: CollectionManagementContainer,
+    },
+    {
+        path: 'profile',
+        permission: null,
+        name: 'Account',
+        component: ProfileContainer,
     },
 ];
 

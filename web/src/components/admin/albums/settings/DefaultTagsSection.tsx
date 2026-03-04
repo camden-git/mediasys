@@ -25,7 +25,7 @@ export function DefaultTagsSection() {
         try {
             const data = await getAlbumDefaultTags(id);
             setTags(data);
-        } catch (_) {
+        } catch {
             // silently ignore initial fetch errors
         }
     }, [id]);

@@ -41,7 +41,7 @@ function useContainLayout(
         const ro = new ResizeObserver(compute);
         ro.observe(el);
         return () => ro.disconnect();
-    }, [compute]);
+    }, [compute, containerRef]);
 
     return layout;
 }
@@ -115,7 +115,7 @@ const FaceLightboxModal: React.FC<FaceLightboxModalProps> = ({
             img2.src = fallback;
         };
         img.src = url;
-    }, [face?.face_id]);
+    }, [face]);
 
     // Keyboard navigation
     useEffect(() => {
@@ -223,7 +223,7 @@ const FaceLightboxModal: React.FC<FaceLightboxModalProps> = ({
                             <button
                                 onClick={(e) => {
                                     e.stopPropagation();
-                                    canPrev && onNavigate(currentIndex - 1);
+                                    if (canPrev) onNavigate(currentIndex - 1);
                                 }}
                                 disabled={!canPrev}
                                 className='pointer-events-auto flex h-12 w-10 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-sm transition-opacity hover:bg-black/60 disabled:opacity-0'
@@ -233,7 +233,7 @@ const FaceLightboxModal: React.FC<FaceLightboxModalProps> = ({
                             <button
                                 onClick={(e) => {
                                     e.stopPropagation();
-                                    canNext && onNavigate(currentIndex + 1);
+                                    if (canNext) onNavigate(currentIndex + 1);
                                 }}
                                 disabled={!canNext}
                                 className='pointer-events-auto flex h-12 w-10 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-sm transition-opacity hover:bg-black/60 disabled:opacity-0'

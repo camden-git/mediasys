@@ -327,11 +327,7 @@ const ImageLightbox: React.FC<ImageLightboxProps> = ({
                                         className='flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-white/20 focus:outline-none disabled:opacity-50'
                                         aria-label='Share image'
                                     >
-                                        {isSharing ? (
-                                            <LoadingSpinner />
-                                        ) : (
-                                            <ShareIcon className='h-5 w-5 shrink-0' />
-                                        )}
+                                        {isSharing ? <LoadingSpinner /> : <ShareIcon className='h-5 w-5 shrink-0' />}
                                         <span className='hidden sm:inline'>Share</span>
                                     </button>
                                 )}
@@ -352,7 +348,7 @@ const ImageLightbox: React.FC<ImageLightboxProps> = ({
                                 <button
                                     onClick={(e) => {
                                         e.stopPropagation();
-                                        onPrev && onPrev();
+                                        onPrev?.();
                                     }}
                                     disabled={!canPrev}
                                     className='pointer-events-auto flex h-12 w-10 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-sm transition-opacity hover:bg-black/60 disabled:opacity-0'
@@ -363,7 +359,7 @@ const ImageLightbox: React.FC<ImageLightboxProps> = ({
                                 <button
                                     onClick={(e) => {
                                         e.stopPropagation();
-                                        onNext && onNext();
+                                        onNext?.();
                                     }}
                                     disabled={!canNext}
                                     className='pointer-events-auto flex h-12 w-10 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-sm transition-opacity hover:bg-black/60 disabled:opacity-0'

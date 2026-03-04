@@ -66,12 +66,18 @@ const AlbumView: React.FC = () => {
 
     const folderPrefix = currentAlbum?.folder_path ? currentAlbum.folder_path.replace(/\/?$/, '/') : null;
 
-    const encodeImagePath = (path: string) => {
-        const stripped = (folderPrefix ? path.replace(folderPrefix, '') : path).replace(/^\//, '');
-        return stripped.split('/').map(encodeURIComponent).join('/');
-    };
+    const encodeImagePath = useCallback(
+        (path: string) => {
+            const stripped = (folderPrefix ? path.replace(folderPrefix, '') : path).replace(/^\//, '');
+            return stripped.split('/').map(encodeURIComponent).join('/');
+        },
+        [folderPrefix],
+    );
 
-    const normalizePath = (path: string) => (folderPrefix ? path.replace(folderPrefix, '') : path).replace(/^\//, '');
+    const normalizePath = useCallback(
+        (path: string) => (folderPrefix ? path.replace(folderPrefix, '') : path).replace(/^\//, ''),
+        [folderPrefix],
+    );
 
     const sentinelRef = useRef<HTMLDivElement | null>(null);
     const isFetchingMoreRef = useRef(false);
@@ -177,7 +183,17 @@ const AlbumView: React.FC = () => {
             navigate(`/album/${identifier}`, { replace: true });
         }
         // else: initial data not yet loaded, wait for next run
-    }, [imagePathFromUrl, imageFiles, selectedImage, canLoadMore, directoryListing, loadMore, navigate, identifier]);
+    }, [
+        imagePathFromUrl,
+        imageFiles,
+        selectedImage,
+        canLoadMore,
+        directoryListing,
+        loadMore,
+        navigate,
+        identifier,
+        normalizePath,
+    ]);
 
     useEffect(() => {
         if (!sentinelRef.current) return;
@@ -213,7 +229,7 @@ const AlbumView: React.FC = () => {
             setSelectedImage(image);
             navigate(`/album/${identifier}/image/${encodeImagePath(image.path)}`, { replace: false });
         },
-        [navigate, identifier],
+        [navigate, identifier, encodeImagePath],
     );
 
     const handleCloseLightbox = useCallback(() => {
@@ -237,7 +253,7 @@ const AlbumView: React.FC = () => {
             setSelectedImage(prev);
             navigate(`/album/${identifier}/image/${encodeImagePath(prev.path)}`, { replace: true });
         }
-    }, [canPrev, imageFiles, selectedIndex, navigate, identifier]);
+    }, [canPrev, imageFiles, selectedIndex, navigate, identifier, encodeImagePath]);
 
     const handleNextImage = useCallback(() => {
         if (selectedIndex < imageFiles.length - 1) {
@@ -248,7 +264,7 @@ const AlbumView: React.FC = () => {
             pendingAdvanceRef.current = true;
             void loadMore();
         }
-    }, [selectedIndex, imageFiles, canLoadMore, loadMore, navigate, identifier]);
+    }, [selectedIndex, imageFiles, canLoadMore, loadMore, navigate, identifier, encodeImagePath]);
 
     // Proactive preload: fetch next page when within 20 images of end
     useEffect(() => {
@@ -266,7 +282,7 @@ const AlbumView: React.FC = () => {
             setSelectedImage(nextImage);
             navigate(`/album/${identifier}/image/${encodeImagePath(nextImage.path)}`, { replace: true });
         }
-    }, [imageFiles.length, selectedIndex, imageFiles, navigate, identifier]);
+    }, [imageFiles.length, selectedIndex, imageFiles, navigate, identifier, encodeImagePath]);
 
     const handleDownloadZip = () => {
         if (!currentAlbum?.zip_path) {

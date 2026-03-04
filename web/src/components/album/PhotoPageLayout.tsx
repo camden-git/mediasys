@@ -57,7 +57,7 @@ const PhotoPageLayout: React.FC<PhotoPageLayoutProps> = ({
         if (!bannerUrls || bannerUrls.length <= 1) return;
         const t = setInterval(() => setActiveIdx((i) => (i + 1) % bannerUrls.length), 7000);
         return () => clearInterval(t);
-    }, [bannerUrls?.length]);
+    }, [bannerUrls]);
 
     // reset index when banner set changes (e.g. switching albums)
     useEffect(() => {

@@ -32,7 +32,7 @@ const RoleManagementContainer: React.FC = () => {
     const [roleForEdit, setRoleForEdit] = useState<AdminRoleResponse | null>(null);
     const [roleForDelete, setRoleForDelete] = useState<AdminRoleResponse | null>(null);
 
-    const roles = rolesResult?.items ?? [];
+    const roles = useMemo(() => rolesResult?.items ?? [], [rolesResult]);
     const pagination = rolesResult?.pagination;
     useEffect(() => {
         if (pagination && pagination.totalPages > 0 && page > pagination.totalPages) {

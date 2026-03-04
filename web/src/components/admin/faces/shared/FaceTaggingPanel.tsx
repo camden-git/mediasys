@@ -37,6 +37,19 @@ const FaceTaggingPanel: React.FC<FaceTaggingPanelProps> = ({ face, onTagged, onD
     const searchAbortRef = useRef<AbortController | null>(null);
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+    const handleAcceptSuggestion = async () => {
+        if (!face.suggested_person_id) return;
+        setBusy(true);
+        setError(null);
+        try {
+            await tagFace(face.face_id, face.suggested_person_id);
+            onTagged(face.face_id);
+        } catch (e: any) {
+            setError(e.message);
+            setBusy(false);
+        }
+    };
+
     useEffect(() => {
         const handleKey = (e: KeyboardEvent) => {
             if (e.key === 'a' && e.metaKey && !e.shiftKey && !e.altKey && !e.ctrlKey) {
@@ -92,19 +105,6 @@ const FaceTaggingPanel: React.FC<FaceTaggingPanelProps> = ({ face, onTagged, onD
         } catch (e: any) {
             setError(e.message);
             setComboValue(null);
-            setBusy(false);
-        }
-    };
-
-    const handleAcceptSuggestion = async () => {
-        if (!face.suggested_person_id) return;
-        setBusy(true);
-        setError(null);
-        try {
-            await tagFace(face.face_id, face.suggested_person_id);
-            onTagged(face.face_id);
-        } catch (e: any) {
-            setError(e.message);
             setBusy(false);
         }
     };
