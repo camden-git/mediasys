@@ -95,10 +95,6 @@ func (h *CollectionHandler) GetCollection(w http.ResponseWriter, r *http.Request
 		}
 		return
 	}
-	if !c.IsPublic {
-		WriteAPIError(w, http.StatusNotFound, "CollectionNotFound", "Collection not found")
-		return
-	}
 	setCacheHeaders(w, 60)
 	WriteAPIResponse(w, http.StatusOK, h.buildPublicResponse(c))
 }
@@ -116,11 +112,6 @@ func (h *CollectionHandler) GetCollectionPhotos(w http.ResponseWriter, r *http.R
 		}
 		return
 	}
-	if !c.IsPublic {
-		WriteAPIError(w, http.StatusNotFound, "CollectionNotFound", "Collection not found")
-		return
-	}
-
 	q := r.URL.Query()
 	offset := 0
 	limit := 120
