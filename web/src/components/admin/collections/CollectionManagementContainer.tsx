@@ -3,11 +3,10 @@ import { Heading } from '../../elements/Heading';
 import PageContentBlock from '../../elements/PageContentBlock.tsx';
 import LoadingSpinner from '../../elements/LoadingSpinner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../elements/Table';
-import { Collection } from '../../../types';
 import { Button } from '../../elements/Button';
 import CreateCollectionForm from './CreateCollectionForm';
 import EditCollectionForm from './EditCollectionForm';
-import { deleteCollection, listCollections } from '../../../api/admin/collections';
+import { AdminCollectionResponse, deleteCollection, listCollections } from '../../../api/admin/collections';
 import { useFlash } from '../../../hooks/useFlash';
 import FlashMessageRender from '../../elements/FlashMessageRender';
 import { Text } from '../../elements/Text.tsx';
@@ -16,12 +15,12 @@ import { EllipsisHorizontalIcon } from '@heroicons/react/20/solid';
 import { Dialog, DialogActions, DialogDescription, DialogTitle } from '../../elements/Dialog';
 
 const CollectionManagementContainer: React.FC = () => {
-    const [collections, setCollections] = useState<Collection[]>([]);
+    const [collections, setCollections] = useState<AdminCollectionResponse[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const { clearFlashes, clearAndAddHttpError, addFlash } = useFlash();
     const [showCreateModal, setShowCreateModal] = useState(false);
-    const [collectionForEdit, setCollectionForEdit] = useState<Collection | null>(null);
-    const [collectionForDelete, setCollectionForDelete] = useState<Collection | null>(null);
+    const [collectionForEdit, setCollectionForEdit] = useState<AdminCollectionResponse | null>(null);
+    const [collectionForDelete, setCollectionForDelete] = useState<AdminCollectionResponse | null>(null);
 
     const fetchCollections = useCallback(async () => {
         setIsLoading(true);

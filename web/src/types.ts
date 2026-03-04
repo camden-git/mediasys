@@ -55,6 +55,22 @@ export interface AlbumGroup {
     albums?: Album[];
 }
 
+export interface AlbumBanner {
+    id: number;
+    album_id: number;
+    image_path: string;
+    sort_order: number;
+    created_at: number;
+}
+
+export interface CollectionBanner {
+    id: number;
+    collection_id: number;
+    image_path: string;
+    sort_order: number;
+    created_at: number;
+}
+
 export interface Album {
     id: number;
     name: string;
@@ -62,7 +78,7 @@ export interface Album {
     description?: string;
     location?: string;
     folder_path: string;
-    banner_image_path?: string;
+    banners?: string[];
     zip_path?: string;
     zip_size?: number;
     zip_status: string;
@@ -99,6 +115,7 @@ export interface CollectionTagFilter {
     collection_id: number;
     tag_key: string;
     tag_value: string;
+    negate: boolean;
 }
 
 export interface Collection {
@@ -106,8 +123,10 @@ export interface Collection {
     name: string;
     slug: string;
     description?: string;
-    banner_image_path?: string;
+    banners?: string[];
     is_public: boolean;
+    inherit_banners_from_albums: boolean;
+    filter_match: string; // "all" | "any"
     created_at: number;
     updated_at: number;
     filters?: CollectionTagFilter[];

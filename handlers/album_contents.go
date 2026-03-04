@@ -19,10 +19,10 @@ func (ah *AlbumHandler) GetAlbumContents(w http.ResponseWriter, r *http.Request)
 	album, err := ah.getAlbumByIdentifier(identifier)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album not found"})
+			WriteAPIError(w, http.StatusNotFound, "AlbumNotFound", "Album not found")
 		} else {
 			log.Printf("Error getting album '%s' for contents: %v", identifier, err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve album information"})
+			WriteAPIError(w, http.StatusInternalServerError, "InternalError", "Failed to retrieve album information")
 		}
 		return
 	}
@@ -31,7 +31,7 @@ func (ah *AlbumHandler) GetAlbumContents(w http.ResponseWriter, r *http.Request)
 	albumFullPath = filepath.Clean(albumFullPath)
 	if !strings.HasPrefix(albumFullPath, ah.Cfg.RootDirectory) {
 		log.Printf("CRITICAL: Album ID %d (slug %s) folder path '%s' resolved outside root directory ('%s'). Aborting.", album.ID, album.Slug, album.FolderPath, albumFullPath)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Album configuration error"})
+		WriteAPIError(w, http.StatusInternalServerError, "InternalError", "Album configuration error")
 		return
 	}
 
@@ -59,12 +59,12 @@ func (ah *AlbumHandler) GetAlbumContents(w http.ResponseWriter, r *http.Request)
 	fileInfos, totalCount, err := listDirectoryContents(albumFullPath, "/"+album.FolderPath, ah.Cfg, ah.ImageRepo, ah.ThumbGen, ah.TagRepo, album.ID, album.SortOrder, offset, limit, minRating)
 	if err != nil {
 		if os.IsNotExist(err) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album folder not found on disk: " + album.FolderPath})
+			WriteAPIError(w, http.StatusNotFound, "AlbumFolderNotFound", "Album folder not found on disk: "+album.FolderPath)
 		} else if os.IsPermission(err) {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "Permission denied accessing album folder"})
+			WriteAPIError(w, http.StatusForbidden, "InternalError", "Permission denied accessing album folder")
 		} else {
 			log.Printf("Error listing contents for album %d/%s (path %s): %v", album.ID, album.Slug, albumFullPath, err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to list album contents"})
+			WriteAPIError(w, http.StatusInternalServerError, "InternalError", "Failed to list album contents")
 		}
 		return
 	}
@@ -77,5 +77,6 @@ func (ah *AlbumHandler) GetAlbumContents(w http.ResponseWriter, r *http.Request)
 		Limit:   limit,
 		HasMore: offset+len(fileInfos) < totalCount,
 	}
+	setCacheHeaders(w, 60)
 	writeJSON(w, http.StatusOK, listing)
 }

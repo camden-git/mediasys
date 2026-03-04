@@ -307,30 +307,54 @@ func listDirectoryContents(baseDirFullPath string, requestPathPrefix string, cfg
 		return nil, 0, fmt.Errorf("reading directory %s: %w", baseDirFullPath, err)
 	}
 
-	entriesWithInfo := make([]entryInfo, 0, len(dirEntries))
+	// First pass: stat entries and collect DB keys for batch image lookup
+	type rawEntry struct {
+		entry fs.DirEntry
+		info  fs.FileInfo
+		err   error
+		dbKey string // non-empty only for raster image files
+	}
+
+	rawEntries := make([]rawEntry, 0, len(dirEntries))
+	var imagePaths []string
 	for _, entry := range dirEntries {
 		entryFullPath := filepath.Join(baseDirFullPath, entry.Name())
 		info, statErr := os.Stat(entryFullPath)
-
-		var imgInfo *models.Image
-		// preload minimal metadata required for sorting if needed
+		var dbKey string
 		if statErr == nil && info != nil && !info.IsDir() && media.IsRasterImage(entry.Name()) {
-			// compute DB key relative to root
 			relFromRoot, relErr := filepath.Rel(cfg.RootDirectory, entryFullPath)
 			if relErr == nil {
-				dbKey := filepath.ToSlash(relFromRoot)
-				if imgRepo != nil {
-					if ii, getErr := imgRepo.GetByPath(dbKey); getErr == nil && ii != nil {
-						imgInfo = ii
-					}
-				}
+				dbKey = filepath.ToSlash(relFromRoot)
+				imagePaths = append(imagePaths, dbKey)
 			}
 		}
+		rawEntries = append(rawEntries, rawEntry{entry: entry, info: info, err: statErr, dbKey: dbKey})
+	}
 
+	// Batch fetch all image records in a single query (collapses N DB round-trips → 1)
+	imageMap := make(map[string]*models.Image, len(imagePaths))
+	if imgRepo != nil && len(imagePaths) > 0 {
+		imgs, fetchErr := imgRepo.GetImagesByPaths(imagePaths)
+		if fetchErr != nil {
+			log.Printf("WARNING: batch image fetch failed, individual lookups will be used: %v", fetchErr)
+		} else {
+			for i := range imgs {
+				imageMap[imgs[i].OriginalPath] = &imgs[i]
+			}
+		}
+	}
+
+	// Build entriesWithInfo with pre-fetched image data
+	entriesWithInfo := make([]entryInfo, 0, len(rawEntries))
+	for _, re := range rawEntries {
+		var imgInfo *models.Image
+		if re.dbKey != "" {
+			imgInfo = imageMap[re.dbKey] // nil when not yet in DB
+		}
 		entriesWithInfo = append(entriesWithInfo, entryInfo{
-			entry:     entry,
-			info:      info, // can be nil on error
-			err:       statErr,
+			entry:     re.entry,
+			info:      re.info,
+			err:       re.err,
 			imageInfo: imgInfo,
 		})
 	}

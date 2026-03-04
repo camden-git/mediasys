@@ -53,7 +53,7 @@ const AdvancedImageGrid: React.FC<AdvancedImageGridProps> = ({
     const debouncedCalculateLayout = useMemo(
         () =>
             debounce(calculateAndSetLayout, debounceDelay, {
-                leading: false,
+                leading: true,
                 trailing: true,
             }),
         [calculateAndSetLayout, debounceDelay],

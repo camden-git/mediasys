@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Dialog, DialogActions, DialogBody, DialogDescription, DialogTitle } from '../../elements/Dialog';
 import { Button } from '../../elements/Button';
-import { Field, FieldGroup, Label } from '../../elements/Fieldset';
+import { Field, Fieldset, FieldGroup, Label, Description, Legend } from '../../elements/Fieldset';
+import { RadioGroup, RadioField, Radio } from '../../elements/Radio';
 import { Input } from '../../elements/Input';
 import { Textarea } from '../../elements/Textarea';
 import { CheckboxField, Checkbox } from '../../elements/Checkbox';
@@ -22,7 +23,8 @@ const CreateCollectionForm: React.FC<CreateCollectionFormProps> = ({ isOpen, onC
     const [slug, setSlug] = useState('');
     const [description, setDescription] = useState('');
     const [isPublic, setIsPublic] = useState(true);
-    const [filters, setFilters] = useState<Array<{ tag_key: string; tag_value: string }>>([]);
+    const [filterMatch, setFilterMatch] = useState<'all' | 'any'>('all');
+    const [filters, setFilters] = useState<Array<{ tag_key: string; tag_value: string; negate: boolean }>>([]);
     const [isLoading, setIsLoading] = useState(false);
     const { clearFlashes, clearAndAddHttpError } = useFlash();
 
@@ -36,6 +38,7 @@ const CreateCollectionForm: React.FC<CreateCollectionFormProps> = ({ isOpen, onC
                 slug,
                 description: description || undefined,
                 is_public: isPublic,
+                filter_match: filterMatch,
             });
             if (filters.length > 0) {
                 await setCollectionFilters(created.id, filters);
@@ -45,6 +48,7 @@ const CreateCollectionForm: React.FC<CreateCollectionFormProps> = ({ isOpen, onC
             setName('');
             setSlug('');
             setDescription('');
+            setFilterMatch('all');
             setFilters([]);
             setIsPublic(true);
         } catch (error: any) {
@@ -103,6 +107,21 @@ const CreateCollectionForm: React.FC<CreateCollectionFormProps> = ({ isOpen, onC
                             />
                             <Label htmlFor='is-public'>Public (visible on the collections page)</Label>
                         </CheckboxField>
+                        <Fieldset>
+                            <Legend>Filter Mode</Legend>
+                            <RadioGroup value={filterMatch} onChange={(v) => setFilterMatch(v as 'all' | 'any')}>
+                                <RadioField>
+                                    <Radio value='all' disabled={isLoading} />
+                                    <Label>All (AND)</Label>
+                                    <Description>Image must satisfy every inclusion group.</Description>
+                                </RadioField>
+                                <RadioField>
+                                    <Radio value='any' disabled={isLoading} />
+                                    <Label>Any (OR)</Label>
+                                    <Description>Image must satisfy at least one inclusion group.</Description>
+                                </RadioField>
+                            </RadioGroup>
+                        </Fieldset>
                         <Field>
                             <Label>Tag Filters</Label>
                             <CollectionFiltersEditor filters={filters} onChange={setFilters} />

@@ -6,7 +6,7 @@ import { CheckboxField, Checkbox } from '../../elements/Checkbox';
 import { Input } from '../../elements/Input';
 import { Formik, Form, FieldArray, ErrorMessage } from 'formik';
 import * as Yup from 'yup';
-import { RoleCreatePayload, Album } from '../../../types';
+import { RoleCreatePayload } from '../../../types';
 import { createRole } from '../../../api/admin/roles';
 import { useFlash } from '../../../hooks/useFlash';
 import { usePermissionDefinitions } from '../../../api/swr/useRoles';
@@ -257,7 +257,7 @@ const CreateRoleForm: React.FC<CreateRoleFormProps> = ({ isOpen, onClose }) => {
                                                                 )}
                                                                 {!isLoadingAlbums &&
                                                                     !albumError &&
-                                                                    albums?.map((album: Album) => (
+                                                                    albums?.map((album) => (
                                                                         <option
                                                                             key={album.id}
                                                                             value={album.id.toString()}

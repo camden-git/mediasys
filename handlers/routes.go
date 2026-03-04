@@ -49,9 +49,10 @@ func RegisterRoutes(r chi.Router, deps AppDependencies) {
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	r.Use(middleware.Compress(5))
 	r.Use(middleware.Timeout(60 * time.Second))
 	r.Use(cors.New(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:5173", "http://localhost:4173", "http://127.0.0.1:5173", "http://127.0.0.1:4173"},
+		AllowedOrigins:   []string{"http://localhost:5173", "http://localhost:4173", "http://127.0.0.1:5173", "http://127.0.0.1:4173", "http://10.247.36.80:5173", "http://10.247.36.80:4173", "https://media.camdenrush.com"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "Content-Length"},
 		ExposedHeaders:   []string{"Link"},
@@ -203,7 +204,17 @@ func RegisterRoutes(r chi.Router, deps AppDependencies) {
 
 					r.With(func(next http.Handler) http.Handler {
 						return RequireGlobalPermission("album.edit.general", next)
-					}).Put("/banner", deps.AlbumHandler.UploadAlbumBanner)
+					}).Post("/banners", deps.AdminAlbumHandler.AddAlbumBanner)
+
+					r.Route("/banners/{bannerId}", func(r chi.Router) {
+						r.With(func(next http.Handler) http.Handler {
+							return RequireGlobalPermission("album.edit.general", next)
+						}).Delete("/", deps.AdminAlbumHandler.DeleteAlbumBanner)
+					})
+
+					r.With(func(next http.Handler) http.Handler {
+						return RequireGlobalPermission("album.edit.general", next)
+					}).Put("/banners/order", deps.AdminAlbumHandler.ReorderAlbumBanners)
 
 					r.With(func(next http.Handler) http.Handler {
 						return RequireGlobalPermission("album.edit.general", next)
@@ -339,7 +350,21 @@ func RegisterRoutes(r chi.Router, deps AppDependencies) {
 
 					r.With(func(next http.Handler) http.Handler {
 						return RequireGlobalPermission("collection.manage", next)
-					}).Put("/banner", deps.AdminCollectionHandler.UploadCollectionBanner)
+					}).Post("/banners", deps.AdminCollectionHandler.AddCollectionBanner)
+
+					r.Route("/banners/{bannerId}", func(r chi.Router) {
+						r.With(func(next http.Handler) http.Handler {
+							return RequireGlobalPermission("collection.manage", next)
+						}).Delete("/", deps.AdminCollectionHandler.DeleteCollectionBanner)
+					})
+
+					r.With(func(next http.Handler) http.Handler {
+						return RequireGlobalPermission("collection.manage", next)
+					}).Put("/banners/order", deps.AdminCollectionHandler.ReorderCollectionBanners)
+
+					r.With(func(next http.Handler) http.Handler {
+						return RequireGlobalPermission("collection.manage", next)
+					}).Put("/banners/inherit", deps.AdminCollectionHandler.SetCollectionInheritBanners)
 
 					r.With(func(next http.Handler) http.Handler {
 						return RequireGlobalPermission("collection.manage", next)

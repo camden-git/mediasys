@@ -6,7 +6,7 @@ import { CheckboxField, Checkbox } from '../../elements/Checkbox';
 import { Input } from '../../elements/Input';
 import { Formik, Form, FieldArray, ErrorMessage } from 'formik';
 import * as Yup from 'yup';
-import { AdminRoleResponse, Album, RoleUpdatePayload } from '../../../types';
+import { AdminRoleResponse, RoleUpdatePayload } from '../../../types';
 import { updateRole } from '../../../api/admin/roles';
 import { useFlash } from '../../../hooks/useFlash';
 import { usePermissionDefinitions } from '../../../api/swr/useRoles';
@@ -259,7 +259,7 @@ const EditRoleForm: React.FC<EditRoleFormProps> = ({ isOpen, onClose, role }) =>
                                                                 )}
                                                                 {!isLoadingAlbums &&
                                                                     !albumError &&
-                                                                    albums?.map((album: Album) => (
+                                                                    albums?.map((album) => (
                                                                         <option
                                                                             key={album.id}
                                                                             value={album.id.toString()}

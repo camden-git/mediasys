@@ -8,7 +8,7 @@ import { Button } from '../../elements/Button';
 import { Input } from '../../elements/Input';
 import { Field, FieldGroup, Label, Description, ErrorMessage } from '../../elements/Fieldset';
 import { Checkbox } from '../../elements/Checkbox';
-import { Select } from '../../elements/Select';
+import { Listbox, ListboxLabel, ListboxOption } from '../../elements/Listbox';
 
 const validationSchema = Yup.object({
     name: Yup.string().required('Name is required').min(1, 'Name must be at least 1 character'),
@@ -34,7 +34,7 @@ const CreateAlbumForm: React.FC = () => {
         folder_path: '',
         description: '',
         location: '',
-        sort_order: 'filename_asc',
+        sort_order: 'date_asc',
         is_hidden: false,
     };
 
@@ -154,43 +154,63 @@ const CreateAlbumForm: React.FC = () => {
                             </Field>
 
                             <Field>
-                                <Label htmlFor='sort_order'>Sort Order</Label>
-                                <Select
-                                    id='sort_order'
-                                    name='sort_order'
-                                    value={values.sort_order}
-                                    onChange={handleChange}
-                                    onBlur={handleBlur}
-                                >
-                                    <optgroup label='Filename'>
-                                        <option value='filename_asc'>Filename (A–Z)</option>
-                                        <option value='filename_desc'>Filename (Z–A)</option>
-                                        <option value='filename_nat'>Filename (Natural)</option>
-                                    </optgroup>
-                                    <optgroup label='Capture Date'>
-                                        <option value='date_desc'>Capture Date (Newest First)</option>
-                                        <option value='date_asc'>Capture Date (Oldest First)</option>
-                                    </optgroup>
-                                    <optgroup label='File'>
-                                        <option value='mod_time_desc'>Modified Time (Newest First)</option>
-                                        <option value='mod_time_asc'>Modified Time (Oldest First)</option>
-                                        <option value='file_size_desc'>File Size (Largest First)</option>
-                                        <option value='file_size_asc'>File Size (Smallest First)</option>
-                                    </optgroup>
-                                    <optgroup label='Camera Settings'>
-                                        <option value='iso_asc'>ISO (Low to High)</option>
-                                        <option value='iso_desc'>ISO (High to Low)</option>
-                                        <option value='aperture_asc'>Aperture (Small to Large)</option>
-                                        <option value='aperture_desc'>Aperture (Large to Small)</option>
-                                        <option value='shutter_speed_desc'>Shutter Speed (Fast to Slow)</option>
-                                        <option value='shutter_speed_asc'>Shutter Speed (Slow to Fast)</option>
-                                        <option value='focal_length_asc'>Focal Length (Short to Long)</option>
-                                        <option value='focal_length_desc'>Focal Length (Long to Short)</option>
-                                    </optgroup>
-                                    <optgroup label='Equipment'>
-                                        <option value='camera_asc'>Camera (A–Z)</option>
-                                    </optgroup>
-                                </Select>
+                                <Label>Sort Order</Label>
+                                <Listbox value={values.sort_order} onChange={(val) => setFieldValue('sort_order', val)}>
+                                    <ListboxOption value='filename_asc'>
+                                        <ListboxLabel>Filename (A–Z)</ListboxLabel>
+                                    </ListboxOption>
+                                    <ListboxOption value='filename_desc'>
+                                        <ListboxLabel>Filename (Z–A)</ListboxLabel>
+                                    </ListboxOption>
+                                    <ListboxOption value='filename_nat'>
+                                        <ListboxLabel>Filename (Natural)</ListboxLabel>
+                                    </ListboxOption>
+                                    <ListboxOption value='date_asc'>
+                                        <ListboxLabel>Capture Date (Oldest First)</ListboxLabel>
+                                    </ListboxOption>
+                                    <ListboxOption value='date_desc'>
+                                        <ListboxLabel>Capture Date (Newest First)</ListboxLabel>
+                                    </ListboxOption>
+                                    <ListboxOption value='mod_time_desc'>
+                                        <ListboxLabel>Modified Time (Newest First)</ListboxLabel>
+                                    </ListboxOption>
+                                    <ListboxOption value='mod_time_asc'>
+                                        <ListboxLabel>Modified Time (Oldest First)</ListboxLabel>
+                                    </ListboxOption>
+                                    <ListboxOption value='file_size_desc'>
+                                        <ListboxLabel>File Size (Largest First)</ListboxLabel>
+                                    </ListboxOption>
+                                    <ListboxOption value='file_size_asc'>
+                                        <ListboxLabel>File Size (Smallest First)</ListboxLabel>
+                                    </ListboxOption>
+                                    <ListboxOption value='iso_asc'>
+                                        <ListboxLabel>ISO (Low to High)</ListboxLabel>
+                                    </ListboxOption>
+                                    <ListboxOption value='iso_desc'>
+                                        <ListboxLabel>ISO (High to Low)</ListboxLabel>
+                                    </ListboxOption>
+                                    <ListboxOption value='aperture_asc'>
+                                        <ListboxLabel>Aperture (Small to Large)</ListboxLabel>
+                                    </ListboxOption>
+                                    <ListboxOption value='aperture_desc'>
+                                        <ListboxLabel>Aperture (Large to Small)</ListboxLabel>
+                                    </ListboxOption>
+                                    <ListboxOption value='shutter_speed_desc'>
+                                        <ListboxLabel>Shutter Speed (Fast to Slow)</ListboxLabel>
+                                    </ListboxOption>
+                                    <ListboxOption value='shutter_speed_asc'>
+                                        <ListboxLabel>Shutter Speed (Slow to Fast)</ListboxLabel>
+                                    </ListboxOption>
+                                    <ListboxOption value='focal_length_asc'>
+                                        <ListboxLabel>Focal Length (Short to Long)</ListboxLabel>
+                                    </ListboxOption>
+                                    <ListboxOption value='focal_length_desc'>
+                                        <ListboxLabel>Focal Length (Long to Short)</ListboxLabel>
+                                    </ListboxOption>
+                                    <ListboxOption value='camera_asc'>
+                                        <ListboxLabel>Camera (A–Z)</ListboxLabel>
+                                    </ListboxOption>
+                                </Listbox>
                                 <Description>How images in this album should be sorted</Description>
                             </Field>
 

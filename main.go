@@ -132,7 +132,11 @@ func main() {
 		AdminUserHandler:       handlers.NewAdminUserHandler(userRepo, roleRepo),
 		AdminRoleHandler:       handlers.NewAdminRoleHandler(roleRepo),
 		AdminInviteCodeHandler: handlers.NewAdminInviteCodeHandler(inviteCodeRepo),
-		AdminAlbumHandler:      handlers.NewAdminAlbumHandler(albumRepo, imageRepo, userRepo, roleRepo, imageTagRepo, cfg, imageProcessor, hub),
+		AdminAlbumHandler: func() *handlers.AdminAlbumHandler {
+			h := handlers.NewAdminAlbumHandler(albumRepo, imageRepo, userRepo, roleRepo, imageTagRepo, cfg, imageProcessor, hub)
+			h.MediaProcessor = mediaProcessor
+			return h
+		}(),
 		AdminAlbumUserHandler:  handlers.NewAdminAlbumUserHandler(userRepo, albumRepo),
 		AdminAlbumGroupHandler: handlers.NewAdminAlbumGroupHandler(albumGroupRepo, cfg, mediaProcessor),
 		AlbumGroupHandler:      &handlers.AlbumGroupHandler{GroupRepo: albumGroupRepo, ImageRepo: imageRepo},

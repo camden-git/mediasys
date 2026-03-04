@@ -36,11 +36,11 @@ export function DeleteAlbumSection() {
         <HeaderedContent
             title='Danger Zone'
             description='Permanently delete this album and all associated data. This action cannot be undone.'
+            className={'mt-16 pb-8'}
         >
             <Button color='red' onClick={() => setIsOpen(true)}>
                 Delete Album
             </Button>
-
             <Dialog open={isOpen} onClose={handleClose}>
                 <DialogTitle>Delete Album</DialogTitle>
                 <DialogDescription>

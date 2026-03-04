@@ -48,15 +48,18 @@ const AlbumView: React.FC = () => {
                 </DescriptionList>
             </div>
 
-            {album.banner_image_path && (
+            {album.banners && album.banners.length > 0 && (
                 <div>
-                    <Heading level={2}>Banner Image</Heading>
-                    <div className='mt-4'>
-                        <img
-                            src={getBannerUrl(album.banner_image_path)}
-                            alt={`Banner for ${album.name}`}
-                            className='h-auto max-w-md rounded-lg'
-                        />
+                    <Heading level={2}>Banner Images</Heading>
+                    <div className='mt-4 flex flex-wrap gap-3'>
+                        {album.banners.map((b) => (
+                            <img
+                                key={b.id}
+                                src={getBannerUrl(b.image_path)}
+                                alt={`Banner for ${album.name}`}
+                                className='h-auto max-w-xs rounded-lg'
+                            />
+                        ))}
                     </div>
                 </div>
             )}

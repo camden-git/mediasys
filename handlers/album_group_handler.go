@@ -27,6 +27,7 @@ func (h *AlbumGroupHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
 		WriteAPIError(w, http.StatusInternalServerError, "GroupListError", "Failed to retrieve album groups")
 		return
 	}
+	setCacheHeaders(w, 60)
 	WriteAPIResponse(w, http.StatusOK, groups)
 }
 
@@ -47,6 +48,7 @@ func (h *AlbumGroupHandler) GetGroup(w http.ResponseWriter, r *http.Request) {
 		WriteAPIError(w, http.StatusNotFound, "GroupNotFound", "Album group not found")
 		return
 	}
+	setCacheHeaders(w, 60)
 	WriteAPIResponse(w, http.StatusOK, group)
 }
 
@@ -154,5 +156,6 @@ func (h *AlbumGroupHandler) GetGroupPhotos(w http.ResponseWriter, r *http.Reques
 		Limit:   limit,
 		HasMore: offset+len(files) < total,
 	}
+	setCacheHeaders(w, 60)
 	WriteAPIResponse(w, http.StatusOK, listing)
 }

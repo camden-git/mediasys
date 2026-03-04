@@ -2,6 +2,7 @@ package repository
 
 import (
 	"fmt"
+	"path"
 	"time"
 
 	"github.com/camden-git/mediasysbackend/models"
@@ -53,13 +54,14 @@ func (r *GormCollectionRepository) ListAll() ([]models.Collection, error) {
 	return collections, err
 }
 
-func (r *GormCollectionRepository) Update(collectionID uint, name, slug string, description *string, isPublic bool) error {
+func (r *GormCollectionRepository) Update(collectionID uint, name, slug string, description *string, isPublic bool, filterMatch string) error {
 	updates := map[string]interface{}{
-		"name":        name,
-		"slug":        slug,
-		"description": description,
-		"is_public":   isPublic,
-		"updated_at":  time.Now().Unix(),
+		"name":         name,
+		"slug":         slug,
+		"description":  description,
+		"is_public":    isPublic,
+		"filter_match": filterMatch,
+		"updated_at":   time.Now().Unix(),
 	}
 	return r.db.Model(&models.Collection{}).Where("id = ?", collectionID).Updates(updates).Error
 }
@@ -68,11 +70,84 @@ func (r *GormCollectionRepository) Delete(id uint) error {
 	return r.db.Delete(&models.Collection{}, id).Error
 }
 
-func (r *GormCollectionRepository) SetBannerPath(collectionID uint, bannerPath *string) error {
+// GetBanners returns all banners for a collection ordered by sort_order.
+func (r *GormCollectionRepository) GetBanners(collectionID uint) ([]models.CollectionBanner, error) {
+	var banners []models.CollectionBanner
+	err := r.db.Where("collection_id = ?", collectionID).Order("sort_order ASC, id ASC").Find(&banners).Error
+	return banners, err
+}
+
+// AddBanner inserts a new banner for a collection.
+func (r *GormCollectionRepository) AddBanner(banner *models.CollectionBanner) error {
+	banner.CreatedAt = time.Now().Unix()
+	return r.db.Create(banner).Error
+}
+
+// DeleteCollectionBanner removes a collection banner by ID, scoped to collectionID.
+func (r *GormCollectionRepository) DeleteCollectionBanner(bannerID uint, collectionID uint) error {
+	result := r.db.Where("id = ? AND collection_id = ?", bannerID, collectionID).Delete(&models.CollectionBanner{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+// ReorderCollectionBanners updates sort_order for each banner in the given order.
+func (r *GormCollectionRepository) ReorderCollectionBanners(collectionID uint, orderedIDs []uint) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		for i, id := range orderedIDs {
+			if err := tx.Model(&models.CollectionBanner{}).
+				Where("id = ? AND collection_id = ?", id, collectionID).
+				Update("sort_order", i).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// SetInheritBanners sets the inherit_banners_from_albums flag on a collection.
+func (r *GormCollectionRepository) SetInheritBanners(collectionID uint, inherit bool) error {
 	return r.db.Model(&models.Collection{}).Where("id = ?", collectionID).Updates(map[string]interface{}{
-		"banner_image_path": bannerPath,
-		"updated_at":        time.Now().Unix(),
+		"inherit_banners_from_albums": inherit,
+		"updated_at":                  time.Now().Unix(),
 	}).Error
+}
+
+// GetInheritedBannerPaths returns banner image paths from all albums whose folder_path
+// matches the directories of images in this collection.
+func (r *GormCollectionRepository) GetInheritedBannerPaths(collectionID uint) ([]string, error) {
+	paths, _, err := r.GetImagePathsMatchingFilters(collectionID, 0, 500)
+	if err != nil {
+		return nil, err
+	}
+
+	folderSet := make(map[string]struct{})
+	for _, p := range paths {
+		folderSet[path.Dir(p)] = struct{}{}
+	}
+	if len(folderSet) == 0 {
+		return []string{}, nil
+	}
+
+	folderPaths := make([]string, 0, len(folderSet))
+	for f := range folderSet {
+		folderPaths = append(folderPaths, f)
+	}
+
+	var result []string
+	err = r.db.Table("album_banners").
+		Joins("JOIN albums ON album_banners.album_id = albums.id").
+		Where("albums.folder_path IN ? AND albums.deleted_at IS NULL", folderPaths).
+		Order("albums.id, album_banners.sort_order").
+		Pluck("album_banners.image_path", &result).Error
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // SetFilters replaces all tag filters for a collection in a transaction.
@@ -93,7 +168,11 @@ func (r *GormCollectionRepository) SetFilters(collectionID uint, filters []model
 }
 
 // GetImagePathsMatchingFilters returns paginated image paths matching the collection's tag filters.
-// Logic: AND across distinct tag_key values, OR within same tag_key.
+// Positive filters (Negate=false): image must have the tag.
+// Negative filters (Negate=true): image must NOT have the tag.
+// FilterMatch="all": image must match every positive inclusion group (AND across keys, OR within key).
+// FilterMatch="any": image must match at least one positive inclusion group (OR across groups).
+// Negative filters always apply regardless of filter_match mode.
 func (r *GormCollectionRepository) GetImagePathsMatchingFilters(collectionID uint, offset, limit int) ([]string, int, error) {
 	// Load filters
 	var filters []models.CollectionTagFilter
@@ -104,56 +183,43 @@ func (r *GormCollectionRepository) GetImagePathsMatchingFilters(collectionID uin
 		return []string{}, 0, nil
 	}
 
-	// Count distinct keys
-	keySet := make(map[string]struct{})
-	for _, f := range filters {
-		keySet[f.TagKey] = struct{}{}
+	// Load filter_match from collection
+	var coll struct {
+		FilterMatch string
 	}
-	distinctKeyCount := len(keySet)
-
-	// Build the filter clause:
-	// SELECT image_path FROM image_tags
-	// WHERE (tag_key='k1' AND tag_value IN ('v1','v2')) OR (tag_key='k2' AND tag_value IN ('v3'))
-	// GROUP BY image_path
-	// HAVING COUNT(DISTINCT tag_key) = N
-	type kv struct {
-		key    string
-		values []string
+	if err := r.db.Model(&models.Collection{}).Select("filter_match").Where("id = ?", collectionID).Scan(&coll).Error; err != nil {
+		return nil, 0, err
 	}
-	kvMap := make(map[string][]string)
-	for _, f := range filters {
-		kvMap[f.TagKey] = append(kvMap[f.TagKey], f.TagValue)
+	filterMatch := coll.FilterMatch
+	if filterMatch != "any" {
+		filterMatch = "all"
 	}
 
-	whereArgs := []interface{}{}
-	whereParts := ""
+	// Split into positive (inclusion) and negative (exclusion) filters
+	positiveByKey := make(map[string][]string) // key → values (OR within key)
+	type negFilter struct{ key, value string }
+	var negatives []negFilter
+
+	for _, f := range filters {
+		if f.Negate {
+			negatives = append(negatives, negFilter{f.TagKey, f.TagValue})
+		} else {
+			positiveByKey[f.TagKey] = append(positiveByKey[f.TagKey], f.TagValue)
+		}
+	}
+
+	// Require at least one positive filter
+	if len(positiveByKey) == 0 {
+		return []string{}, 0, nil
+	}
+
+	// Build positive WHERE clause: (tag_key=? AND tag_value IN (?,?)) OR ...
+	var posArgs []interface{}
+	posWhere := ""
 	first := true
-	for k, vals := range kvMap {
+	for k, vals := range positiveByKey {
 		if !first {
-			whereParts += " OR "
-		}
-		first = false
-		placeholders := ""
-		for i, v := range vals {
-			if i > 0 {
-				placeholders += ","
-			}
-			placeholders += "?"
-			whereArgs = append(whereArgs, v)
-		}
-		whereParts += fmt.Sprintf("(tag_key = ? AND tag_value IN (%s))", placeholders)
-		whereArgs = append([]interface{}{k}, whereArgs...)
-		// reorder: k needs to go before its values in whereArgs
-		// rebuild correctly
-	}
-
-	// Rebuild args in correct order: for each key, push key then its values
-	whereArgs = []interface{}{}
-	whereParts = ""
-	first = true
-	for k, vals := range kvMap {
-		if !first {
-			whereParts += " OR "
+			posWhere += " OR "
 		}
 		first = false
 		placeholders := ""
@@ -163,26 +229,51 @@ func (r *GormCollectionRepository) GetImagePathsMatchingFilters(collectionID uin
 			}
 			placeholders += "?"
 		}
-		whereParts += fmt.Sprintf("(tag_key = ? AND tag_value IN (%s))", placeholders)
-		whereArgs = append(whereArgs, k)
+		posWhere += fmt.Sprintf("(tag_key = ? AND tag_value IN (%s))", placeholders)
+		posArgs = append(posArgs, k)
 		for _, v := range vals {
-			whereArgs = append(whereArgs, v)
+			posArgs = append(posArgs, v)
 		}
 	}
 
-	baseSQL := fmt.Sprintf(`SELECT image_path FROM image_tags WHERE %s GROUP BY image_path HAVING COUNT(DISTINCT tag_key) = ?`, whereParts)
-	countArgs := append(whereArgs, distinctKeyCount)
+	// Build NOT IN sub-queries for negative filters
+	notInSQL := ""
+	var notInArgs []interface{}
+	for _, neg := range negatives {
+		notInSQL += " AND image_path NOT IN (SELECT image_path FROM image_tags WHERE tag_key = ? AND tag_value = ?)"
+		notInArgs = append(notInArgs, neg.key, neg.value)
+	}
 
-	// Count total
-	var countRows []struct{ ImagePath string }
-	if err := r.db.Raw(baseSQL, countArgs...).Scan(&countRows).Error; err != nil {
+	var baseSQL string
+	var baseArgs []interface{}
+
+	if filterMatch == "any" {
+		baseSQL = fmt.Sprintf(
+			`SELECT DISTINCT image_path FROM image_tags WHERE (%s)%s ORDER BY image_path`,
+			posWhere, notInSQL,
+		)
+		baseArgs = append(posArgs, notInArgs...)
+	} else {
+		// "all": must match every positive key group
+		distinctKeyCount := len(positiveByKey)
+		baseSQL = fmt.Sprintf(
+			`SELECT image_path FROM image_tags WHERE (%s)%s GROUP BY image_path HAVING COUNT(DISTINCT tag_key) = ? ORDER BY image_path`,
+			posWhere, notInSQL,
+		)
+		baseArgs = append(posArgs, notInArgs...)
+		baseArgs = append(baseArgs, distinctKeyCount)
+	}
+
+	// Count total using a SQL COUNT to avoid fetching all rows
+	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM (%s)", baseSQL)
+	var total int
+	if err := r.db.Raw(countSQL, baseArgs...).Scan(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	total := len(countRows)
 
-	// Fetch paginated paths with ORDER BY for stable results
-	paginatedSQL := fmt.Sprintf(`SELECT image_path FROM image_tags WHERE %s GROUP BY image_path HAVING COUNT(DISTINCT tag_key) = ? ORDER BY image_path LIMIT ? OFFSET ?`, whereParts)
-	paginatedArgs := append(countArgs, limit, offset)
+	// Fetch paginated paths
+	paginatedSQL := baseSQL + " LIMIT ? OFFSET ?"
+	paginatedArgs := append(baseArgs, limit, offset)
 
 	var rows []struct{ ImagePath string }
 	if err := r.db.Raw(paginatedSQL, paginatedArgs...).Scan(&rows).Error; err != nil {

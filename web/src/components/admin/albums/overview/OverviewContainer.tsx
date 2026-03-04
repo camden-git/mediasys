@@ -33,6 +33,13 @@ const OverviewContainer: React.FC = () => {
     const fileSizesRef = React.useRef<Record<string, number>>({});
     const uploadStartRef = React.useRef<number | null>(null);
     const processingStartRef = React.useRef<number | null>(null);
+    const abortControllerRef = React.useRef<AbortController | null>(null);
+
+    React.useEffect(() => {
+        return () => {
+            abortControllerRef.current?.abort();
+        };
+    }, []);
     const [, setTick] = React.useState(0);
     // Always tick every second so ETA stays live during both upload and processing
     React.useEffect(() => {
@@ -148,23 +155,40 @@ const OverviewContainer: React.FC = () => {
     }, [items, scheduleRefresh, fetchImages]);
 
     const handleFiles = async (files: Array<{ file: File; relativePath: string }>) => {
-        // Reset size map and start times for each fresh upload
         fileSizesRef.current = {};
         uploadStartRef.current = Date.now();
         processingStartRef.current = null;
-        // Map each file's client-side relativePath to the WS key the backend will broadcast
-        // Backend strips the top-level folder segment (webkitRelativePath prefix) and prepends album.folder_path
         for (const { file, relativePath } of files) {
             let rel = relativePath.replace(/\\/g, '/').replace(/^\.\//, '').replace(/^\//, '');
             const slash = rel.indexOf('/');
             if (slash >= 0) rel = rel.slice(slash + 1);
             fileSizesRef.current[album.folder_path + '/' + rel] = file.size;
         }
+
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
         setIsUploading(true);
         try {
-            await uploadAlbumImagesBatched(album.id, files, { batchSize: 5, concurrency: 3, requestTimeoutMs: 0 });
+            const result = await uploadAlbumImagesBatched(album.id, files, {
+                concurrency: 3,
+                maxRetries: 3,
+                signal: controller.signal,
+            });
+            if (result.failed.length > 0) {
+                setItems((prev) => {
+                    const next = { ...prev };
+                    for (const f of result.failed) {
+                        const key = album.folder_path + '/' + (f.path || '');
+                        next[key] = { ...(next[key] || { path: key, tasks: {} }), error: f.error };
+                    }
+                    return next;
+                });
+            }
+        } catch {
+            // aborted or unrecoverable — per-batch failures already surfaced above
         } finally {
             setIsUploading(false);
+            abortControllerRef.current = null;
         }
     };
 
@@ -425,10 +449,10 @@ const OverviewContainer: React.FC = () => {
     return (
         <div className='relative mx-auto'>
             <div className='absolute inset-x-0 top-0 -z-10 h-80 overflow-hidden rounded-t-2xl mask-b-from-60% sm:h-88 md:h-112 lg:h-128'>
-                {album.banner_image_path && (
+                {album.banners?.[0] && (
                     <img
                         alt=''
-                        src={getBannerUrl(album.banner_image_path)}
+                        src={getBannerUrl(album.banners[0].image_path)}
                         className='absolute inset-0 h-full w-full mask-l-from-60% object-cover object-center opacity-40'
                     />
                 )}
@@ -503,15 +527,26 @@ const OverviewContainer: React.FC = () => {
                                         />
                                     </div>
                                 </div>
-                                {hasCompleted && (
-                                    <button
-                                        type='button'
-                                        onClick={handleClearCompleted}
-                                        className='text-xs text-gray-500 underline hover:text-gray-700'
-                                    >
-                                        Clear completed
-                                    </button>
-                                )}
+                                <div className='flex shrink-0 items-center gap-3'>
+                                    {isUploading && (
+                                        <button
+                                            type='button'
+                                            onClick={() => abortControllerRef.current?.abort()}
+                                            className='text-xs text-red-500 underline hover:text-red-700'
+                                        >
+                                            Cancel
+                                        </button>
+                                    )}
+                                    {hasCompleted && (
+                                        <button
+                                            type='button'
+                                            onClick={handleClearCompleted}
+                                            className='text-xs text-gray-500 underline hover:text-gray-700'
+                                        >
+                                            Clear completed
+                                        </button>
+                                    )}
+                                </div>
                             </div>
 
                             {/* Per-file rows */}

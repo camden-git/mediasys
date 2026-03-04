@@ -29,9 +29,12 @@ type AlbumRepositoryInterface interface {
 	RequestZip(albumID uint) error
 	MarkZipProcessing(albumID uint) error
 	SetZipResult(albumID uint, zipPath *string, zipSize *int64, taskErr error) error
-	UpdateBannerPath(albumID uint, bannerPath *string) error
 	UpdateSortOrder(albumID uint, sortOrder string) error
 	Delete(id uint) error
+	GetBanners(albumID uint) ([]models.AlbumBanner, error)
+	AddBanner(banner *models.AlbumBanner) error
+	DeleteBanner(bannerID uint, albumID uint) error
+	ReorderBanners(albumID uint, orderedIDs []uint) error
 }
 
 // PersonRepositoryInterface defines the methods for person data operations
@@ -181,14 +184,20 @@ type CollectionRepositoryInterface interface {
 	GetBySlug(slug string) (*models.Collection, error)
 	ListPublic() ([]models.Collection, error)
 	ListAll() ([]models.Collection, error)
-	Update(collectionID uint, name, slug string, description *string, isPublic bool) error
+	Update(collectionID uint, name, slug string, description *string, isPublic bool, filterMatch string) error
 	Delete(id uint) error
-	SetBannerPath(collectionID uint, bannerPath *string) error
 	// SetFilters replaces all tag filters for a collection in a transaction.
 	SetFilters(collectionID uint, filters []models.CollectionTagFilter) error
-	// GetImagePathsMatchingFilters returns image paths that match all collection filters
-	// using AND-across-keys / OR-within-key logic, with pagination.
+	// GetImagePathsMatchingFilters returns image paths that match the collection's tag filters.
+	// Behaviour is controlled by Collection.FilterMatch ("all" = AND across inclusion groups, "any" = OR).
+	// Filters with Negate=true exclude images that have the given tag.
 	GetImagePathsMatchingFilters(collectionID uint, offset, limit int) ([]string, int, error)
+	GetBanners(collectionID uint) ([]models.CollectionBanner, error)
+	AddBanner(banner *models.CollectionBanner) error
+	DeleteCollectionBanner(bannerID uint, collectionID uint) error
+	ReorderCollectionBanners(collectionID uint, orderedIDs []uint) error
+	SetInheritBanners(collectionID uint, inherit bool) error
+	GetInheritedBannerPaths(collectionID uint) ([]string, error)
 }
 
 // InviteCodeRepository defines the methods for invite code data operations

@@ -3,18 +3,14 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useStoreState, State } from 'easy-peasy';
 import { useStoreActions, Actions } from 'easy-peasy';
 import { StoreModel } from '../../store';
-import LoadingSpinner from '../elements/LoadingSpinner.tsx';
-import ErrorMessage from '../elements/ErrorMessage.tsx';
-import { Heading } from '../elements/Heading.tsx';
-import AdvancedImageGrid from './AdvancedImageGrid.tsx';
 import { getAlbumContentsWithRating, getAlbumDownloadUrl, getBannerUrl, getOriginalImageUrl } from '../../api.ts';
 import { FileInfo } from '../../types.ts';
-import ImageLightbox from './ImageLightbox.tsx';
-import { ArrowDownIcon, CameraIcon, MapPinIcon, PhotoIcon, ShareIcon, SparklesIcon } from '@heroicons/react/16/solid';
+import { CameraIcon, MapPinIcon, PhotoIcon, ArrowDownIcon, ShareIcon, SparklesIcon } from '@heroicons/react/16/solid';
 import { useFlash } from '../../hooks/useFlash.ts';
 import FlashMessageRender from '../elements/FlashMessageRender.tsx';
 import DownloadDialog from './DownloadDialog.tsx';
 import ShareChunksDialog from './ShareChunksDialog.tsx';
+import PhotoPageLayout from './PhotoPageLayout.tsx';
 
 // max payload size for a single Web Share operation
 const MAX_SHARE_CHUNK_BYTES = 40 * 1024 * 1024;
@@ -40,8 +36,6 @@ function chunkImagesBySize(images: FileInfo[], maxBytes: number): FileInfo[][] {
     if (currentChunk.length > 0) chunks.push(currentChunk);
     return chunks;
 }
-
-// Dialog components moved to separate files for clarity
 
 const AlbumView: React.FC = () => {
     const { currentAlbum, directoryListing, isLoading, error } = useStoreState(
@@ -365,150 +359,121 @@ const AlbumView: React.FC = () => {
         await shareChunk(shareChunks[currentChunkIndex], currentChunkIndex + 1, shareChunks.length);
     };
 
+    const albumMetadata = (
+        <>
+            <div className='flex items-center gap-1.5'>
+                <PhotoIcon className='size-4 text-gray-950/40' />
+                {activeListing?.total ?? activeListing?.files.length ?? 0} photos
+                {highlightsMode && <span className='text-yellow-500'> (highlights)</span>}
+            </div>
+            <span className='hidden text-gray-950/25 sm:inline dark:text-white/25'>&middot;</span>
+            <div className='flex items-center gap-1.5'>
+                <CameraIcon className='size-4 text-gray-950/40' />
+                {currentAlbum?.artists && currentAlbum.artists.length > 0
+                    ? currentAlbum.artists
+                          .map((u) =>
+                              u.first_name || u.last_name
+                                  ? `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim()
+                                  : u.username,
+                          )
+                          .join(', ')
+                    : ''}
+            </div>
+            {currentAlbum?.location && (
+                <>
+                    <span className='hidden text-gray-950/25 sm:inline dark:text-white/25'>&middot;</span>
+                    <div className='flex items-center gap-1.5'>
+                        <MapPinIcon className='size-4 text-gray-950/40' />
+                        {currentAlbum.location}
+                    </div>
+                </>
+            )}
+        </>
+    );
+
+    const albumActions = (
+        <>
+            <button
+                onClick={handleToggleHighlights}
+                className={`inline-flex items-center gap-x-2 rounded-full px-3 py-0.5 text-sm/7 font-semibold transition-colors ${
+                    highlightsMode
+                        ? 'bg-yellow-400 text-gray-950 hover:bg-yellow-300'
+                        : 'bg-gray-950/10 text-gray-950 hover:bg-gray-950/20 dark:bg-white/10 dark:text-white dark:hover:bg-white/20'
+                }`}
+            >
+                <SparklesIcon className='size-2' />
+                Highlights
+            </button>
+            {currentAlbum?.zip_size && (
+                <>
+                    <button
+                        onClick={() => setDownloadModalOpen(true)}
+                        className='inline-flex items-center gap-x-2 rounded-full bg-gray-950 px-3 py-0.5 text-sm/7 font-semibold text-white hover:bg-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600'
+                    >
+                        <ArrowDownIcon className='size-2 fill-white' />
+                        Download
+                    </button>
+                    <DownloadDialog
+                        open={downloadModalOpen}
+                        onClose={setDownloadModalOpen}
+                        albumName={currentAlbum?.name}
+                        zipSize={currentAlbum.zip_size}
+                        onDownload={handleDownloadZip}
+                    />
+                </>
+            )}
+            <ShareChunksDialog
+                open={shareChunksDialogOpen}
+                onClose={setShareChunksDialogOpen}
+                images={imageFiles}
+                chunks={shareChunks}
+                currentIndex={currentChunkIndex}
+                isSharing={isSharing}
+                progress={shareProgress}
+                onShareCurrent={handleShareCurrentChunk}
+                onNext={handleShareNextChunk}
+            />
+            {imageFiles.length > 0 && (
+                <button
+                    onClick={handleShare}
+                    disabled={isSharing}
+                    className='inline-flex items-center gap-x-2 rounded-full bg-gray-950 px-3 py-0.5 text-sm/7 font-semibold text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-700 dark:hover:bg-gray-600'
+                >
+                    <ShareIcon className='size-2 fill-white' />
+                    {isSharing
+                        ? shareProgress
+                            ? `Processing ${shareProgress.current}/${shareProgress.total} (${(shareProgress.size / (1024 * 1024)).toFixed(1)}MB)`
+                            : 'Sharing...'
+                        : 'Share'}
+                </button>
+            )}
+        </>
+    );
+
     return (
         <>
             <FlashMessageRender byKey={'album'} />
-            <div className='relative isolate mx-auto'>
-                <div className='absolute inset-x-0 top-0 -z-10 h-80 overflow-hidden rounded-t-2xl mask-b-from-60% sm:h-88 md:h-112 lg:h-128'>
-                    {currentAlbum?.banner_image_path && (
-                        <img
-                            alt=''
-                            src={getBannerUrl(currentAlbum?.banner_image_path)}
-                            className='absolute inset-0 h-full w-full mask-l-from-60% object-cover object-center opacity-40'
-                        />
-                    )}
-                    <div className='absolute inset-0 rounded-t-2xl outline-1 -outline-offset-1 outline-gray-950/10 dark:outline-white/10' />
-                </div>
-                <div className='mx-auto'>
-                    <div className='relative'>
-                        <div className='px-8 pt-48 pb-12 lg:py-24'>
-                            <h1 className='sr-only'>{currentAlbum?.name} overview</h1>
-                            <Heading className={'truncate font-bold'} huge>
-                                {currentAlbum?.name}
-                            </Heading>
-                            <p className='mt-7 max-w-lg text-base/7 text-pretty text-gray-600 dark:text-gray-400'>
-                                {currentAlbum?.description}
-                            </p>
-                            <div className='mt-6 flex flex-wrap items-center gap-x-4 gap-y-3 text-sm/7 font-semibold text-gray-950 sm:gap-3'>
-                                <div className='flex items-center gap-1.5'>
-                                    <PhotoIcon className='size-4 text-gray-950/40' />
-                                    {activeListing?.total ?? activeListing?.files.length ?? 0} photos
-                                    {highlightsMode && <span className='text-yellow-500'> (highlights)</span>}
-                                </div>
-                                <span className='hidden text-gray-950/25 sm:inline dark:text-white/25'>&middot;</span>
-                                <div className='flex items-center gap-1.5'>
-                                    <CameraIcon className='size-4 text-gray-950/40' />
-                                    {currentAlbum?.artists && currentAlbum.artists.length > 0
-                                        ? currentAlbum.artists
-                                              .map((u) =>
-                                                  u.first_name || u.last_name
-                                                      ? `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim()
-                                                      : u.username,
-                                              )
-                                              .join(', ')
-                                        : ''}
-                                </div>
-                                {currentAlbum?.location && (
-                                    <>
-                                        <span className='hidden text-gray-950/25 sm:inline dark:text-white/25'>
-                                            &middot;
-                                        </span>
-                                        <div className='flex items-center gap-1.5'>
-                                            <MapPinIcon className='size-4 text-gray-950/40' />
-                                            {currentAlbum.location}
-                                        </div>
-                                    </>
-                                )}
-                            </div>
-                            <div className='mt-10 flex flex-wrap gap-3'>
-                                <button
-                                    onClick={handleToggleHighlights}
-                                    className={`inline-flex items-center gap-x-2 rounded-full px-3 py-0.5 text-sm/7 font-semibold transition-colors ${
-                                        highlightsMode
-                                            ? 'bg-yellow-400 text-gray-950 hover:bg-yellow-300'
-                                            : 'bg-gray-950/10 text-gray-950 hover:bg-gray-950/20 dark:bg-white/10 dark:text-white dark:hover:bg-white/20'
-                                    }`}
-                                >
-                                    <SparklesIcon className='size-2' />
-                                    Highlights
-                                </button>
-                                {currentAlbum?.zip_size && (
-                                    <>
-                                        <button
-                                            onClick={() => setDownloadModalOpen(true)}
-                                            className='inline-flex items-center gap-x-2 rounded-full bg-gray-950 px-3 py-0.5 text-sm/7 font-semibold text-white hover:bg-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600'
-                                        >
-                                            <ArrowDownIcon className='size-2 fill-white' />
-                                            Download
-                                        </button>
-                                        <DownloadDialog
-                                            open={downloadModalOpen}
-                                            onClose={setDownloadModalOpen}
-                                            albumName={currentAlbum?.name}
-                                            zipSize={currentAlbum.zip_size}
-                                            onDownload={handleDownloadZip}
-                                        />
-                                    </>
-                                )}
-
-                                <ShareChunksDialog
-                                    open={shareChunksDialogOpen}
-                                    onClose={setShareChunksDialogOpen}
-                                    images={imageFiles}
-                                    chunks={shareChunks}
-                                    currentIndex={currentChunkIndex}
-                                    isSharing={isSharing}
-                                    progress={shareProgress}
-                                    onShareCurrent={handleShareCurrentChunk}
-                                    onNext={handleShareNextChunk}
-                                />
-
-                                {imageFiles.length > 0 && (
-                                    <button
-                                        onClick={handleShare}
-                                        disabled={isSharing}
-                                        className='inline-flex items-center gap-x-2 rounded-full bg-gray-950 px-3 py-0.5 text-sm/7 font-semibold text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-700 dark:hover:bg-gray-600'
-                                    >
-                                        <ShareIcon className='size-2 fill-white' />
-                                        {isSharing
-                                            ? shareProgress
-                                                ? `Processing ${shareProgress.current}/${shareProgress.total} (${(shareProgress.size / (1024 * 1024)).toFixed(1)}MB)`
-                                                : 'Sharing...'
-                                            : 'Share'}
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-
-                        <div className='mt-4'>
-                            <ErrorMessage message={error} />
-
-                            {isLoading && <LoadingSpinner />}
-
-                            {!isLoading && !error && activeListing && (
-                                <AdvancedImageGrid
-                                    images={imageFiles}
-                                    targetRowHeight={280}
-                                    boxSpacing={4}
-                                    onImageClick={handleImageClick}
-                                />
-                            )}
-                            {/* Sentinel for infinite scroll */}
-                            {canLoadMore && imageFiles.length > 0 && <div ref={sentinelRef} className='h-1 w-full' />}
-                            <ImageLightbox
-                                image={selectedImage}
-                                imageIndex={selectedIndex >= 0 ? selectedIndex : undefined}
-                                totalImages={totalImageCount}
-                                onClose={handleCloseLightbox}
-                                onPrev={handlePrevImage}
-                                onNext={handleNextImage}
-                                canPrev={canPrev}
-                                canNext={canNext}
-                            />
-                        </div>
-                    </div>
-                </div>
-            </div>
+            <PhotoPageLayout
+                title={currentAlbum?.name ?? ''}
+                description={currentAlbum?.description}
+                bannerUrls={currentAlbum?.banners?.map(getBannerUrl)}
+                metadata={albumMetadata}
+                actions={albumActions}
+                images={imageFiles}
+                isLoading={isLoading}
+                error={error}
+                hasMore={canLoadMore}
+                sentinelRef={sentinelRef}
+                selectedImage={selectedImage}
+                selectedIndex={selectedIndex}
+                totalImages={totalImageCount}
+                onImageClick={handleImageClick}
+                onClose={handleCloseLightbox}
+                onPrev={handlePrevImage}
+                onNext={handleNextImage}
+                canPrev={canPrev}
+                canNext={canNext}
+            />
         </>
     );
 };

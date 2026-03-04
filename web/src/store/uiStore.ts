@@ -2,6 +2,7 @@ import { Action, action } from 'easy-peasy';
 
 export interface FlashMessage {
     key: string;
+    id?: number;
     type: 'success' | 'error' | 'info' | 'warning';
     title: string;
     message: string;
@@ -19,8 +20,7 @@ const uiStore: UIStore = {
 
     addFlash: action((state, payload) => {
         state.flashes = state.flashes.filter((flash) => flash.key !== payload.key);
-
-        state.flashes.push(payload);
+        state.flashes.push({ ...payload, id: Date.now() });
     }),
 
     clearFlashes: action((state, key) => {

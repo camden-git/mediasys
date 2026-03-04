@@ -1,134 +1,67 @@
-import React, { useEffect, useRef, useState } from 'react';
 import { useStoreActions, useStoreState } from '../../../../store/hooks';
-import { Button } from '../../../elements/Button';
-import { PhotoIcon } from '@heroicons/react/24/solid';
 import HeaderedContent from '../../../elements/HeaderedContent.tsx';
-
-const allowedTypes: readonly string[] = ['image/png', 'image/jpeg', 'image/webp'] as const;
+import { addAlbumBanner, deleteAlbumBanner, getAlbum, reorderAlbumBanners } from '../../../../api/admin/albums';
+import { BannerManager } from '../../shared/BannerManager';
 
 export function BannerUpload() {
     const albumId = useStoreState((state) => state.albumContext.data!.id);
-    const { uploadAlbumBanner } = useStoreActions((actions) => actions.adminAlbums);
+    const banners = useStoreState((state) => state.albumContext.data?.banners ?? []);
     const { addFlash } = useStoreActions((actions) => actions.ui);
     const { setAlbum } = useStoreActions((actions) => actions.albumContext);
 
-    const [bannerFile, setBannerFile] = useState<File | null>(null);
-    const [bannerBlobUrl, setBannerBlobUrl] = useState<string | null>(null);
-    const [bannerUploading, setBannerUploading] = useState(false);
-    const [bannerError, setBannerError] = useState('');
-    const bannerInputRef = useRef<HTMLInputElement>(null);
+    const refreshAlbum = async () => {
+        setAlbum(await getAlbum(albumId));
+    };
 
-    const handleBannerDrop: React.DragEventHandler<HTMLButtonElement> = (event) => {
-        event.preventDefault();
-        if (event.dataTransfer.files.length > 0) {
-            const file = event.dataTransfer.files[0];
-            if (!allowedTypes.includes(file.type)) {
-                setBannerError('Invalid file type. Please select a PNG, JPEG, or WebP file.');
-                return;
-            }
-            setBannerFile(file);
-            setBannerError('');
+    const handleAdd = async (file: File) => {
+        try {
+            await addAlbumBanner(albumId, file);
+            await refreshAlbum();
+        } catch (error: any) {
+            addFlash({
+                key: 'banner-error',
+                type: 'error',
+                title: 'Error',
+                message: error.response?.data?.error || 'Failed to add banner',
+            });
         }
     };
 
-    const handleBannerFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-        if (event.target.files && event.target.files.length > 0) {
-            const file = event.target.files[0];
-            if (!allowedTypes.includes(file.type)) {
-                setBannerError('Invalid file type. Please select a PNG, JPEG, or WebP file.');
-                return;
-            }
-            setBannerFile(file);
-            setBannerError('');
+    const handleDelete = async (bannerId: number) => {
+        try {
+            await deleteAlbumBanner(albumId, bannerId);
+            await refreshAlbum();
+        } catch (error: any) {
+            addFlash({
+                key: 'banner-error',
+                type: 'error',
+                title: 'Error',
+                message: error.response?.data?.error || 'Failed to remove banner',
+            });
         }
     };
 
-    const handleBannerUpload = () => {
-        if (!bannerFile) return;
-        setBannerUploading(true);
-        setBannerError('');
-
-        uploadAlbumBanner({
-            id: albumId,
-            file: bannerFile,
-            addFlash,
-            setAlbum,
-            onSuccess: () => {
-                setBannerFile(null);
-                setBannerBlobUrl(null);
-                setBannerUploading(false);
-            },
-        });
+    const handleReorder = async (bannerIds: number[]) => {
+        try {
+            await reorderAlbumBanners(albumId, bannerIds);
+            await refreshAlbum();
+        } catch (error: any) {
+            addFlash({
+                key: 'banner-error',
+                type: 'error',
+                title: 'Error',
+                message: error.response?.data?.error || 'Failed to reorder banners',
+            });
+        }
     };
-
-    // cleanup blob URL when component unmounts or file changes
-    useEffect(() => {
-        if (bannerBlobUrl) {
-            URL.revokeObjectURL(bannerBlobUrl);
-        }
-        if (!bannerFile) {
-            setBannerBlobUrl(null);
-            return;
-        }
-        setBannerBlobUrl(URL.createObjectURL(bannerFile));
-    }, [bannerFile]);
 
     return (
         <HeaderedContent
-            title={'Album Banner'}
-            description={'Upload a banner image for this album.'}
-            className={'mt-16 pb-8'}
+            title='Album Banners'
+            description='Upload one or more banner images. They will cycle every 7 seconds on the public album page.'
+            className='mt-16 pb-8'
         >
-            {bannerError && (
-                <div className='mb-4 rounded-lg border border-red-200 bg-red-50 p-3'>
-                    <p className='sm text-red-700'>{bannerError}</p>
-                </div>
-            )}
-
-            <input
-                type='file'
-                className='hidden'
-                aria-hidden
-                ref={bannerInputRef}
-                accept={allowedTypes.join(',')}
-                onChange={handleBannerFileChange}
-            />
-
-            <button
-                className='flex w-full flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-600 p-8 transition-opacity duration-100 disabled:opacity-50'
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={handleBannerDrop}
-                onClick={() => bannerInputRef.current?.click()}
-                disabled={bannerUploading}
-            >
-                {bannerBlobUrl ? (
-                    <img src={bannerBlobUrl} className='h-48 max-w-full rounded-lg' alt='Banner preview' />
-                ) : (
-                    <>
-                        <PhotoIcon className='size-16 text-gray-500' />
-                        <p className='text-gray-500'>Drag and drop a banner image here</p>
-                        <p className='xs text-gray-500'>or click to select a file</p>
-                        <p className='mt-2 text-xs text-gray-500'>Supported formats: .jpg, .png, .webp</p>
-                    </>
-                )}
-            </button>
-
-            <div className='mt-4 flex justify-end space-x-3'>
-                <Button
-                    type='button'
-                    outline
-                    onClick={() => {
-                        setBannerFile(null);
-                        setBannerError('');
-                    }}
-                    disabled={bannerUploading || !bannerFile}
-                >
-                    Clear
-                </Button>
-                <Button onClick={handleBannerUpload} disabled={bannerUploading || !bannerFile}>
-                    {bannerUploading ? 'Uploading...' : 'Upload Banner'}
-                </Button>
-            </div>
+            <BannerManager banners={banners} onAdd={handleAdd} onDelete={handleDelete} onReorder={handleReorder} />
         </HeaderedContent>
     );
 }

@@ -1,11 +1,12 @@
 import http from '../http';
-import { Album, DirectoryListing } from '../../types';
+import { Album, AlbumBanner, DirectoryListing } from '../../types';
 import { User } from '../../types';
 import { ApiResponse } from '../standard';
 
-export interface AdminAlbumResponse extends Album {
+export interface AdminAlbumResponse extends Omit<Album, 'banners'> {
     is_hidden: boolean;
     sort_order: string;
+    banners: AlbumBanner[];
 }
 
 export interface CreateAlbumPayload {
@@ -36,6 +37,11 @@ export const getAlbum = async (id: number): Promise<AdminAlbumResponse> => {
     return response.data.data;
 };
 
+export const getAlbumBySlug = async (slug: string): Promise<AdminAlbumResponse> => {
+    const response = await http.get<ApiResponse<AdminAlbumResponse>>(`/admin/albums/${slug}`);
+    return response.data.data;
+};
+
 export const createAlbum = async (payload: CreateAlbumPayload): Promise<AdminAlbumResponse> => {
     const response = await http.post<ApiResponse<AdminAlbumResponse>>('/admin/albums', payload);
     return response.data.data;
@@ -50,16 +56,21 @@ export const deleteAlbum = async (id: number): Promise<void> => {
     await http.delete(`/admin/albums/${id}`);
 };
 
-export const uploadAlbumBanner = async (id: number, file: File): Promise<AdminAlbumResponse> => {
+export const addAlbumBanner = async (id: number, file: File): Promise<AlbumBanner> => {
     const formData = new FormData();
     formData.append('banner_image', file);
-
-    const response = await http.put<ApiResponse<AdminAlbumResponse>>(`/admin/albums/${id}/banner`, formData, {
-        headers: {
-            'Content-Type': 'multipart/form-data',
-        },
+    const response = await http.post<ApiResponse<AlbumBanner>>(`/admin/albums/${id}/banners`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
     });
     return response.data.data;
+};
+
+export const deleteAlbumBanner = async (id: number, bannerId: number): Promise<void> => {
+    await http.delete(`/admin/albums/${id}/banners/${bannerId}`);
+};
+
+export const reorderAlbumBanners = async (id: number, bannerIds: number[]): Promise<void> => {
+    await http.put(`/admin/albums/${id}/banners/order`, { banner_ids: bannerIds });
 };
 
 export interface UploadResult {
@@ -83,24 +94,75 @@ export const uploadAlbumImages = async (
 };
 
 export interface UploadAlbumImagesBatchOptions {
-    batchSize?: number; // number of files per request
+    batchSize?: number; // max number of files per request
+    maxBatchBytes?: number; // max total bytes per request (default: 95 MB, below Cloudflare free plan 100 MB limit)
     concurrency?: number; // number of parallel requests
-    requestTimeoutMs?: number; // per-request timeout; default disables timeout for large uploads
+    requestTimeoutMs?: number; // per-request timeout
+    maxRetries?: number; // per-batch retry count, default 3
+    signal?: AbortSignal; // for cancellation
 }
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+const uploadBatchWithRetry = async (
+    id: number,
+    batch: Array<{ file: File; relativePath?: string }>,
+    { signal, timeout, maxRetries }: { signal?: AbortSignal; timeout: number; maxRetries: number },
+): Promise<UploadResult> => {
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+        try {
+            const formData = new FormData();
+            for (const item of batch) {
+                if (item.relativePath) formData.append('relative_path', item.relativePath);
+                formData.append('files', item.file, item.relativePath || item.file.name);
+            }
+            const resp = await http.post<ApiResponse<UploadResult>>(`/admin/albums/${id}/upload`, formData, {
+                timeout,
+                signal,
+            });
+            return resp.data.data;
+        } catch (err: unknown) {
+            const isAbort = err instanceof DOMException && err.name === 'AbortError';
+            const is4xx =
+                typeof err === 'object' &&
+                err !== null &&
+                'response' in err &&
+                typeof (err as any).response?.status === 'number' &&
+                (err as any).response.status >= 400 &&
+                (err as any).response.status < 500;
+            if (isAbort || is4xx || attempt === maxRetries) throw err;
+            await sleep(Math.min(1000 * 2 ** attempt, 10_000)); // 1s, 2s, 4s … max 10s
+        }
+    }
+    throw new Error('Max retries exceeded');
+};
 
 export const uploadAlbumImagesBatched = async (
     id: number,
     files: Array<{ file: File; relativePath?: string }>,
     options: UploadAlbumImagesBatchOptions = {},
 ): Promise<UploadResult> => {
-    const batchSize = options.batchSize ?? 5;
+    const batchSize = options.batchSize ?? Infinity;
+    const maxBatchBytes = options.maxBatchBytes ?? 95 * 1024 * 1024;
     const concurrency = Math.max(1, options.concurrency ?? 3);
-    const requestTimeoutMs = options.requestTimeoutMs ?? 0; // 0 = no timeout
+    const requestTimeoutMs = options.requestTimeoutMs ?? 5 * 60 * 1000; // 5 min default
+    const maxRetries = options.maxRetries ?? 3;
+    const signal = options.signal;
 
     const batches: Array<Array<{ file: File; relativePath?: string }>> = [];
-    for (let i = 0; i < files.length; i += batchSize) {
-        batches.push(files.slice(i, i + batchSize));
+    let current: Array<{ file: File; relativePath?: string }> = [];
+    let currentBytes = 0;
+    for (const item of files) {
+        if (current.length > 0 && (current.length >= batchSize || currentBytes + item.file.size > maxBatchBytes)) {
+            batches.push(current);
+            current = [];
+            currentBytes = 0;
+        }
+        current.push(item);
+        currentBytes += item.file.size;
     }
+    if (current.length > 0) batches.push(current);
 
     let uploadedTotal = 0;
     const failedTotal: Array<{ path: string; error: string }> = [];
@@ -108,23 +170,23 @@ export const uploadAlbumImagesBatched = async (
 
     const runOne = async () => {
         while (true) {
+            if (signal?.aborted) return;
             const myIndex = nextBatchIndex++;
             if (myIndex >= batches.length) return;
             const batch = batches[myIndex];
-
-            const formData = new FormData();
-            for (const item of batch) {
-                if (item.relativePath) {
-                    formData.append('relative_path', item.relativePath);
+            try {
+                const result = await uploadBatchWithRetry(id, batch, { signal, timeout: requestTimeoutMs, maxRetries });
+                uploadedTotal += result?.uploaded ?? 0;
+                if (result?.failed) failedTotal.push(...result.failed);
+            } catch (err: unknown) {
+                const isAbort = err instanceof DOMException && err.name === 'AbortError';
+                if (isAbort) return;
+                for (const item of batch) {
+                    failedTotal.push({
+                        path: item.relativePath || item.file.name,
+                        error: err instanceof Error ? err.message : 'Upload failed',
+                    });
                 }
-                formData.append('files', item.file, item.relativePath || item.file.name);
-            }
-            const resp = await http.post<ApiResponse<UploadResult>>(`/admin/albums/${id}/upload`, formData, {
-                timeout: requestTimeoutMs,
-            });
-            uploadedTotal += resp.data?.data?.uploaded ?? 0;
-            if (resp.data?.data?.failed) {
-                failedTotal.push(...resp.data.data.failed);
             }
         }
     };
@@ -133,7 +195,7 @@ export const uploadAlbumImagesBatched = async (
     for (let i = 0; i < concurrency; i++) {
         workers.push(runOne());
     }
-    await Promise.all(workers);
+    await Promise.allSettled(workers);
 
     return { uploaded: uploadedTotal, failed: failedTotal };
 };

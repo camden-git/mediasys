@@ -10,26 +10,17 @@ interface JustifiedImageGridItemProps {
     onImageClick: (image: FileInfo) => void;
 }
 
+const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+
 const JustifiedImageGridItem: React.FC<JustifiedImageGridItemProps> = React.memo(
     ({ image, height, width, margin, onImageClick }) => {
         const [showTooltip, setShowTooltip] = useState(false);
-        const [isMobile, setIsMobile] = useState(false);
         const [isInView, setIsInView] = useState(false);
         const containerRef = useRef<HTMLDivElement | null>(null);
         const longPressTimerRef = useRef<number | null>(null);
         const isLongPressRef = useRef(false);
         const suppressNextClickRef = useRef(false);
         const touchStartPosRef = useRef<{ x: number; y: number } | null>(null);
-
-        // touch-capable detection impacts long-press UX hints
-        useEffect(() => {
-            const checkMobile = () => {
-                setIsMobile('ontouchstart' in window || navigator.maxTouchPoints > 0);
-            };
-            checkMobile();
-            window.addEventListener('resize', checkMobile);
-            return () => window.removeEventListener('resize', checkMobile);
-        }, []);
 
         const thumbnailUrl = image.thumbnail_path ? getThumbnailUrl(image.thumbnail_path) : undefined;
 

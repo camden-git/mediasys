@@ -66,23 +66,23 @@ func (ah *AlbumHandler) CreateAlbum(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body: " + err.Error()})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidRequest", "Invalid request body: "+err.Error())
 		return
 	}
 
 	if req.Name == "" || req.FolderPath == "" || req.Slug == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Missing required fields: name, slug, and folder_path"})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidRequest", "Missing required fields: name, slug, and folder_path")
 		return
 	}
 
 	if strings.ContainsAny(req.Slug, " /\\?%*:|\"<>") || strings.TrimSpace(req.Slug) == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid slug format. Use URL-safe characters without spaces."})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidRequest", "Invalid slug format. Use URL-safe characters without spaces.")
 		return
 	}
 
 	cleanRelativePath := filepath.Clean(req.FolderPath)
 	if filepath.IsAbs(cleanRelativePath) || strings.HasPrefix(cleanRelativePath, "..") {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "folder_path must be relative and cannot use '..'"})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidRequest", "folder_path must be relative and cannot use '..'")
 		return
 	}
 	folderPathForDB := filepath.ToSlash(cleanRelativePath)
@@ -93,16 +93,16 @@ func (ah *AlbumHandler) CreateAlbum(w http.ResponseWriter, r *http.Request) {
 		err = os.MkdirAll(fullPath, 0755)
 		if err != nil {
 			log.Printf("Error creating folder path %s during album creation: %v", fullPath, err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Could not create folder_path"})
+			WriteAPIError(w, http.StatusInternalServerError, "InternalError", "Could not create folder_path")
 			return
 		}
 		log.Printf("Created folder path: %s", fullPath)
 	} else if err != nil {
 		log.Printf("Error stating folder path %s during album creation: %v", fullPath, err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Could not verify folder_path"})
+		WriteAPIError(w, http.StatusInternalServerError, "InternalError", "Could not verify folder_path")
 		return
 	} else if !stat.IsDir() {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "folder_path is not a directory: " + folderPathForDB})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidRequest", "folder_path is not a directory: "+folderPathForDB)
 		return
 	}
 
@@ -122,10 +122,10 @@ func (ah *AlbumHandler) CreateAlbum(w http.ResponseWriter, r *http.Request) {
 	err = ah.AlbumRepo.Create(&newAlbumGorm)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {
-			writeJSON(w, http.StatusConflict, map[string]string{"error": "Album name, slug, or folder path already exists"})
+			WriteAPIError(w, http.StatusConflict, "AlbumConflict", "Album name, slug, or folder path already exists")
 		} else {
 			log.Printf("Error creating album '%s' (slug '%s'): %v", req.Name, req.Slug, err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to create album"})
+			WriteAPIError(w, http.StatusInternalServerError, "InternalError", "Failed to create album")
 		}
 		return
 	}
@@ -137,12 +137,13 @@ func (ah *AlbumHandler) ListAlbums(w http.ResponseWriter, r *http.Request) {
 	albums, err := ah.AlbumRepo.ListAll()
 	if err != nil {
 		log.Printf("Error listing albums: %v", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve albums"})
+		WriteAPIError(w, http.StatusInternalServerError, "InternalError", "Failed to retrieve albums")
 		return
 	}
 	if albums == nil {
 		albums = []models.Album{} // ensure an empty array instead of null for JSON
 	}
+	setCacheHeaders(w, 60)
 	writeJSON(w, http.StatusOK, albums)
 }
 
@@ -152,10 +153,10 @@ func (ah *AlbumHandler) GetAlbum(w http.ResponseWriter, r *http.Request) {
 	album, err := ah.getAlbumByIdentifier(identifier)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album not found"})
+			WriteAPIError(w, http.StatusNotFound, "AlbumNotFound", "Album not found")
 		} else {
 			log.Printf("Error getting album by identifier '%s': %v", identifier, err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve album"})
+			WriteAPIError(w, http.StatusInternalServerError, "InternalError", "Failed to retrieve album")
 		}
 		return
 	}
@@ -177,11 +178,19 @@ func (ah *AlbumHandler) GetAlbum(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	banners, _ := ah.AlbumRepo.GetBanners(album.ID)
+	bannerPaths := make([]string, 0, len(banners))
+	for _, b := range banners {
+		bannerPaths = append(bannerPaths, b.ImagePath)
+	}
+
 	type albumWithArtists struct {
 		*models.Album
 		Artists []map[string]interface{} `json:"artists,omitempty"`
+		Banners []string                 `json:"banners"`
 	}
-	writeJSON(w, http.StatusOK, albumWithArtists{Album: album, Artists: artists})
+	setCacheHeaders(w, 60)
+	writeJSON(w, http.StatusOK, albumWithArtists{Album: album, Artists: artists, Banners: bannerPaths})
 }
 
 func (ah *AlbumHandler) UpdateAlbumSortOrder(w http.ResponseWriter, r *http.Request) {
@@ -190,10 +199,10 @@ func (ah *AlbumHandler) UpdateAlbumSortOrder(w http.ResponseWriter, r *http.Requ
 	album, err := ah.getAlbumByIdentifier(identifier)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album not found"})
+			WriteAPIError(w, http.StatusNotFound, "AlbumNotFound", "Album not found")
 		} else {
 			log.Printf("Error finding album '%s' for sort update: %v", identifier, err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to find album"})
+			WriteAPIError(w, http.StatusInternalServerError, "InternalError", "Failed to find album")
 		}
 		return
 	}
@@ -202,22 +211,22 @@ func (ah *AlbumHandler) UpdateAlbumSortOrder(w http.ResponseWriter, r *http.Requ
 		SortOrder string `json:"sort_order"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body: " + err.Error()})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidRequest", "Invalid request body: "+err.Error())
 		return
 	}
 
 	if !database.IsValidSortOrder(req.SortOrder) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid sort_order value provided"})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidRequest", "Invalid sort_order value provided")
 		return
 	}
 
 	err = ah.AlbumRepo.UpdateSortOrder(album.ID, req.SortOrder)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album not found during update"})
+			WriteAPIError(w, http.StatusNotFound, "AlbumNotFound", "Album not found during update")
 		} else {
 			log.Printf("Error updating sort order for album %d: %v", album.ID, err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to update sort order"})
+			WriteAPIError(w, http.StatusInternalServerError, "InternalError", "Failed to update sort order")
 		}
 		return
 	}
@@ -237,10 +246,10 @@ func (ah *AlbumHandler) UpdateAlbum(w http.ResponseWriter, r *http.Request) {
 	album, err := ah.getAlbumByIdentifier(identifier)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album not found"})
+			WriteAPIError(w, http.StatusNotFound, "AlbumNotFound", "Album not found")
 		} else {
 			log.Printf("Error finding album '%s' for update: %v", identifier, err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to find album for update"})
+			WriteAPIError(w, http.StatusInternalServerError, "InternalError", "Failed to find album for update")
 		}
 		return
 	}
@@ -252,7 +261,7 @@ func (ah *AlbumHandler) UpdateAlbum(w http.ResponseWriter, r *http.Request) {
 		Location    *string `json:"location"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body: " + err.Error()})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidRequest", "Invalid request body: "+err.Error())
 		return
 	}
 
@@ -291,19 +300,19 @@ func (ah *AlbumHandler) UpdateAlbum(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !updateRequested {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "No fields provided for update"})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidRequest", "No fields provided for update")
 		return
 	}
 
 	err = ah.AlbumRepo.Update(album.ID, nameUpdate, descUpdate, isHiddenUpdate, locationUpdate)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album not found during update"})
+			WriteAPIError(w, http.StatusNotFound, "AlbumNotFound", "Album not found during update")
 		} else if strings.Contains(strings.ToLower(err.Error()), "unique") {
-			writeJSON(w, http.StatusConflict, map[string]string{"error": "Album name already exists"})
+			WriteAPIError(w, http.StatusConflict, "AlbumConflict", "Album name already exists")
 		} else {
 			log.Printf("Error updating album %d/%s: %v", album.ID, album.Slug, err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to update album"})
+			WriteAPIError(w, http.StatusInternalServerError, "InternalError", "Failed to update album")
 		}
 		return
 	}
@@ -323,10 +332,10 @@ func (ah *AlbumHandler) DeleteAlbum(w http.ResponseWriter, r *http.Request) {
 	album, err := ah.getAlbumByIdentifier(identifier)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album not found"})
+			WriteAPIError(w, http.StatusNotFound, "AlbumNotFound", "Album not found")
 		} else {
 			log.Printf("Error finding album '%s' for delete: %v", identifier, err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to find album for delete"})
+			WriteAPIError(w, http.StatusInternalServerError, "InternalError", "Failed to find album for delete")
 		}
 		return
 	}
@@ -334,13 +343,13 @@ func (ah *AlbumHandler) DeleteAlbum(w http.ResponseWriter, r *http.Request) {
 	err = ah.AlbumRepo.Delete(album.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) { // if trying to delete already deleted (by another request)
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album not found or already deleted"})
+			WriteAPIError(w, http.StatusNotFound, "AlbumNotFound", "Album not found or already deleted")
 		} else {
 			log.Printf("Error deleting album %d/%s: %v", album.ID, album.Slug, err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to delete album"})
+			WriteAPIError(w, http.StatusInternalServerError, "InternalError", "Failed to delete album")
 		}
 		return
 	}
 
-	writeJSON(w, http.StatusNoContent, nil)
+	w.WriteHeader(http.StatusNoContent)
 }

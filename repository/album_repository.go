@@ -204,20 +204,46 @@ func (r *AlbumRepository) SetZipResult(albumID uint, zipPath *string, zipSize *i
 	return nil
 }
 
-// UpdateBannerPath updates the banner image path for an album
-func (r *AlbumRepository) UpdateBannerPath(albumID uint, bannerPath *string) error {
-	now := time.Now().Unix()
-	result := r.DB.Model(&models.Album{}).Where("id = ?", albumID).Updates(map[string]interface{}{
-		"banner_image_path": bannerPath,
-		"updated_at":        now,
-	})
+// GetBanners returns all banners for an album ordered by sort_order.
+func (r *AlbumRepository) GetBanners(albumID uint) ([]models.AlbumBanner, error) {
+	var banners []models.AlbumBanner
+	err := r.DB.Where("album_id = ?", albumID).Order("sort_order ASC, id ASC").Find(&banners).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to get banners for album ID %d: %w", albumID, err)
+	}
+	return banners, nil
+}
+
+// AddBanner inserts a new banner record for an album.
+func (r *AlbumRepository) AddBanner(banner *models.AlbumBanner) error {
+	banner.CreatedAt = time.Now().Unix()
+	return r.DB.Create(banner).Error
+}
+
+// DeleteBanner removes a banner by ID, scoped to albumID for safety.
+func (r *AlbumRepository) DeleteBanner(bannerID uint, albumID uint) error {
+	result := r.DB.Where("id = ? AND album_id = ?", bannerID, albumID).Delete(&models.AlbumBanner{})
 	if result.Error != nil {
-		return fmt.Errorf("failed to update banner path for album ID %d: %w", albumID, result.Error)
+		return result.Error
 	}
 	if result.RowsAffected == 0 {
 		return gorm.ErrRecordNotFound
 	}
 	return nil
+}
+
+// ReorderBanners updates sort_order for each banner in the given order, scoped to albumID.
+func (r *AlbumRepository) ReorderBanners(albumID uint, orderedIDs []uint) error {
+	return r.DB.Transaction(func(tx *gorm.DB) error {
+		for i, id := range orderedIDs {
+			if err := tx.Model(&models.AlbumBanner{}).
+				Where("id = ? AND album_id = ?", id, albumID).
+				Update("sort_order", i).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // UpdateSortOrder updates the sort order for an album

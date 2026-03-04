@@ -73,16 +73,14 @@ export const LoginContainer: React.FC = () => {
                     />
 
                     {siteKey ? (
-                        <div className='flex justify-center'>
-                            <Turnstile
-                                siteKey={siteKey}
-                                className='w-full'
-                                options={{ theme: 'light' }}
-                                onSuccess={(token: string) => setTurnstileToken(token)}
-                                onExpire={() => setTurnstileToken(null)}
-                                onError={() => setTurnstileToken(null)}
-                            />
-                        </div>
+                        <Turnstile
+                            siteKey={siteKey}
+                            className='w-full'
+                            options={{ theme: 'light', size: 'flexible' }}
+                            onSuccess={(token: string) => setTurnstileToken(token)}
+                            onExpire={() => setTurnstileToken(null)}
+                            onError={() => setTurnstileToken(null)}
+                        />
                     ) : null}
 
                     <div className='flex items-center justify-between'>

@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useCallback, useEffect, useState } from 'react';
 import { AlbumDefaultTag } from '../../../../types';
+import { useAlbumId } from '../../../../store/albumContextHooks';
 import { getAlbumDefaultTags, setAlbumDefaultTags } from '../../../../api/admin/imageTags';
 import { Button } from '../../../elements/Button';
 import { Input } from '../../../elements/Input';
@@ -9,11 +9,10 @@ import FlashMessageRender from '../../../elements/FlashMessageRender';
 import { useFlash } from '../../../../hooks/useFlash';
 import HeaderedContent from '../../../elements/HeaderedContent';
 import { DescriptionList, DescriptionTerm, DescriptionDetails } from '../../../elements/DescriptionList.tsx';
-import { Field, FieldGroup, Fieldset, Label } from '../../../elements/Fieldset.tsx';
+import { Field, FieldGroup, Label } from '../../../elements/Fieldset.tsx';
 
 export function DefaultTagsSection() {
-    const { id: albumId } = useParams<{ id: string }>();
-    const id = Number(albumId);
+    const id = useAlbumId();
 
     const [tags, setTags] = useState<AlbumDefaultTag[]>([]);
     const [newKey, setNewKey] = useState('');
@@ -121,11 +120,11 @@ export function DefaultTagsSection() {
                 </Button>
             </FieldGroup>
 
-            {/*<div className='mt-4 flex justify-end'>*/}
-            {/*    <Button onClick={save} disabled={isSaving}>*/}
-            {/*        {isSaving ? 'Saving...' : 'Save Default Tags'}*/}
-            {/*    </Button>*/}
-            {/*</div>*/}
+            <div className='mt-4 flex justify-end'>
+                <Button onClick={save} disabled={isSaving}>
+                    {isSaving ? 'Saving...' : 'Save Default Tags'}
+                </Button>
+            </div>
         </HeaderedContent>
     );
 }

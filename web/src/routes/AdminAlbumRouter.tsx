@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Routes, Route, useParams, useNavigate } from 'react-router-dom';
+import { Routes, Route, useParams } from 'react-router-dom';
 import ProtectedRoute from '../components/router/ProtectedRoute';
 import { StackedLayout } from '../components/elements/StackedLayout.tsx';
 import { Navbar, NavbarItem, NavbarLabel, NavbarSection } from '../components/elements/Navbar.tsx';
@@ -20,7 +20,7 @@ import {
 } from '../components/elements/Dropdown.tsx';
 import { ChevronDownIcon, Cog8ToothIcon } from '@heroicons/react/16/solid';
 import { useStoreState, useStoreActions } from '../store/hooks';
-import { getAlbum } from '../api/admin/albums';
+import { getAlbumBySlug } from '../api/admin/albums';
 import OverviewContainer from '../components/admin/albums/overview/OverviewContainer.tsx';
 import { SettingsContainer } from '../components/admin/albums/settings/SettingsContainer.tsx';
 import AlbumFaceTaggingContainer from '../components/admin/albums/faces/AlbumFaceTaggingContainer.tsx';
@@ -33,8 +33,7 @@ export interface AdminAlbumRouteDefinition {
 }
 
 const AdminAlbumRouter: React.FC = () => {
-    const { id } = useParams<{ id: string }>();
-    const navigate = useNavigate();
+    const { slug } = useParams<{ slug: string }>();
     const { albums } = useAlbums();
     const album = useStoreState((state) => state.albumContext.data);
     const isLoading = useStoreState((state) => state.albumContext.isLoading);
@@ -46,38 +45,27 @@ const AdminAlbumRouter: React.FC = () => {
     const albumName = useStoreState((state) => state.albumContext.data?.name);
 
     useEffect(() => {
-        if (id && id !== 'create') {
-            const albumId = parseInt(id, 10);
-            if (!isNaN(albumId)) {
-                setIsLoading(true);
-                setError(null);
+        if (slug) {
+            setIsLoading(true);
+            setError(null);
 
-                getAlbum(albumId)
-                    .then((albumData) => {
-                        setAlbum(albumData);
-                    })
-                    .catch((err) => {
-                        setError(err.response?.data?.error || 'Failed to load album');
-                        console.error('Failed to load album:', err);
-                    })
-                    .finally(() => {
-                        setIsLoading(false);
-                    });
-            } else {
-                setError('Invalid album ID');
-            }
+            getAlbumBySlug(slug)
+                .then((albumData) => {
+                    setAlbum(albumData);
+                })
+                .catch((err) => {
+                    setError(err.response?.data?.error || 'Failed to load album');
+                    console.error('Failed to load album:', err);
+                })
+                .finally(() => {
+                    setIsLoading(false);
+                });
         } else {
             clearAlbum();
         }
-    }, [id, setAlbum, setIsLoading, setError, clearAlbum]);
+    }, [slug, setAlbum, setIsLoading, setError, clearAlbum]);
 
-    useEffect(() => {
-        if (id && (isNaN(parseInt(id, 10)) || id === 'create')) {
-            navigate('/admin/albums');
-        }
-    }, [id, navigate]);
-
-    if (isLoading) {
+    if (isLoading || (!album && !error)) {
         return (
             <div className='flex h-64 items-center justify-center'>
                 <LoadingSpinner />
@@ -85,8 +73,8 @@ const AdminAlbumRouter: React.FC = () => {
         );
     }
 
-    if (error || !album) {
-        return <div className='text-center text-red-600'>Error loading album: {error || 'Album not found'}</div>;
+    if (error) {
+        return <div className='text-center text-red-600'>Error loading album: {error}</div>;
     }
 
     const navItems: AdminAlbumRouteDefinition[] = [
@@ -139,7 +127,7 @@ const AdminAlbumRouter: React.FC = () => {
                             </DropdownItem>
                             <DropdownDivider />
                             {albums.map((album) => (
-                                <DropdownItem key={album.id} to={`/admin/albums/view/${album.id}`}>
+                                <DropdownItem key={album.id} to={`/admin/albums/view/${album.slug}`}>
                                     <Cog8ToothIcon />
                                     <DropdownLabel>{album.name}</DropdownLabel>
                                 </DropdownItem>
@@ -156,7 +144,7 @@ const AdminAlbumRouter: React.FC = () => {
                     <NavbarSection className='max-lg:hidden'>
                         {navItems.map(({ path, permission, name }) => (
                             <Can permission={permission} key={path}>
-                                <NavbarItem to={`/admin/albums/view/${id}${path}`}>{name}</NavbarItem>
+                                <NavbarItem to={`/admin/albums/view/${slug}${path}`}>{name}</NavbarItem>
                             </Can>
                         ))}
                     </NavbarSection>
@@ -168,7 +156,7 @@ const AdminAlbumRouter: React.FC = () => {
                         <SidebarSection>
                             {navItems.map(({ path, permission, name }) => (
                                 <Can permission={permission} key={path}>
-                                    <SidebarItem to={`/admin/albums/view/${id}${path}`}>{name}</SidebarItem>
+                                    <SidebarItem to={`/admin/albums/view/${slug}${path}`}>{name}</SidebarItem>
                                 </Can>
                             ))}
                         </SidebarSection>
@@ -184,7 +172,7 @@ const AdminAlbumRouter: React.FC = () => {
                             key={path}
                             element={
                                 <Can permission={permission}>
-                                    <Component key={id} />
+                                    <Component key={slug} />
                                 </Can>
                             }
                         />

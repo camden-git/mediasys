@@ -1,104 +1,151 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 
-	"github.com/camden-git/mediasysbackend/media"
+	"github.com/camden-git/mediasysbackend/models"
 	"github.com/go-chi/chi/v5"
 	"gorm.io/gorm"
 )
 
-func (ah *AlbumHandler) UploadAlbumBanner(w http.ResponseWriter, r *http.Request) {
-	identifier := chi.URLParam(r, "id")
+// AddAlbumBanner uploads a new banner image and adds it to the album's banner list.
+// POST /api/admin/albums/{id}/banners
+func (h *AdminAlbumHandler) AddAlbumBanner(w http.ResponseWriter, r *http.Request) {
+	albumIDStr := chi.URLParam(r, "id")
+	albumID, err := parseID(r, "id")
+	if err != nil {
+		WriteAPIError(w, http.StatusBadRequest, "InvalidAlbumID", "Invalid album ID")
+		return
+	}
 
-	album, err := ah.getAlbumByIdentifier(identifier)
+	album, err := h.AlbumRepo.GetByID(albumID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album not found"})
+			WriteAPIError(w, http.StatusNotFound, "AlbumNotFound", "Album not found")
 		} else {
-			log.Printf("Error finding album '%s' for banner upload: %v", identifier, err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to find album"})
+			log.Printf("Error finding album %s for banner upload: %v", albumIDStr, err)
+			WriteAPIError(w, http.StatusInternalServerError, "AlbumFetchError", "Failed to find album")
 		}
 		return
 	}
 
-	const maxUploadSize = 20 << 20 // 20 MB
+	const maxUploadSize = 20 << 20
 	if err := r.ParseMultipartForm(maxUploadSize); err != nil {
-		log.Printf("Error parsing multipart form for banner upload: %v", err)
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid form data: " + err.Error()})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidForm", "Invalid form data: "+err.Error())
 		return
 	}
-
 	file, handler, err := r.FormFile("banner_image")
 	if err != nil {
 		if errors.Is(err, http.ErrMissingFile) {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "No file uploaded in 'banner_image' field"})
+			WriteAPIError(w, http.StatusBadRequest, "MissingFile", "No file in 'banner_image' field")
 		} else {
-			log.Printf("Error retrieving uploaded file 'banner_image': %v", err)
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Could not retrieve uploaded file"})
+			WriteAPIError(w, http.StatusBadRequest, "FileError", "Could not retrieve uploaded file")
 		}
 		return
 	}
 	defer file.Close()
+	log.Printf("Received banner upload for album %d: %s (size: %d)", album.ID, handler.Filename, handler.Size)
 
-	log.Printf("Received banner upload for album %d/%s: %s (Size: %d)", album.ID, album.Slug, handler.Filename, handler.Size)
-
-	if ah.MediaProcessor == nil {
-		log.Printf("CRITICAL ERROR: MediaProcessor not configured in AlbumHandler for banner upload.")
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Server configuration error"})
+	if h.MediaProcessor == nil {
+		WriteAPIError(w, http.StatusInternalServerError, "ConfigError", "Media processor not configured")
 		return
 	}
-
-	savedRelPath, procErr := ah.MediaProcessor.ProcessBanner(file)
+	savedRelPath, procErr := h.MediaProcessor.ProcessBanner(file)
 	if procErr != nil {
-		log.Printf("Error processing/saving banner for album %d/%s: %v", album.ID, album.Slug, procErr)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to process banner image"})
+		log.Printf("Error processing banner for album %d: %v", album.ID, procErr)
+		WriteAPIError(w, http.StatusInternalServerError, "BannerProcessError", "Failed to process banner image")
 		return
 	}
 
-	oldBannerRelativePathPtr := album.BannerImagePath
-	newBannerRelativePath := savedRelPath
-	if oldBannerRelativePathPtr != nil && (*oldBannerRelativePathPtr != newBannerRelativePath) {
-		mediaStore, storeErr := media.NewLocalStorage(ah.Cfg.MediaStoragePath, map[media.AssetType]string{})
-		if storeErr == nil { // only attempt to delete if store initialized
-			oldBannerFullPath, pathErr := mediaStore.GetFullPath(*oldBannerRelativePathPtr)
-			if pathErr == nil {
-				if removeErr := os.Remove(oldBannerFullPath); removeErr != nil && !os.IsNotExist(removeErr) {
-					log.Printf("Warning: Failed to remove old banner file %s: %v", oldBannerFullPath, removeErr)
-				} else if removeErr == nil {
-					log.Printf("Removed old banner file: %s", oldBannerFullPath)
-				}
-			} else {
-				log.Printf("Warning: Could not resolve full path for old banner %s: %v", *oldBannerRelativePathPtr, pathErr)
-			}
-		} else {
-			log.Printf("Warning: Could not initialize media store to delete old banner: %v", storeErr)
-		}
+	banner := &models.AlbumBanner{
+		AlbumID:   album.ID,
+		ImagePath: savedRelPath,
+		SortOrder: 0,
 	}
-
-	dbErr := ah.AlbumRepo.UpdateBannerPath(album.ID, &newBannerRelativePath)
-	if dbErr != nil {
-		mediaStore, storeErr := media.NewLocalStorage(ah.Cfg.MediaStoragePath, map[media.AssetType]string{})
-		if storeErr == nil {
-			// attempt to delete the newly saved banner if DB update fails
-			if delErr := mediaStore.Delete(newBannerRelativePath); delErr != nil {
-				log.Printf("Warning: Failed to delete banner %s after DB update failure: %v", newBannerRelativePath, delErr)
-			}
-		}
-		log.Printf("Error updating banner path in DB for album %d/%s: %v", album.ID, album.Slug, dbErr)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to save banner information"})
+	if err := h.AlbumRepo.AddBanner(banner); err != nil {
+		os.Remove(filepath.Join(h.Cfg.MediaStoragePath, filepath.FromSlash(savedRelPath)))
+		log.Printf("Error saving banner for album %d: %v", album.ID, err)
+		WriteAPIError(w, http.StatusInternalServerError, "BannerSaveError", "Failed to save banner")
 		return
 	}
 
-	updatedAlbum, err := ah.AlbumRepo.GetByID(album.ID)
+	WriteAPIResponse(w, http.StatusCreated, banner)
+}
+
+// DeleteAlbumBanner deletes a specific banner from an album.
+// DELETE /api/admin/albums/{id}/banners/{bannerId}
+func (h *AdminAlbumHandler) DeleteAlbumBanner(w http.ResponseWriter, r *http.Request) {
+	albumID, err := parseID(r, "id")
 	if err != nil {
-		log.Printf("Error fetching updated album %d after banner upload: %v", album.ID, err)
-		// the banner was uploaded and DB updated, so this is a partial success
-		writeJSON(w, http.StatusOK, map[string]interface{}{"message": "Banner uploaded successfully", "banner_image_path": newBannerRelativePath})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidAlbumID", "Invalid album ID")
 		return
 	}
-	writeJSON(w, http.StatusOK, updatedAlbum)
+	bannerID, err := parseID(r, "bannerId")
+	if err != nil {
+		WriteAPIError(w, http.StatusBadRequest, "InvalidBannerID", "Invalid banner ID")
+		return
+	}
+
+	// Load the banner to get the file path before deleting
+	banners, err := h.AlbumRepo.GetBanners(albumID)
+	if err != nil {
+		log.Printf("Error fetching banners for album %d: %v", albumID, err)
+		WriteAPIError(w, http.StatusInternalServerError, "BannerFetchError", "Failed to fetch banners")
+		return
+	}
+
+	var bannerPath string
+	for _, b := range banners {
+		if b.ID == bannerID {
+			bannerPath = b.ImagePath
+			break
+		}
+	}
+
+	if err := h.AlbumRepo.DeleteBanner(bannerID, albumID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			WriteAPIError(w, http.StatusNotFound, "BannerNotFound", "Banner not found")
+		} else {
+			log.Printf("Error deleting banner %d from album %d: %v", bannerID, albumID, err)
+			WriteAPIError(w, http.StatusInternalServerError, "BannerDeleteError", "Failed to delete banner")
+		}
+		return
+	}
+
+	if bannerPath != "" {
+		os.Remove(filepath.Join(h.Cfg.MediaStoragePath, filepath.FromSlash(bannerPath)))
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ReorderAlbumBanners updates the sort order of album banners.
+// PUT /api/admin/albums/{id}/banners/order
+func (h *AdminAlbumHandler) ReorderAlbumBanners(w http.ResponseWriter, r *http.Request) {
+	albumID, err := parseID(r, "id")
+	if err != nil {
+		WriteAPIError(w, http.StatusBadRequest, "InvalidAlbumID", "Invalid album ID")
+		return
+	}
+
+	var req struct {
+		BannerIDs []uint `json:"banner_ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request body: "+err.Error())
+		return
+	}
+
+	if err := h.AlbumRepo.ReorderBanners(albumID, req.BannerIDs); err != nil {
+		log.Printf("Error reordering banners for album %d: %v", albumID, err)
+		WriteAPIError(w, http.StatusInternalServerError, "BannerReorderError", "Failed to reorder banners")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

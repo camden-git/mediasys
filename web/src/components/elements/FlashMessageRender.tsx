@@ -22,7 +22,7 @@ const FlashMessageRender: React.FC<FlashMessageRenderProps> = ({ byKey }) => {
         >
             <div className='flex w-full flex-col items-center space-y-4 sm:items-end'>
                 {filteredFlashes.map((flash, index) => (
-                    <Fragment key={`${flash.key}-${index}`}>
+                    <Fragment key={flash.id ?? `${flash.key}-${index}`}>
                         {index > 0 && <div className='mt-2'></div>}
                         <Notification type={flash.type} title={flash.title}>
                             {flash.message}

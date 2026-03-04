@@ -10,7 +10,7 @@ type Album struct {
 	Slug               string            `gorm:"not null;unique" json:"slug"`
 	Description        *string           `gorm:"" json:"description,omitempty"` // Nullable
 	FolderPath         string            `gorm:"not null;unique" json:"folder_path"`
-	BannerImagePath    *string           `gorm:"" json:"banner_image_path,omitempty"` // Nullable
+	Banners            []AlbumBanner     `gorm:"foreignKey:AlbumID" json:"-"`
 	SortOrder          string            `gorm:"not null;default:'name_asc'" json:"sort_order"`
 	ZipPath            *string           `gorm:"" json:"zip_path,omitempty"` // Nullable
 	ZipSize            *int64            `gorm:"" json:"zip_size,omitempty"` // Nullable

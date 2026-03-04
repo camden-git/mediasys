@@ -66,7 +66,7 @@ const AlbumManagementContainer: React.FC = () => {
                                 <TableCell>
                                     <div>
                                         <Link
-                                            to={`/admin/albums/view/${album.id}`}
+                                            to={`/admin/albums/view/${album.slug}`}
                                             className='font-medium hover:underline'
                                         >
                                             {album.name}
@@ -94,7 +94,7 @@ const AlbumManagementContainer: React.FC = () => {
                                 </TableCell>
                                 <TableCell>
                                     <Can permission='album.edit.general'>
-                                        <Button plain to={`/admin/albums/view/${album.id}`}>
+                                        <Button plain to={`/admin/albums/view/${album.slug}`}>
                                             Edit
                                         </Button>
                                     </Can>

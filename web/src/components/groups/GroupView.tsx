@@ -1,38 +1,16 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { AlbumGroup } from '../../types.ts';
-import { getBannerUrl, getGroup } from '../../api.ts';
+import { getBannerUrl } from '../../api.ts';
 import LoadingSpinner from '../elements/LoadingSpinner.tsx';
 import { SparklesIcon, PhotoIcon } from '@heroicons/react/16/solid';
+import { useGroup } from '../../hooks/useGroups.ts';
 
 const GroupView: React.FC = () => {
     const { slug } = useParams<{ slug: string }>();
-    const [group, setGroup] = useState<AlbumGroup | null>(null);
-    const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-
-    useEffect(() => {
-        if (!slug) return;
-        const controller = new AbortController();
-        setIsLoading(true);
-        setError(null);
-        (async () => {
-            try {
-                const data = await getGroup(slug, controller.signal);
-                setGroup(data);
-            } catch (err: any) {
-                if (err.name !== 'AbortError') {
-                    setError(err.message || 'Failed to load group');
-                }
-            } finally {
-                setIsLoading(false);
-            }
-        })();
-        return () => controller.abort();
-    }, [slug]);
+    const { group, isLoading, error } = useGroup(slug);
 
     if (isLoading) return <LoadingSpinner />;
-    if (error) return <p className='p-8 text-red-500'>{error}</p>;
+    if (error) return <p className='p-8 text-red-500'>{error.message || 'Failed to load group'}</p>;
     if (!group) return null;
 
     return (
@@ -43,6 +21,7 @@ const GroupView: React.FC = () => {
                     <img
                         src={getBannerUrl(group.banner_image_path)}
                         alt=''
+                        decoding='async'
                         className='h-full w-full object-cover opacity-60'
                     />
                 ) : (
@@ -85,14 +64,15 @@ const GroupView: React.FC = () => {
                                 to={`/album/${album.slug}`}
                                 className='group overflow-hidden rounded-xl bg-gray-100 transition-shadow hover:shadow-md dark:bg-gray-800'
                             >
-                                {album.banner_image_path && (
+                                {album.banners?.[0] ? (
                                     <img
-                                        src={getBannerUrl(album.banner_image_path)}
+                                        src={getBannerUrl(album.banners[0])}
                                         alt=''
+                                        loading='lazy'
+                                        decoding='async'
                                         className='h-32 w-full object-cover opacity-70 transition-opacity group-hover:opacity-90'
                                     />
-                                )}
-                                {!album.banner_image_path && (
+                                ) : (
                                     <div className='h-32 w-full bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600' />
                                 )}
                                 <div className='p-3'>

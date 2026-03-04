@@ -17,6 +17,40 @@ import (
 	"gorm.io/gorm"
 )
 
+// adminCollectionResponse is the admin view of a collection with its banner objects.
+type adminCollectionResponse struct {
+	ID                       uint                         `json:"id"`
+	Name                     string                       `json:"name"`
+	Slug                     string                       `json:"slug"`
+	Description              *string                      `json:"description,omitempty"`
+	IsPublic                 bool                         `json:"is_public"`
+	FilterMatch              string                       `json:"filter_match"`
+	InheritBannersFromAlbums bool                         `json:"inherit_banners_from_albums"`
+	Banners                  []models.CollectionBanner    `json:"banners"`
+	Filters                  []models.CollectionTagFilter `json:"filters,omitempty"`
+	CreatedAt                int64                        `json:"created_at"`
+	UpdatedAt                int64                        `json:"updated_at"`
+}
+
+func buildCollectionAdminResponse(c *models.Collection, banners []models.CollectionBanner) *adminCollectionResponse {
+	if banners == nil {
+		banners = []models.CollectionBanner{}
+	}
+	return &adminCollectionResponse{
+		ID:                       c.ID,
+		Name:                     c.Name,
+		Slug:                     c.Slug,
+		Description:              c.Description,
+		IsPublic:                 c.IsPublic,
+		FilterMatch:              c.FilterMatch,
+		InheritBannersFromAlbums: c.InheritBannersFromAlbums,
+		Banners:                  banners,
+		Filters:                  c.Filters,
+		CreatedAt:                c.CreatedAt,
+		UpdatedAt:                c.UpdatedAt,
+	}
+}
+
 // AdminCollectionHandler handles admin CRUD for collections.
 type AdminCollectionHandler struct {
 	CollectionRepo repository.CollectionRepositoryInterface
@@ -44,7 +78,13 @@ func (h *AdminCollectionHandler) ListCollections(w http.ResponseWriter, r *http.
 		WriteAPIError(w, http.StatusInternalServerError, "CollectionListError", "Failed to retrieve collections")
 		return
 	}
-	WriteAPIResponse(w, http.StatusOK, collections)
+	result := make([]*adminCollectionResponse, len(collections))
+	for i, c := range collections {
+		banners, _ := h.CollectionRepo.GetBanners(c.ID)
+		c := c
+		result[i] = buildCollectionAdminResponse(&c, banners)
+	}
+	WriteAPIResponse(w, http.StatusOK, result)
 }
 
 // GetCollection returns a single collection by ID.
@@ -64,7 +104,8 @@ func (h *AdminCollectionHandler) GetCollection(w http.ResponseWriter, r *http.Re
 		}
 		return
 	}
-	WriteAPIResponse(w, http.StatusOK, c)
+	banners, _ := h.CollectionRepo.GetBanners(c.ID)
+	WriteAPIResponse(w, http.StatusOK, buildCollectionAdminResponse(c, banners))
 }
 
 // CreateCollection creates a new collection.
@@ -74,6 +115,7 @@ func (h *AdminCollectionHandler) CreateCollection(w http.ResponseWriter, r *http
 		Slug        string  `json:"slug"`
 		Description *string `json:"description"`
 		IsPublic    *bool   `json:"is_public"`
+		FilterMatch *string `json:"filter_match"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request body: "+err.Error())
@@ -92,11 +134,16 @@ func (h *AdminCollectionHandler) CreateCollection(w http.ResponseWriter, r *http
 	if req.IsPublic != nil {
 		isPublic = *req.IsPublic
 	}
+	filterMatch := "all"
+	if req.FilterMatch != nil && (*req.FilterMatch == "all" || *req.FilterMatch == "any") {
+		filterMatch = *req.FilterMatch
+	}
 	c := &models.Collection{
 		Name:        req.Name,
 		Slug:        req.Slug,
 		Description: req.Description,
 		IsPublic:    isPublic,
+		FilterMatch: filterMatch,
 	}
 	if err := h.CollectionRepo.Create(c); err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {
@@ -107,7 +154,7 @@ func (h *AdminCollectionHandler) CreateCollection(w http.ResponseWriter, r *http
 		}
 		return
 	}
-	WriteAPIResponse(w, http.StatusCreated, c)
+	WriteAPIResponse(w, http.StatusCreated, buildCollectionAdminResponse(c, nil))
 }
 
 // UpdateCollection updates an existing collection.
@@ -132,6 +179,7 @@ func (h *AdminCollectionHandler) UpdateCollection(w http.ResponseWriter, r *http
 		Slug        *string `json:"slug"`
 		Description *string `json:"description"`
 		IsPublic    *bool   `json:"is_public"`
+		FilterMatch *string `json:"filter_match"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request body: "+err.Error())
@@ -142,6 +190,10 @@ func (h *AdminCollectionHandler) UpdateCollection(w http.ResponseWriter, r *http
 	slug := c.Slug
 	description := c.Description
 	isPublic := c.IsPublic
+	filterMatch := c.FilterMatch
+	if filterMatch == "" {
+		filterMatch = "all"
+	}
 
 	if req.Name != nil {
 		name = *req.Name
@@ -159,8 +211,11 @@ func (h *AdminCollectionHandler) UpdateCollection(w http.ResponseWriter, r *http
 	if req.IsPublic != nil {
 		isPublic = *req.IsPublic
 	}
+	if req.FilterMatch != nil && (*req.FilterMatch == "all" || *req.FilterMatch == "any") {
+		filterMatch = *req.FilterMatch
+	}
 
-	if err := h.CollectionRepo.Update(id, name, slug, description, isPublic); err != nil {
+	if err := h.CollectionRepo.Update(id, name, slug, description, isPublic, filterMatch); err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {
 			WriteAPIError(w, http.StatusConflict, "CollectionConflict", "Collection name or slug already exists")
 		} else {
@@ -170,7 +225,8 @@ func (h *AdminCollectionHandler) UpdateCollection(w http.ResponseWriter, r *http
 		return
 	}
 	updated, _ := h.CollectionRepo.GetByID(id)
-	WriteAPIResponse(w, http.StatusOK, updated)
+	banners, _ := h.CollectionRepo.GetBanners(id)
+	WriteAPIResponse(w, http.StatusOK, buildCollectionAdminResponse(updated, banners))
 }
 
 // DeleteCollection soft-deletes a collection.
@@ -192,15 +248,15 @@ func (h *AdminCollectionHandler) DeleteCollection(w http.ResponseWriter, r *http
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// UploadCollectionBanner uploads and sets a banner image for a collection.
-func (h *AdminCollectionHandler) UploadCollectionBanner(w http.ResponseWriter, r *http.Request) {
+// AddCollectionBanner uploads a new banner image for a collection.
+// POST /api/admin/collections/{id}/banners
+func (h *AdminCollectionHandler) AddCollectionBanner(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r, "id")
 	if err != nil {
 		WriteAPIError(w, http.StatusBadRequest, "InvalidID", "Invalid collection ID")
 		return
 	}
-	c, err := h.CollectionRepo.GetByID(id)
-	if err != nil {
+	if _, err := h.CollectionRepo.GetByID(id); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			WriteAPIError(w, http.StatusNotFound, "CollectionNotFound", "Collection not found")
 		} else {
@@ -237,24 +293,119 @@ func (h *AdminCollectionHandler) UploadCollectionBanner(w http.ResponseWriter, r
 		return
 	}
 
-	if c.BannerImagePath != nil && *c.BannerImagePath != savedRelPath {
-		mediaStore, storeErr := media.NewLocalStorage(h.Cfg.MediaStoragePath, map[media.AssetType]string{})
-		if storeErr == nil {
-			if oldPath, pathErr := mediaStore.GetFullPath(*c.BannerImagePath); pathErr == nil {
-				if removeErr := os.Remove(oldPath); removeErr != nil && !os.IsNotExist(removeErr) {
-					log.Printf("Warning: failed to remove old collection banner %s: %v", oldPath, removeErr)
-				}
-			}
+	banner := &models.CollectionBanner{
+		CollectionID: id,
+		ImagePath:    savedRelPath,
+		SortOrder:    0,
+	}
+	if err := h.CollectionRepo.AddBanner(banner); err != nil {
+		os.Remove(savedRelPath)
+		log.Printf("Error saving banner for collection %d: %v", id, err)
+		WriteAPIError(w, http.StatusInternalServerError, "BannerSaveError", "Failed to save banner")
+		return
+	}
+
+	WriteAPIResponse(w, http.StatusCreated, banner)
+}
+
+// DeleteCollectionBanner deletes a specific banner from a collection.
+// DELETE /api/admin/collections/{id}/banners/{bannerId}
+func (h *AdminCollectionHandler) DeleteCollectionBanner(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r, "id")
+	if err != nil {
+		WriteAPIError(w, http.StatusBadRequest, "InvalidID", "Invalid collection ID")
+		return
+	}
+	bannerID, err := parseID(r, "bannerId")
+	if err != nil {
+		WriteAPIError(w, http.StatusBadRequest, "InvalidBannerID", "Invalid banner ID")
+		return
+	}
+
+	banners, err := h.CollectionRepo.GetBanners(id)
+	if err != nil {
+		log.Printf("Error fetching banners for collection %d: %v", id, err)
+		WriteAPIError(w, http.StatusInternalServerError, "BannerFetchError", "Failed to fetch banners")
+		return
+	}
+
+	var bannerPath string
+	for _, b := range banners {
+		if b.ID == bannerID {
+			bannerPath = b.ImagePath
+			break
 		}
 	}
 
-	if dbErr := h.CollectionRepo.SetBannerPath(id, &savedRelPath); dbErr != nil {
-		log.Printf("Error saving banner path for collection %d: %v", id, dbErr)
-		WriteAPIError(w, http.StatusInternalServerError, "BannerSaveError", "Failed to save banner information")
+	if err := h.CollectionRepo.DeleteCollectionBanner(bannerID, id); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			WriteAPIError(w, http.StatusNotFound, "BannerNotFound", "Banner not found")
+		} else {
+			log.Printf("Error deleting banner %d from collection %d: %v", bannerID, id, err)
+			WriteAPIError(w, http.StatusInternalServerError, "BannerDeleteError", "Failed to delete banner")
+		}
 		return
 	}
+
+	if bannerPath != "" {
+		os.Remove(bannerPath)
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ReorderCollectionBanners updates the sort order of collection banners.
+// PUT /api/admin/collections/{id}/banners/order
+func (h *AdminCollectionHandler) ReorderCollectionBanners(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r, "id")
+	if err != nil {
+		WriteAPIError(w, http.StatusBadRequest, "InvalidID", "Invalid collection ID")
+		return
+	}
+
+	var req struct {
+		BannerIDs []uint `json:"banner_ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request body: "+err.Error())
+		return
+	}
+
+	if err := h.CollectionRepo.ReorderCollectionBanners(id, req.BannerIDs); err != nil {
+		log.Printf("Error reordering banners for collection %d: %v", id, err)
+		WriteAPIError(w, http.StatusInternalServerError, "BannerReorderError", "Failed to reorder banners")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// SetCollectionInheritBanners sets the inherit_banners_from_albums flag for a collection.
+// PUT /api/admin/collections/{id}/banners/inherit
+func (h *AdminCollectionHandler) SetCollectionInheritBanners(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r, "id")
+	if err != nil {
+		WriteAPIError(w, http.StatusBadRequest, "InvalidID", "Invalid collection ID")
+		return
+	}
+
+	var req struct {
+		Inherit bool `json:"inherit"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request body: "+err.Error())
+		return
+	}
+
+	if err := h.CollectionRepo.SetInheritBanners(id, req.Inherit); err != nil {
+		log.Printf("Error setting inherit_banners for collection %d: %v", id, err)
+		WriteAPIError(w, http.StatusInternalServerError, "InheritSetError", "Failed to update inherit setting")
+		return
+	}
+
 	updated, _ := h.CollectionRepo.GetByID(id)
-	WriteAPIResponse(w, http.StatusOK, updated)
+	banners, _ := h.CollectionRepo.GetBanners(id)
+	WriteAPIResponse(w, http.StatusOK, buildCollectionAdminResponse(updated, banners))
 }
 
 // SetCollectionFilters replaces all tag filters for a collection.
@@ -278,6 +429,7 @@ func (h *AdminCollectionHandler) SetCollectionFilters(w http.ResponseWriter, r *
 		Filters []struct {
 			TagKey   string `json:"tag_key"`
 			TagValue string `json:"tag_value"`
+			Negate   bool   `json:"negate"`
 		} `json:"filters"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -294,6 +446,7 @@ func (h *AdminCollectionHandler) SetCollectionFilters(w http.ResponseWriter, r *
 		filters = append(filters, models.CollectionTagFilter{
 			TagKey:   f.TagKey,
 			TagValue: f.TagValue,
+			Negate:   f.Negate,
 		})
 	}
 
@@ -303,7 +456,8 @@ func (h *AdminCollectionHandler) SetCollectionFilters(w http.ResponseWriter, r *
 		return
 	}
 	updated, _ := h.CollectionRepo.GetByID(id)
-	WriteAPIResponse(w, http.StatusOK, updated)
+	banners, _ := h.CollectionRepo.GetBanners(id)
+	WriteAPIResponse(w, http.StatusOK, buildCollectionAdminResponse(updated, banners))
 }
 
 // parseID is a helper to parse a uint URL param by name.

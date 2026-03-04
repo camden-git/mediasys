@@ -180,7 +180,7 @@ func (ph *PersonHandler) DeletePerson(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	writeJSON(w, http.StatusNoContent, nil)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (ph *PersonHandler) ListAliases(w http.ResponseWriter, r *http.Request) {
@@ -297,7 +297,7 @@ func (ph *PersonHandler) DeleteAlias(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	writeJSON(w, http.StatusNoContent, nil)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // SetKeyPhoto sets (or clears) the key photo for a person.

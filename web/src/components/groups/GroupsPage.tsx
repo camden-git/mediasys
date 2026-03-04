@@ -1,33 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Link } from 'react-router-dom';
-import { AlbumGroup } from '../../types.ts';
-import { getBannerUrl, getGroups } from '../../api.ts';
+import { getBannerUrl } from '../../api.ts';
 import LoadingSpinner from '../elements/LoadingSpinner.tsx';
+import { useGroups } from '../../hooks/useGroups.ts';
 
 const GroupsPage: React.FC = () => {
-    const [groups, setGroups] = useState<AlbumGroup[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-
-    useEffect(() => {
-        const controller = new AbortController();
-        (async () => {
-            try {
-                const data = await getGroups(controller.signal);
-                setGroups(data);
-            } catch (err: any) {
-                if (err.name !== 'AbortError') {
-                    setError(err.message || 'Failed to load groups');
-                }
-            } finally {
-                setIsLoading(false);
-            }
-        })();
-        return () => controller.abort();
-    }, []);
+    const { groups, isLoading, error } = useGroups();
 
     if (isLoading) return <LoadingSpinner />;
-    if (error) return <p className='p-8 text-red-500'>{error}</p>;
+    if (error) return <p className='p-8 text-red-500'>{error.message || 'Failed to load groups'}</p>;
 
     return (
         <div className='mx-auto max-w-6xl px-4 py-12'>
@@ -44,6 +25,8 @@ const GroupsPage: React.FC = () => {
                             <img
                                 src={getBannerUrl(group.banner_image_path)}
                                 alt=''
+                                loading='lazy'
+                                decoding='async'
                                 className='h-40 w-full object-cover opacity-70 transition-opacity group-hover:opacity-90'
                             />
                         )}

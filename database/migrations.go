@@ -36,12 +36,18 @@ func RunMigrations(db *gorm.DB) error {
 		migrateSortOrderValues,
 		migrateAddTagsAndCollections,
 		migrateAddPersonKeyPhoto,
+		migrateCollectionFilterExpansion,
+		migrateAddImageTagsImagePathIndex,
+		migrateAddMultiBanners,
 	}
 
 	migrationNames := []string{
 		"fix_sort_order_values",
 		"add_tags_and_collections",
 		"add_person_key_photo",
+		"collection_filter_expansion",
+		"add_image_tags_image_path_index",
+		"add_multi_banners",
 	}
 
 	// Run pending migrations
@@ -128,6 +134,73 @@ func migrateAddPersonKeyPhoto(db *gorm.DB) error {
 		return fmt.Errorf("failed to auto-migrate people table: %w", err)
 	}
 	log.Println("add_person_key_photo migration completed.")
+	return nil
+}
+
+// migrateCollectionFilterExpansion adds FilterMatch to collections and Negate to collection_tag_filters.
+func migrateCollectionFilterExpansion(db *gorm.DB) error {
+	log.Println("Running collection filter expansion migration...")
+	if err := db.AutoMigrate(&models.Collection{}, &models.CollectionTagFilter{}); err != nil {
+		return fmt.Errorf("failed to auto-migrate: %w", err)
+	}
+	log.Println("Collection filter expansion migration completed.")
+	return nil
+}
+
+// migrateAddImageTagsImagePathIndex adds a lookup index on image_tags(image_path).
+func migrateAddImageTagsImagePathIndex(db *gorm.DB) error {
+	log.Println("Running add_image_tags_image_path_index migration...")
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_image_tags_image_path ON image_tags (image_path)`).Error; err != nil {
+		return fmt.Errorf("failed to create image_path index on image_tags: %w", err)
+	}
+	log.Println("add_image_tags_image_path_index migration completed.")
+	return nil
+}
+
+// migrateAddMultiBanners creates album_banners and collection_banners tables,
+// migrates existing single banner_image_path values, and adds inherit_banners_from_albums to collections.
+func migrateAddMultiBanners(db *gorm.DB) error {
+	log.Println("Running add_multi_banners migration...")
+
+	// Create new tables
+	if err := db.AutoMigrate(&models.AlbumBanner{}, &models.CollectionBanner{}); err != nil {
+		return fmt.Errorf("failed to auto-migrate banner tables: %w", err)
+	}
+
+	// Migrate existing album banner_image_path values into album_banners (skip if column doesn't exist)
+	var albumColCount int
+	db.Raw(`SELECT COUNT(*) FROM pragma_table_info('albums') WHERE name = 'banner_image_path'`).Scan(&albumColCount)
+	if albumColCount > 0 {
+		if err := db.Exec(`
+			INSERT OR IGNORE INTO album_banners (album_id, image_path, sort_order, created_at)
+			SELECT id, banner_image_path, 0, strftime('%s', 'now')
+			FROM albums
+			WHERE banner_image_path IS NOT NULL AND banner_image_path != ''
+		`).Error; err != nil {
+			return fmt.Errorf("failed to migrate album banners: %w", err)
+		}
+	}
+
+	// Migrate existing collection banner_image_path values into collection_banners (skip if column doesn't exist)
+	var collColCount int
+	db.Raw(`SELECT COUNT(*) FROM pragma_table_info('collections') WHERE name = 'banner_image_path'`).Scan(&collColCount)
+	if collColCount > 0 {
+		if err := db.Exec(`
+			INSERT OR IGNORE INTO collection_banners (collection_id, image_path, sort_order, created_at)
+			SELECT id, banner_image_path, 0, strftime('%s', 'now')
+			FROM collections
+			WHERE banner_image_path IS NOT NULL AND banner_image_path != ''
+		`).Error; err != nil {
+			return fmt.Errorf("failed to migrate collection banners: %w", err)
+		}
+	}
+
+	// Add inherit_banners_from_albums to collections (AutoMigrate handles SQLite ALTER TABLE)
+	if err := db.AutoMigrate(&models.Collection{}); err != nil {
+		return fmt.Errorf("failed to add inherit_banners_from_albums column: %w", err)
+	}
+
+	log.Println("add_multi_banners migration completed.")
 	return nil
 }
 

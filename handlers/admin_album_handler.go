@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/camden-git/mediasysbackend/config"
+	"github.com/camden-git/mediasysbackend/media"
 	"github.com/camden-git/mediasysbackend/models"
 	"github.com/camden-git/mediasysbackend/realtime"
 	"github.com/camden-git/mediasysbackend/repository"
@@ -20,14 +21,15 @@ import (
 )
 
 type AdminAlbumHandler struct {
-	AlbumRepo repository.AlbumRepositoryInterface
-	ImageRepo repository.ImageRepositoryInterface
-	UserRepo  repository.UserRepository
-	RoleRepo  repository.RoleRepository
-	TagRepo   repository.ImageTagRepositoryInterface
-	Cfg       config.Config
-	ImgProc   *workers.ImageProcessor
-	Hub       *realtime.Hub
+	AlbumRepo      repository.AlbumRepositoryInterface
+	ImageRepo      repository.ImageRepositoryInterface
+	UserRepo       repository.UserRepository
+	RoleRepo       repository.RoleRepository
+	TagRepo        repository.ImageTagRepositoryInterface
+	Cfg            config.Config
+	ImgProc        *workers.ImageProcessor
+	Hub            *realtime.Hub
+	MediaProcessor *media.Processor
 }
 
 func NewAdminAlbumHandler(
@@ -54,23 +56,23 @@ func NewAdminAlbumHandler(
 
 // AdminAlbumResponse represents the admin view of an album with additional fields
 type AdminAlbumResponse struct {
-	ID                 uint    `json:"id"`
-	Name               string  `json:"name"`
-	Slug               string  `json:"slug"`
-	Description        *string `json:"description,omitempty"`
-	FolderPath         string  `json:"folder_path"`
-	BannerImagePath    *string `json:"banner_image_path,omitempty"`
-	SortOrder          string  `json:"sort_order"`
-	ZipPath            *string `json:"zip_path,omitempty"`
-	ZipSize            *int64  `json:"zip_size,omitempty"`
-	ZipStatus          string  `json:"zip_status"`
-	ZipLastGeneratedAt *int64  `json:"zip_last_generated_at,omitempty"`
-	ZipLastRequestedAt *int64  `json:"zip_last_requested_at,omitempty"`
-	ZipError           *string `json:"zip_error,omitempty"`
-	CreatedAt          int64   `json:"created_at"`
-	UpdatedAt          int64   `json:"updated_at"`
-	IsHidden           bool    `json:"is_hidden"`
-	Location           *string `json:"location,omitempty"`
+	ID                 uint                 `json:"id"`
+	Name               string               `json:"name"`
+	Slug               string               `json:"slug"`
+	Description        *string              `json:"description,omitempty"`
+	FolderPath         string               `json:"folder_path"`
+	Banners            []models.AlbumBanner `json:"banners"`
+	SortOrder          string               `json:"sort_order"`
+	ZipPath            *string              `json:"zip_path,omitempty"`
+	ZipSize            *int64               `json:"zip_size,omitempty"`
+	ZipStatus          string               `json:"zip_status"`
+	ZipLastGeneratedAt *int64               `json:"zip_last_generated_at,omitempty"`
+	ZipLastRequestedAt *int64               `json:"zip_last_requested_at,omitempty"`
+	ZipError           *string              `json:"zip_error,omitempty"`
+	CreatedAt          int64                `json:"created_at"`
+	UpdatedAt          int64                `json:"updated_at"`
+	IsHidden           bool                 `json:"is_hidden"`
+	Location           *string              `json:"location,omitempty"`
 	Artists            []struct {
 		ID        uint   `json:"id"`
 		Username  string `json:"username"`
@@ -80,14 +82,17 @@ type AdminAlbumResponse struct {
 }
 
 // convertAlbumToAdminResponse converts a models.Album to AdminAlbumResponse
-func convertAlbumToAdminResponse(album *models.Album) *AdminAlbumResponse {
+func convertAlbumToAdminResponse(album *models.Album, banners []models.AlbumBanner) *AdminAlbumResponse {
+	if banners == nil {
+		banners = []models.AlbumBanner{}
+	}
 	return &AdminAlbumResponse{
 		ID:                 album.ID,
 		Name:               album.Name,
 		Slug:               album.Slug,
 		Description:        album.Description,
 		FolderPath:         album.FolderPath,
-		BannerImagePath:    album.BannerImagePath,
+		Banners:            banners,
 		SortOrder:          album.SortOrder,
 		ZipPath:            album.ZipPath,
 		ZipSize:            album.ZipSize,
@@ -113,33 +118,39 @@ func (h *AdminAlbumHandler) ListAlbums(w http.ResponseWriter, r *http.Request) {
 
 	adminAlbums := make([]*AdminAlbumResponse, len(albums))
 	for i, album := range albums {
-		adminAlbums[i] = convertAlbumToAdminResponse(&album)
+		adminAlbums[i] = convertAlbumToAdminResponse(&album, nil)
 	}
 
 	WriteAPIResponse(w, http.StatusOK, adminAlbums)
 }
 
-// GetAlbum retrieves a single album by ID for admin view
+// GetAlbum retrieves a single album by ID or slug for admin view
 func (h *AdminAlbumHandler) GetAlbum(w http.ResponseWriter, r *http.Request) {
-	albumIDStr := chi.URLParam(r, "id")
-	albumID, err := strconv.ParseUint(albumIDStr, 10, 64)
-	if err != nil {
-		WriteAPIError(w, http.StatusBadRequest, "InvalidAlbumID", "Invalid album ID")
-		return
+	identifier := chi.URLParam(r, "id")
+
+	var album *models.Album
+	var err error
+	if albumID, parseErr := strconv.ParseUint(identifier, 10, 64); parseErr == nil {
+		album, err = h.AlbumRepo.GetByID(uint(albumID))
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			album, err = h.AlbumRepo.GetBySlug(identifier)
+		}
+	} else {
+		album, err = h.AlbumRepo.GetBySlug(identifier)
 	}
 
-	album, err := h.AlbumRepo.GetByID(uint(albumID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			WriteAPIError(w, http.StatusNotFound, "AlbumNotFound", "Album not found")
 		} else {
-			log.Printf("Error getting album %d for admin: %v", albumID, err)
+			log.Printf("Error getting album %q for admin: %v", identifier, err)
 			WriteAPIError(w, http.StatusInternalServerError, "AlbumFetchError", "Failed to retrieve album")
 		}
 		return
 	}
 
-	adminAlbum := convertAlbumToAdminResponse(album)
+	banners, _ := h.AlbumRepo.GetBanners(album.ID)
+	adminAlbum := convertAlbumToAdminResponse(album, banners)
 	// populate artists with names
 	if ids, err := h.ImageRepo.GetDistinctUploaderIDsByFolderPrefix(album.FolderPath); err == nil && len(ids) > 0 {
 		for _, id := range ids {
@@ -236,7 +247,7 @@ func (h *AdminAlbumHandler) CreateAlbum(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	WriteAPIResponse(w, http.StatusCreated, convertAlbumToAdminResponse(&newAlbum))
+	WriteAPIResponse(w, http.StatusCreated, convertAlbumToAdminResponse(&newAlbum, nil))
 }
 
 // UpdateAlbum updates an existing album's settings (name, description, hidden status, location, sort order)
@@ -340,7 +351,8 @@ func (h *AdminAlbumHandler) UpdateAlbum(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	WriteAPIResponse(w, http.StatusOK, convertAlbumToAdminResponse(updatedAlbum))
+	updatedBanners, _ := h.AlbumRepo.GetBanners(updatedAlbum.ID)
+	WriteAPIResponse(w, http.StatusOK, convertAlbumToAdminResponse(updatedAlbum, updatedBanners))
 }
 
 // DeleteAlbum deletes an album
@@ -383,7 +395,10 @@ func (h *AdminAlbumHandler) DeleteAlbum(w http.ResponseWriter, r *http.Request) 
 		imagePaths = append(imagePaths, assetPaths{img.ThumbnailPath, img.PreviewPath})
 	}
 
-	// Single transaction: embeddings → faces → images → album (all hard deletes)
+	// Collect banner paths before deletion
+	existingBanners, _ := h.AlbumRepo.GetBanners(album.ID)
+
+	// Single transaction: embeddings → faces → images → banners → album (all hard deletes)
 	err = db.Transaction(func(tx *gorm.DB) error {
 		// 1. Collect face IDs for images in this album
 		var faceIDs []uint
@@ -413,7 +428,12 @@ func (h *AdminAlbumHandler) DeleteAlbum(w http.ResponseWriter, r *http.Request) 
 			return err
 		}
 
-		// 5. Hard-delete the album record itself
+		// 5. Hard-delete album banners
+		if err := tx.Where("album_id = ?", album.ID).Delete(&models.AlbumBanner{}).Error; err != nil {
+			return err
+		}
+
+		// 6. Hard-delete the album record itself
 		if err := tx.Unscoped().Delete(&models.Album{}, album.ID).Error; err != nil {
 			return err
 		}
@@ -435,8 +455,10 @@ func (h *AdminAlbumHandler) DeleteAlbum(w http.ResponseWriter, r *http.Request) 
 			os.Remove(filepath.Join(h.Cfg.MediaStoragePath, filepath.FromSlash(*p.preview)))
 		}
 	}
-	if album.BannerImagePath != nil && *album.BannerImagePath != "" {
-		os.Remove(filepath.Join(h.Cfg.MediaStoragePath, filepath.FromSlash(*album.BannerImagePath)))
+	for _, b := range existingBanners {
+		if b.ImagePath != "" {
+			os.Remove(filepath.Join(h.Cfg.MediaStoragePath, filepath.FromSlash(b.ImagePath)))
+		}
 	}
 	if album.ZipPath != nil && *album.ZipPath != "" {
 		os.Remove(filepath.Join(h.Cfg.MediaStoragePath, filepath.FromSlash(*album.ZipPath)))

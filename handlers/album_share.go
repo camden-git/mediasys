@@ -50,9 +50,9 @@ func (ah *AlbumHandler) ShareAlbumHTML(w http.ResponseWriter, r *http.Request) {
 	pageURL := absolute("/album/" + album.Slug)
 
 	var imageURL string
-	if album.BannerImagePath != nil && *album.BannerImagePath != "" {
+	if banners, err := ah.AlbumRepo.GetBanners(album.ID); err == nil && len(banners) > 0 {
 		bannersSubDir := filepath.Base(ah.Cfg.BannersPath)
-		filename := filepath.Base(*album.BannerImagePath)
+		filename := filepath.Base(banners[0].ImagePath)
 		imageURL = absolute("/api/" + bannersSubDir + "/" + filename)
 	}
 
