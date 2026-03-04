@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"image"
 	"log"
-    "os"
-    "strconv"
+	"os"
+	"strconv"
 
 	"gocv.io/x/gocv"
 )
@@ -29,6 +29,15 @@ func NewDNNFaceDetector(configPath, modelPath string) *DNNFaceDetector {
 		return &DNNFaceDetector{Enabled: false}
 	}
 
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		log.Printf("detection(dnn): config file not found: %s", configPath)
+		return &DNNFaceDetector{Enabled: false}
+	}
+	if _, err := os.Stat(modelPath); os.IsNotExist(err) {
+		log.Printf("detection(dnn): model file not found: %s", modelPath)
+		return &DNNFaceDetector{Enabled: false}
+	}
+
 	log.Printf("detection(dnn): Attempting to load config: %s", configPath)
 	log.Printf("detection(dnn): Attempting to load model:  %s", modelPath)
 
@@ -43,40 +52,40 @@ func NewDNNFaceDetector(configPath, modelPath string) *DNNFaceDetector {
 		log.Printf("detection(dnn): ERROR loading network model: config=%s, model=%s", configPath, modelPath)
 		return &DNNFaceDetector{Enabled: false}
 	}
-    log.Printf("detection(dnn): successfully loaded face detection model")
+	log.Printf("detection(dnn): successfully loaded face detection model")
 
-    cudaEnabled := true
-    if val := os.Getenv("CUDA_ENABLED"); val != "" {
-        if parsed, err := strconv.ParseBool(val); err == nil {
-            cudaEnabled = parsed
-        } else {
-            log.Printf("detection(dnn): Invalid CUDA_ENABLED value '%s'; defaulting to true", val)
-        }
-    }
+	cudaEnabled := true
+	if val := os.Getenv("CUDA_ENABLED"); val != "" {
+		if parsed, err := strconv.ParseBool(val); err == nil {
+			cudaEnabled = parsed
+		} else {
+			log.Printf("detection(dnn): Invalid CUDA_ENABLED value '%s'; defaulting to true", val)
+		}
+	}
 
-    if cudaEnabled {
-        cudaBackendErr := net.SetPreferableBackend(gocv.NetBackendCUDA)
-        cudaTargetErr := net.SetPreferableTarget(gocv.NetTargetCUDA)
+	if cudaEnabled {
+		cudaBackendErr := net.SetPreferableBackend(gocv.NetBackendCUDA)
+		cudaTargetErr := net.SetPreferableTarget(gocv.NetTargetCUDA)
 
-        if cudaBackendErr == nil && cudaTargetErr == nil {
-            log.Println("detection(dnn): Set backend/target to CUDA")
-        } else {
-            if cudaBackendErr != nil {
-                log.Printf("detection(dnn): CUDA Backend not available or failed: %v. Using default backend.", cudaBackendErr)
-            }
-            if cudaTargetErr != nil {
-                log.Printf("detection(dnn): CUDA Target not available or failed: %v. Using default target.", cudaTargetErr)
-            }
+		if cudaBackendErr == nil && cudaTargetErr == nil {
+			log.Println("detection(dnn): Set backend/target to CUDA")
+		} else {
+			if cudaBackendErr != nil {
+				log.Printf("detection(dnn): CUDA Backend not available or failed: %v. Using default backend.", cudaBackendErr)
+			}
+			if cudaTargetErr != nil {
+				log.Printf("detection(dnn): CUDA Target not available or failed: %v. Using default target.", cudaTargetErr)
+			}
 
-            net.SetPreferableBackend(gocv.NetBackendDefault) // or gocv.NetBackendOpenCV
-            net.SetPreferableTarget(gocv.NetTargetCPU)
-            log.Println("detection(dnn): Set backend/target to CPU (Default)")
-        }
-    } else {
-        net.SetPreferableBackend(gocv.NetBackendDefault)
-        net.SetPreferableTarget(gocv.NetTargetCPU)
-        log.Println("detection(dnn): CUDA disabled via env; set backend/target to CPU")
-    }
+			net.SetPreferableBackend(gocv.NetBackendDefault) // or gocv.NetBackendOpenCV
+			net.SetPreferableTarget(gocv.NetTargetCPU)
+			log.Println("detection(dnn): Set backend/target to CPU (Default)")
+		}
+	} else {
+		net.SetPreferableBackend(gocv.NetBackendDefault)
+		net.SetPreferableTarget(gocv.NetTargetCPU)
+		log.Println("detection(dnn): CUDA disabled via env; set backend/target to CPU")
+	}
 
 	return &DNNFaceDetector{
 		Net:           net,
@@ -131,11 +140,11 @@ func (d *DNNFaceDetector) DetectFaces(img gocv.Mat) []DetectionResult {
 		return results // No detections found
 	}
 
-    // reshape the Mat to 2D: [N, 7] for easier access with GetFloatAt(row, col)
-    detections2D := detectionsMat.Reshape(1, numDetections*sizes[3])
-    defer detections2D.Close()
-    detectionsData := detections2D.Reshape(1, numDetections)
-    defer detectionsData.Close()
+	// reshape the Mat to 2D: [N, 7] for easier access with GetFloatAt(row, col)
+	detections2D := detectionsMat.Reshape(1, numDetections*sizes[3])
+	defer detections2D.Close()
+	detectionsData := detections2D.Reshape(1, numDetections)
+	defer detectionsData.Close()
 
 	for i := 0; i < numDetections; i++ {
 		confidence := detectionsData.GetFloatAt(i, 2)

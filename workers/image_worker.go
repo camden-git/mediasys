@@ -6,6 +6,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -37,17 +39,18 @@ type ImageJob struct {
 }
 
 type ImageProcessor struct {
-	JobQueue  chan ImageJob
-	Config    config.Config
-	ImageRepo repository.ImageRepositoryInterface
-	AlbumRepo repository.AlbumRepositoryInterface
-	FaceRepo  repository.FaceRepositoryInterface
-	TagRepo   repository.ImageTagRepositoryInterface
-	Wg        sync.WaitGroup
-	StopChan  chan struct{}
-	Pending   map[string]bool
-	Mutex     sync.Mutex
-	Hub       *realtime.Hub
+	JobQueue          chan ImageJob
+	DetectionJobQueue chan ImageJob
+	Config            config.Config
+	ImageRepo         repository.ImageRepositoryInterface
+	AlbumRepo         repository.AlbumRepositoryInterface
+	FaceRepo          repository.FaceRepositoryInterface
+	TagRepo           repository.ImageTagRepositoryInterface
+	Wg                sync.WaitGroup
+	StopChan          chan struct{}
+	Pending           map[string]bool
+	Mutex             sync.Mutex
+	Hub               *realtime.Hub
 }
 
 func NewImageProcessor(
@@ -57,34 +60,47 @@ func NewImageProcessor(
 	faceRepo repository.FaceRepositoryInterface,
 	tagRepo repository.ImageTagRepositoryInterface,
 	queueSize, numWorkers int,
+	numDetectionWorkers, detectionQueueSize int,
 	hub *realtime.Hub,
 ) *ImageProcessor {
 	if numWorkers <= 0 {
 		numWorkers = 1
 	}
 	if queueSize <= 0 {
-		queueSize = 100
+		queueSize = 50
+	}
+	if numDetectionWorkers <= 0 {
+		numDetectionWorkers = 1
+	}
+	if detectionQueueSize <= 0 {
+		detectionQueueSize = 10
 	}
 	proc := &ImageProcessor{
-		JobQueue:  make(chan ImageJob, queueSize),
-		Config:    cfg,
-		ImageRepo: imgRepo,
-		AlbumRepo: albumRepo,
-		FaceRepo:  faceRepo,
-		TagRepo:   tagRepo,
-		StopChan:  make(chan struct{}),
-		Pending:   make(map[string]bool),
-		Hub:       hub,
+		JobQueue:          make(chan ImageJob, queueSize),
+		DetectionJobQueue: make(chan ImageJob, detectionQueueSize),
+		Config:            cfg,
+		ImageRepo:         imgRepo,
+		AlbumRepo:         albumRepo,
+		FaceRepo:          faceRepo,
+		TagRepo:           tagRepo,
+		StopChan:          make(chan struct{}),
+		Pending:           make(map[string]bool),
+		Hub:               hub,
 	}
-	proc.Wg.Add(numWorkers)
+	proc.Wg.Add(numWorkers + numDetectionWorkers)
 	for i := 0; i < numWorkers; i++ {
 		go proc.worker(i, cfg)
 	}
+	for i := 0; i < numDetectionWorkers; i++ {
+		go proc.detectionWorker(i, cfg)
+	}
 	log.Printf("Started %d image processing worker(s) with queue size %d", numWorkers, queueSize)
+	log.Printf("Started %d detection worker(s) with queue size %d", numDetectionWorkers, detectionQueueSize)
 	return proc
 }
 
-// worker loads resources and processes jobs from the queue
+// worker handles thumbnail, preview, metadata, and zip tasks. It does NOT load
+// ML models, keeping its memory footprint small.
 func (ip *ImageProcessor) worker(id int, cfg config.Config) {
 	defer ip.Wg.Done()
 
@@ -100,50 +116,6 @@ func (ip *ImageProcessor) worker(id int, cfg config.Config) {
 	}
 	mediaProcessor := media.NewProcessor(mediaStore)
 
-	log.Printf("Worker %d: Loading face detectors...", id)
-
-	// Initialize DNN face detector (legacy)
-	faceDetector := media.NewDNNFaceDetector(cfg.FaceDNNNetConfigPath, cfg.FaceDNNNetModelPath)
-	defer func() {
-		if faceDetector != nil {
-			faceDetector.Close()
-		}
-	}()
-	if faceDetector == nil || !faceDetector.Enabled {
-		log.Printf("Worker %d: DNN Face Detector disabled.", id)
-	}
-
-	// Initialize RetinaFace detector (preferred)
-	retinaFaceDetector := media.NewRetinaFaceDetector(cfg.RetinaFaceModelPath)
-	defer func() {
-		if retinaFaceDetector != nil {
-			retinaFaceDetector.Close()
-		}
-	}()
-	if retinaFaceDetector == nil || !retinaFaceDetector.Enabled {
-		log.Printf("Worker %d: RetinaFace Detector disabled.", id)
-	}
-
-	// Initialize face recognition model
-	var recognitionModel *media.FaceRecognitionModel
-	log.Printf("Worker %d: FACE_RECOGNITION_ENABLED config value: %v", id, cfg.FaceRecognitionEnabled)
-	if cfg.FaceRecognitionEnabled {
-		log.Printf("Worker %d: Initializing face recognition model...", id)
-		recognitionModel = media.NewFaceRecognitionModel(cfg.FaceRecognitionModelPath, cfg.FaceRecognitionModelName)
-		defer func() {
-			if recognitionModel != nil && recognitionModel.Enabled {
-				recognitionModel.Close()
-			}
-		}()
-		if recognitionModel == nil || !recognitionModel.Enabled {
-			log.Printf("Worker %d: Face Recognition Model disabled or failed to load.", id)
-		} else {
-			log.Printf("Worker %d: Face Recognition Model enabled (%s).", id, cfg.FaceRecognitionModelName)
-		}
-	} else {
-		log.Printf("Worker %d: Face Recognition is DISABLED via config.", id)
-	}
-
 	log.Printf("Image worker %d started", id)
 	for {
 		select {
@@ -152,82 +124,163 @@ func (ip *ImageProcessor) worker(id int, cfg config.Config) {
 				log.Printf("Image worker %d stopping: Job queue closed", id)
 				return
 			}
-
-			var err error
-
-			var pendingKey string
-			var statusColumn string
-			var entityPath string
-
-			log.Printf("Worker %d: Received job type '%s' for: %s", id, job.TaskType, entityPath)
-			if ip.Hub != nil {
-				ip.Hub.Broadcast(realtime.Event{
-					Type:      "task",
-					Path:      job.OriginalRelativePath,
-					Task:      job.TaskType,
-					Status:    "processing",
-					Timestamp: time.Now().Unix(),
-				})
-			}
-
-			if job.TaskType == TaskAlbumZip {
-				err = ip.AlbumRepo.MarkZipProcessing(uint(job.AlbumID))
-				statusColumn = "zip_status" // for logging key
-				entityPath = fmt.Sprintf("album ID %d", job.AlbumID)
-				pendingKey = fmt.Sprintf("album_%d:%s", job.AlbumID, job.TaskType)
-			} else {
-				statusColumn = job.TaskType + "_status"
-				err = ip.ImageRepo.MarkTaskProcessing(job.OriginalRelativePath, statusColumn)
-				log.Printf("Status column: %s", statusColumn)
-				entityPath = job.OriginalRelativePath
-				pendingKey = fmt.Sprintf("%s:%s", job.OriginalRelativePath, job.TaskType)
-			}
-
-			if err != nil {
-				log.Printf("Worker %d: ERROR marking %s processing for %s: %v. Skipping job.", id, job.TaskType, entityPath, err)
-				if ip.Hub != nil {
-					ip.Hub.Broadcast(realtime.Event{Type: "task", Path: job.OriginalRelativePath, Task: job.TaskType, Status: "error", Error: err.Error(), Timestamp: time.Now().Unix()})
-				}
-				ip.Mutex.Lock()
-				delete(ip.Pending, pendingKey)
-				ip.Mutex.Unlock()
-				continue
-			}
-
-			switch job.TaskType {
-			case TaskThumbnail:
-				ip.processThumbnailTask(job, mediaProcessor)
-			case TaskMetadata:
-				ip.processMetadataTask(job)
-			case TaskDetection:
-				ip.processDetectionTask(job, faceDetector, retinaFaceDetector, recognitionModel, cfg)
-			case TaskAlbumZip:
-				ip.processAlbumZipTask(job, mediaStore)
-			case TaskPreview:
-				ip.processPreviewTask(job, mediaProcessor)
-			default:
-				log.Printf("Worker %d: ERROR unknown task type '%s'", id, job.TaskType)
-			}
-
-			if ip.Hub != nil {
-				ip.Hub.Broadcast(realtime.Event{
-					Type:      "task",
-					Path:      job.OriginalRelativePath,
-					Task:      job.TaskType,
-					Status:    "done",
-					Timestamp: time.Now().Unix(),
-				})
-			}
-
-			ip.Mutex.Lock()
-			delete(ip.Pending, pendingKey)
-			ip.Mutex.Unlock()
+			ip.processJob(id, job, mediaProcessor, mediaStore, nil, nil, nil, cfg)
 
 		case <-ip.StopChan:
 			log.Printf("Image worker %d stopping: Stop signal received", id)
 			return
 		}
 	}
+}
+
+// detectionWorker loads ML models once and handles only TaskDetection jobs.
+// Keeping detection in a separate, smaller pool avoids duplicating large model
+// weights across every general worker.
+func (ip *ImageProcessor) detectionWorker(id int, cfg config.Config) {
+	defer ip.Wg.Done()
+
+	var faceDetector *media.DNNFaceDetector
+	var retinaFaceDetector *media.RetinaFaceDetector
+	var recognitionModel *media.FaceRecognitionModel
+
+	log.Printf("Detection worker %d: FACE_RECOGNITION_ENABLED config value: %v", id, cfg.FaceRecognitionEnabled)
+	if cfg.FaceRecognitionEnabled {
+		log.Printf("Detection worker %d: Loading face detectors...", id)
+
+		faceDetector = media.NewDNNFaceDetector(cfg.FaceDNNNetConfigPath, cfg.FaceDNNNetModelPath)
+		defer func() {
+			if faceDetector != nil {
+				faceDetector.Close()
+			}
+		}()
+		if faceDetector == nil || !faceDetector.Enabled {
+			log.Printf("Detection worker %d: DNN Face Detector disabled.", id)
+		}
+
+		retinaFaceDetector = media.NewRetinaFaceDetector(cfg.RetinaFaceModelPath)
+		defer func() {
+			if retinaFaceDetector != nil {
+				retinaFaceDetector.Close()
+			}
+		}()
+		if retinaFaceDetector == nil || !retinaFaceDetector.Enabled {
+			log.Printf("Detection worker %d: RetinaFace Detector disabled.", id)
+		}
+
+		log.Printf("Detection worker %d: Initializing face recognition model...", id)
+		recognitionModel = media.NewFaceRecognitionModel(cfg.FaceRecognitionModelPath, cfg.FaceRecognitionModelName)
+		defer func() {
+			if recognitionModel != nil && recognitionModel.Enabled {
+				recognitionModel.Close()
+			}
+		}()
+		if recognitionModel == nil || !recognitionModel.Enabled {
+			log.Printf("Detection worker %d: Face Recognition Model disabled or failed to load.", id)
+		} else {
+			log.Printf("Detection worker %d: Face Recognition Model enabled (%s).", id, cfg.FaceRecognitionModelName)
+		}
+	} else {
+		log.Printf("Detection worker %d: face detection fully DISABLED — skipping all model loads.", id)
+	}
+
+	log.Printf("Detection worker %d started", id)
+	for {
+		select {
+		case job, ok := <-ip.DetectionJobQueue:
+			if !ok {
+				log.Printf("Detection worker %d stopping: Job queue closed", id)
+				return
+			}
+			ip.processJob(id, job, nil, nil, faceDetector, retinaFaceDetector, recognitionModel, cfg)
+
+		case <-ip.StopChan:
+			log.Printf("Detection worker %d stopping: Stop signal received", id)
+			return
+		}
+	}
+}
+
+// processJob is shared logic for both worker types. mediaProcessor/mediaStore may be nil
+// for detection workers; faceDetector/retinaFaceDetector/recognitionModel may be nil for
+// general workers.
+func (ip *ImageProcessor) processJob(
+	id int,
+	job ImageJob,
+	mediaProcessor *media.Processor,
+	mediaStore media.Store,
+	faceDetector *media.DNNFaceDetector,
+	retinaFaceDetector *media.RetinaFaceDetector,
+	recognitionModel *media.FaceRecognitionModel,
+	cfg config.Config,
+) {
+	var err error
+	var pendingKey string
+	var statusColumn string
+	var entityPath string
+
+	log.Printf("Worker %d: Received job type '%s' for: %s", id, job.TaskType, entityPath)
+	if ip.Hub != nil {
+		ip.Hub.Broadcast(realtime.Event{
+			Type:      "task",
+			Path:      job.OriginalRelativePath,
+			Task:      job.TaskType,
+			Status:    "processing",
+			Timestamp: time.Now().Unix(),
+		})
+	}
+
+	if job.TaskType == TaskAlbumZip {
+		err = ip.AlbumRepo.MarkZipProcessing(uint(job.AlbumID))
+		statusColumn = "zip_status"
+		entityPath = fmt.Sprintf("album ID %d", job.AlbumID)
+		pendingKey = fmt.Sprintf("album_%d:%s", job.AlbumID, job.TaskType)
+	} else {
+		statusColumn = job.TaskType + "_status"
+		err = ip.ImageRepo.MarkTaskProcessing(job.OriginalRelativePath, statusColumn)
+		log.Printf("Status column: %s", statusColumn)
+		entityPath = job.OriginalRelativePath
+		pendingKey = fmt.Sprintf("%s:%s", job.OriginalRelativePath, job.TaskType)
+	}
+
+	if err != nil {
+		log.Printf("Worker %d: ERROR marking %s processing for %s: %v. Skipping job.", id, job.TaskType, entityPath, err)
+		if ip.Hub != nil {
+			ip.Hub.Broadcast(realtime.Event{Type: "task", Path: job.OriginalRelativePath, Task: job.TaskType, Status: "error", Error: err.Error(), Timestamp: time.Now().Unix()})
+		}
+		ip.Mutex.Lock()
+		delete(ip.Pending, pendingKey)
+		ip.Mutex.Unlock()
+		return
+	}
+
+	switch job.TaskType {
+	case TaskThumbnail:
+		ip.processThumbnailTask(job, mediaProcessor)
+	case TaskMetadata:
+		ip.processMetadataTask(job)
+	case TaskDetection:
+		ip.processDetectionTask(job, faceDetector, retinaFaceDetector, recognitionModel, cfg)
+	case TaskAlbumZip:
+		ip.processAlbumZipTask(job, mediaStore)
+	case TaskPreview:
+		ip.processPreviewTask(job, mediaProcessor)
+	default:
+		log.Printf("Worker %d: ERROR unknown task type '%s'", id, job.TaskType)
+	}
+
+	if ip.Hub != nil {
+		ip.Hub.Broadcast(realtime.Event{
+			Type:      "task",
+			Path:      job.OriginalRelativePath,
+			Task:      job.TaskType,
+			Status:    "done",
+			Timestamp: time.Now().Unix(),
+		})
+	}
+
+	ip.Mutex.Lock()
+	delete(ip.Pending, pendingKey)
+	ip.Mutex.Unlock()
 }
 
 // processThumbnailTask generates thumbnail and updates DB
@@ -463,6 +516,37 @@ func (ip *ImageProcessor) processPreviewTask(job ImageJob, processor *media.Proc
 	}
 }
 
+// StartMemoryTrimmer starts a background goroutine that calls runtime.GC() and
+// debug.FreeOSMemory() on the given interval to return freed heap pages to the OS
+// **Set intervalMinutes <= 0 to disable**
+func (ip *ImageProcessor) StartMemoryTrimmer(intervalMinutes int) {
+	if intervalMinutes <= 0 {
+		return
+	}
+	go func() {
+		ticker := time.NewTicker(time.Duration(intervalMinutes) * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				var before, after runtime.MemStats
+				runtime.ReadMemStats(&before)
+				runtime.GC()
+				debug.FreeOSMemory()
+				runtime.ReadMemStats(&after)
+				beforeMB := before.HeapSys / (1 << 20)
+				afterMB := after.HeapSys / (1 << 20)
+				releasedMB := int64(beforeMB) - int64(afterMB)
+				log.Printf("Memory trim: released %d MB to OS (HeapSys before=%d MB, after=%d MB)",
+					releasedMB, beforeMB, afterMB)
+			case <-ip.StopChan:
+				return
+			}
+		}
+	}()
+	log.Printf("Memory trimmer started (interval: %d minutes)", intervalMinutes)
+}
+
 // StartPreviewCleanup starts a background goroutine that evicts stale previews every 6 hours
 func (ip *ImageProcessor) StartPreviewCleanup() {
 	go func() {
@@ -480,35 +564,54 @@ func (ip *ImageProcessor) StartPreviewCleanup() {
 	log.Println("Preview cleanup goroutine started (runs every 6 hours, TTL=7 days)")
 }
 
-// cleanupStalePreviewFiles removes preview files not accessed in the last 7 days
+// cleanupStalePreviewFiles removes preview files not accessed in the last 7 days.
+// Images are fetched in batches of 100 to avoid a large transient heap allocation
+// on libraries with many stale previews. Since each batch resets preview_status, the
+// next iteration always fetches from offset 0 (removed rows don't reappear).
 func (ip *ImageProcessor) cleanupStalePreviewFiles() {
 	cutoffUnix := time.Now().Add(-7 * 24 * time.Hour).Unix()
-	staleImages, err := ip.ImageRepo.GetStalePreviewImages(cutoffUnix)
-	if err != nil {
-		log.Printf("Preview cleanup: ERROR fetching stale previews: %v", err)
-		return
+	const batchSize = 100
+	totalEvicted := 0
+	for {
+		images, err := ip.ImageRepo.GetStalePreviewImagesBatch(cutoffUnix, 0, batchSize)
+		if err != nil {
+			log.Printf("Preview cleanup: ERROR fetching stale previews: %v", err)
+			return
+		}
+		if len(images) == 0 {
+			break
+		}
+		for _, img := range images {
+			if img.PreviewPath == nil {
+				continue
+			}
+			fullPath := filepath.Join(ip.Config.MediaStoragePath, *img.PreviewPath)
+			if removeErr := os.Remove(fullPath); removeErr != nil && !os.IsNotExist(removeErr) {
+				log.Printf("Preview cleanup: ERROR removing %s: %v", fullPath, removeErr)
+			}
+			resetErr := ip.ImageRepo.UpdatePreviewResult(img.OriginalPath, nil, img.LastModified, nil)
+			if resetErr != nil {
+				log.Printf("Preview cleanup: ERROR resetting preview status for %s: %v", img.OriginalPath, resetErr)
+			} else {
+				log.Printf("Preview cleanup: Evicted preview for %s", img.OriginalPath)
+				totalEvicted++
+			}
+		}
+		if len(images) < batchSize {
+			break
+		}
 	}
-	log.Printf("Preview cleanup: Found %d stale preview(s) to evict", len(staleImages))
-	for _, img := range staleImages {
-		if img.PreviewPath == nil {
-			continue
-		}
-		fullPath := filepath.Join(ip.Config.MediaStoragePath, *img.PreviewPath)
-		if removeErr := os.Remove(fullPath); removeErr != nil && !os.IsNotExist(removeErr) {
-			log.Printf("Preview cleanup: ERROR removing %s: %v", fullPath, removeErr)
-		}
-		resetErr := ip.ImageRepo.UpdatePreviewResult(img.OriginalPath, nil, img.LastModified, nil)
-		if resetErr != nil {
-			log.Printf("Preview cleanup: ERROR resetting preview status for %s: %v", img.OriginalPath, resetErr)
-		} else {
-			log.Printf("Preview cleanup: Evicted preview for %s", img.OriginalPath)
-		}
-	}
+	log.Printf("Preview cleanup: Evicted %d preview(s) total", totalEvicted)
 }
 
-// QueueJob queues a specific task if not already pending
+// QueueJob queues a specific task if not already pending. TaskDetection jobs
+// are routed to the dedicated detection worker queue; all other jobs go to the
+// general worker queue.
 func (ip *ImageProcessor) QueueJob(job ImageJob) bool {
-	// use composite key: "relativePath:taskType"
+	if job.TaskType == TaskDetection && !ip.Config.FaceRecognitionEnabled {
+		return false
+	}
+
 	var pendingKey string
 	if job.TaskType == TaskAlbumZip {
 		pendingKey = fmt.Sprintf("album_%d:%s", job.AlbumID, job.TaskType)
@@ -521,16 +624,20 @@ func (ip *ImageProcessor) QueueJob(job ImageJob) bool {
 		ip.Mutex.Unlock()
 		return false
 	}
-
 	ip.Pending[pendingKey] = true
 	ip.Mutex.Unlock()
 
+	targetQueue := ip.JobQueue
+	if job.TaskType == TaskDetection {
+		targetQueue = ip.DetectionJobQueue
+	}
+
 	select {
-	case ip.JobQueue <- job:
+	case targetQueue <- job:
 		log.Printf("Queued task '%s' for: %s", job.TaskType, job.OriginalRelativePath)
 		return true
 	default:
-		log.Printf("WARNING: Image processing job queue full. Failed to queue task '%s' for: %s", job.TaskType, job.OriginalRelativePath)
+		log.Printf("WARNING: Job queue full. Failed to queue task '%s' for: %s", job.TaskType, job.OriginalRelativePath)
 		ip.Mutex.Lock()
 		delete(ip.Pending, pendingKey)
 		ip.Mutex.Unlock()

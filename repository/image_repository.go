@@ -375,6 +375,20 @@ func (r *ImageRepository) GetStalePreviewImages(olderThan int64) ([]models.Image
 	return images, nil
 }
 
+// GetStalePreviewImagesBatch returns up to limit images whose preview has not been accessed since olderThan,
+// starting at the given offset
+func (r *ImageRepository) GetStalePreviewImagesBatch(olderThan int64, offset, limit int) ([]models.Image, error) {
+	var images []models.Image
+	err := r.DB.Where(
+		"preview_status = ? AND (preview_last_requested_at < ? OR (preview_last_requested_at IS NULL AND preview_processed_at < ?))",
+		database.StatusDone, olderThan, olderThan,
+	).Offset(offset).Limit(limit).Find(&images).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to get stale preview images batch: %w", err)
+	}
+	return images, nil
+}
+
 // GetImagesByFolderPaths returns paginated images whose original_path starts with any of the given folder paths,
 // optionally filtered to those with rating >= minRating.
 func (r *ImageRepository) GetImagesByFolderPaths(folderPaths []string, minRating *int, offset, limit int) ([]models.Image, int, error) {

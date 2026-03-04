@@ -65,6 +65,7 @@ type ImageRepositoryInterface interface {
 	UpdatePreviewResult(originalPath string, previewPath *string, modTime int64, taskErr error) error
 	TouchPreviewLastRequested(originalPath string) error
 	GetStalePreviewImages(olderThan int64) ([]models.Image, error)
+	GetStalePreviewImagesBatch(olderThan int64, offset, limit int) ([]models.Image, error)
 	Delete(originalPath string) error
 	GetImagesRequiringProcessing() ([]models.Image, error)
 	GetImagesByPaths(originalPaths []string) ([]models.Image, error)

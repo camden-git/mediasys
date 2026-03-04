@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime/debug"
+	"strconv"
 	"time"
 
 	"github.com/camden-git/mediasysbackend/config"
@@ -27,6 +29,15 @@ func main() {
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatalf("FATAL: Failed to load configuration: %v", err)
+	}
+
+	if memLimitStr := os.Getenv("GOMEMLIMIT"); memLimitStr != "" {
+		if memLimit, parseErr := strconv.ParseInt(memLimitStr, 10, 64); parseErr == nil && memLimit > 0 {
+			debug.SetMemoryLimit(memLimit)
+			log.Printf("GOMEMLIMIT set to %d bytes (%.1f GiB)", memLimit, float64(memLimit)/(1<<30))
+		} else {
+			log.Printf("Warning: Invalid GOMEMLIMIT value '%s', ignoring", memLimitStr)
+		}
 	}
 
 	storagePaths := []string{cfg.ThumbnailsPath, cfg.BannersPath, cfg.ArchivesPath, cfg.PreviewsPath, filepath.Dir(cfg.DatabasePath)}
@@ -93,7 +104,8 @@ func main() {
 		float32(cfg.FaceRecognitionThreshold),
 	)
 
-	log.Printf("Initializing image processor worker pool (Workers: %d, Queue Size: %d)...", cfg.NumThumbnailWorkers, cfg.ThumbnailQueueSize)
+	log.Printf("Initializing image processor worker pool (Workers: %d, Queue Size: %d, Detection Workers: %d, Detection Queue Size: %d)...",
+		cfg.NumThumbnailWorkers, cfg.ThumbnailQueueSize, cfg.NumDetectionWorkers, cfg.DetectionQueueSize)
 	imageProcessor := workers.NewImageProcessor(
 		cfg,
 		imageRepo,
@@ -102,10 +114,15 @@ func main() {
 		imageTagRepo,
 		cfg.ThumbnailQueueSize,
 		cfg.NumThumbnailWorkers,
+		cfg.NumDetectionWorkers,
+		cfg.DetectionQueueSize,
 		hub,
 	)
 
 	imageProcessor.StartPreviewCleanup()
+	if cfg.MemoryTrimIntervalMinutes > 0 {
+		imageProcessor.StartMemoryTrimmer(cfg.MemoryTrimIntervalMinutes)
+	}
 
 	log.Printf("Serving files from root: %s", cfg.RootDirectory)
 	log.Printf("Using database: %s", cfg.DatabasePath)

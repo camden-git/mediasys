@@ -16,9 +16,11 @@ const (
 )
 
 const (
-	defaultThumbnailQueueSize  = 600
-	defaultNumThumbnailWorkers = 4
+	defaultThumbnailQueueSize  = 50
+	defaultNumThumbnailWorkers = 2
 	defaultThumbnailMaxSize    = 300
+	defaultNumDetectionWorkers = 1
+	defaultDetectionQueueSize  = 10
 )
 
 type Config struct {
@@ -39,8 +41,11 @@ type Config struct {
 	ThumbnailMaxSize int
 
 	// worker settings
-	ThumbnailQueueSize  int
-	NumThumbnailWorkers int
+	ThumbnailQueueSize        int
+	NumThumbnailWorkers       int
+	NumDetectionWorkers       int
+	DetectionQueueSize        int
+	MemoryTrimIntervalMinutes int
 
 	// face detection model paths (DNN - legacy)
 	FaceDNNNetConfigPath string
@@ -140,6 +145,9 @@ func LoadConfig() (Config, error) {
 
 	queueSize := getEnvIntOrDefault("THUMBNAIL_QUEUE_SIZE", defaultThumbnailQueueSize)
 	numWorkers := getEnvIntOrDefault("NUM_THUMBNAIL_WORKERS", defaultNumThumbnailWorkers)
+	numDetectionWorkers := getEnvIntOrDefault("NUM_DETECTION_WORKERS", defaultNumDetectionWorkers)
+	detectionQueueSize := getEnvIntOrDefault("DETECTION_QUEUE_SIZE", defaultDetectionQueueSize)
+	memoryTrimInterval := getEnvIntOrDefault("MEMORY_TRIM_INTERVAL_MINUTES", 30)
 
 	// Legacy DNN face detection
 	faceDNNConfig := getEnvOrDefault("FACE_DNN_CONFIG_PATH", "./models/deploy.prototxt.txt")
@@ -160,25 +168,28 @@ func LoadConfig() (Config, error) {
 	turnstileSecretKey := getEnvOrDefault("TURNSTILE_SECRET_KEY", "")
 
 	cfg := Config{
-		RootDirectory:            absRoot,
-		DatabasePath:             dbPath,
-		MediaStoragePath:         absMediaStorage,
-		ThumbnailsPath:           absThumbnailsPath,
-		BannersPath:              absBannersPath,
-		ArchivesPath:             absArchivesPath,
-		PreviewsPath:             absPreviewsPath,
-		ThumbnailMaxSize:         thumbMaxSize,
-		ThumbnailQueueSize:       queueSize,
-		NumThumbnailWorkers:      numWorkers,
-		FaceDNNNetConfigPath:     faceDNNConfig,
-		FaceDNNNetModelPath:      faceDNNModel,
-		RetinaFaceModelPath:      retinaFaceModel,
-		FaceRecognitionModelPath: faceRecognitionModel,
-		FaceRecognitionModelName: faceRecognitionModelName,
-		FaceRecognitionThreshold: faceRecognitionThreshold,
-		FaceRecognitionEnabled:   faceRecognitionEnabled,
-		TurnstileSiteKey:         turnstileSiteKey,
-		TurnstileSecretKey:       turnstileSecretKey,
+		RootDirectory:             absRoot,
+		DatabasePath:              dbPath,
+		MediaStoragePath:          absMediaStorage,
+		ThumbnailsPath:            absThumbnailsPath,
+		BannersPath:               absBannersPath,
+		ArchivesPath:              absArchivesPath,
+		PreviewsPath:              absPreviewsPath,
+		ThumbnailMaxSize:          thumbMaxSize,
+		ThumbnailQueueSize:        queueSize,
+		NumThumbnailWorkers:       numWorkers,
+		NumDetectionWorkers:       numDetectionWorkers,
+		DetectionQueueSize:        detectionQueueSize,
+		MemoryTrimIntervalMinutes: memoryTrimInterval,
+		FaceDNNNetConfigPath:      faceDNNConfig,
+		FaceDNNNetModelPath:       faceDNNModel,
+		RetinaFaceModelPath:       retinaFaceModel,
+		FaceRecognitionModelPath:  faceRecognitionModel,
+		FaceRecognitionModelName:  faceRecognitionModelName,
+		FaceRecognitionThreshold:  faceRecognitionThreshold,
+		FaceRecognitionEnabled:    faceRecognitionEnabled,
+		TurnstileSiteKey:          turnstileSiteKey,
+		TurnstileSecretKey:        turnstileSecretKey,
 	}
 
 	return cfg, nil

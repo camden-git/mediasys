@@ -88,12 +88,20 @@ type RetinaFaceDetector struct {
 	MeanVal       gocv.Scalar
 	ConfThreshold float32
 	IoUThreshold  float32
+
+	// Priors are pre-computed at construction time and reused across calls
+	Priors []PriorBox
 }
 
 // NewRetinaFaceDetector loads the RetinaFace model
 func NewRetinaFaceDetector(modelPath string) *RetinaFaceDetector {
 	if modelPath == "" {
 		log.Println("detection(retinaface): model path is empty, disabling RetinaFace detector")
+		return &RetinaFaceDetector{Enabled: false}
+	}
+
+	if _, err := os.Stat(modelPath); os.IsNotExist(err) {
+		log.Printf("detection(retinaface): model file not found: %s", modelPath)
 		return &RetinaFaceDetector{Enabled: false}
 	}
 
@@ -142,6 +150,7 @@ func NewRetinaFaceDetector(modelPath string) *RetinaFaceDetector {
 		MeanVal:       gocv.NewScalar(104.0, 117.0, 123.0, 0),
 		ConfThreshold: 0.5,
 		IoUThreshold:  0.5,
+		Priors:        GenerateRetinaFacePriors(640, 640),
 	}
 }
 
@@ -200,7 +209,7 @@ func (r *RetinaFaceDetector) DetectFaces(img gocv.Mat) []DetectionResult {
 	//   boxes:     16800 × 4  = 67200 elements
 	//   scores:    16800 × 2  = 33600 elements
 	//   landmarks: 16800 × 10 = 168000 elements
-	numPriors := len(GenerateRetinaFacePriors(r.InputSizeW, r.InputSizeH))
+	numPriors := len(r.Priors)
 
 	var boxesMat, scoresMat, landmarksMat *gocv.Mat
 	for i := range mats {
@@ -232,7 +241,7 @@ func (r *RetinaFaceDetector) parseRetinaFaceOutput(boxes, scores, landmarks gocv
 	// boxes has numPriors×4 elements → numDetections = Total()/4
 	numDetections := boxes.Total() / 4
 
-	priors := GenerateRetinaFacePriors(r.InputSizeW, r.InputSizeH)
+	priors := r.Priors
 	if len(priors) != numDetections {
 		log.Printf("detection(retinaface): prior count %d != numDetections %d", len(priors), numDetections)
 		return nil
