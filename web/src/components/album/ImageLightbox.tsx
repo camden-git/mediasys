@@ -18,6 +18,7 @@ import {
     ChevronLeftIcon,
     ChevronRightIcon,
     CheckIcon,
+    ShareIcon,
 } from '@heroicons/react/24/outline';
 import { Heading } from '../elements/Heading.tsx';
 import { Text } from '../elements/Text.tsx';
@@ -108,6 +109,7 @@ const ImageLightbox: React.FC<ImageLightboxProps> = ({
     const [textVisible, setTextVisible] = useState(false);
     const [badgeHovered, setBadgeHovered] = useState(false);
     const [faces, setFaces] = useState<FaceData[]>([]);
+    const [isSharing, setIsSharing] = useState(false);
     const previewImgRef = useRef<HTMLImageElement | null>(null);
 
     // Reset and start loading on image change
@@ -228,6 +230,27 @@ const ImageLightbox: React.FC<ImageLightboxProps> = ({
         }
     };
 
+    const handleShareImage = async () => {
+        if (!image || isSharing) return;
+        setIsSharing(true);
+        try {
+            const fullUrl = getOriginalImageUrl(image.path);
+            const response = await fetch(fullUrl, { mode: 'cors' });
+            const blob = await response.blob();
+            const ext = image.name.split('.').pop() ?? 'jpg';
+            const file = new File([blob], image.name, { type: blob.type || `image/${ext}` });
+            if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                await navigator.share({ files: [file], title: image.name });
+            }
+        } catch (error) {
+            if ((error as Error).name !== 'AbortError') {
+                console.error('Error sharing image:', error);
+            }
+        } finally {
+            setIsSharing(false);
+        }
+    };
+
     const formatDate = (timestamp?: number): string | null => {
         if (!timestamp) return null;
         try {
@@ -291,11 +314,27 @@ const ImageLightbox: React.FC<ImageLightboxProps> = ({
                             <div className='flex items-center gap-2'>
                                 <button
                                     onClick={handleDownloadImage}
-                                    className='rounded-full p-2 text-white/80 transition-colors hover:bg-white/10 hover:text-white focus:outline-none'
+                                    className='flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-white/20 focus:outline-none'
                                     aria-label='Download original image'
                                 >
-                                    <DocumentArrowDownIcon className='h-6 w-6' />
+                                    <DocumentArrowDownIcon className='h-5 w-5 shrink-0' />
+                                    <span className='hidden sm:inline'>Download</span>
                                 </button>
+                                {typeof navigator !== 'undefined' && !!navigator.share && (
+                                    <button
+                                        onClick={handleShareImage}
+                                        disabled={isSharing}
+                                        className='flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-white/20 focus:outline-none disabled:opacity-50'
+                                        aria-label='Share image'
+                                    >
+                                        {isSharing ? (
+                                            <LoadingSpinner />
+                                        ) : (
+                                            <ShareIcon className='h-5 w-5 shrink-0' />
+                                        )}
+                                        <span className='hidden sm:inline'>Share</span>
+                                    </button>
+                                )}
                                 <button
                                     onClick={togglePanel}
                                     className={`rounded-full p-2 transition-colors focus:outline-none ${isPanelOpen ? 'bg-white/20 text-white' : 'text-white/80 hover:bg-white/10 hover:text-white'}`}
@@ -343,6 +382,9 @@ const ImageLightbox: React.FC<ImageLightboxProps> = ({
                                             src={thumbnailSrc}
                                             alt={image.name}
                                             className='absolute inset-0 h-full w-full object-contain'
+                                            onContextMenu={(e) => e.preventDefault()}
+                                            onDragStart={(e) => e.preventDefault()}
+                                            style={{ WebkitTouchCallout: 'none', userSelect: 'none' }}
                                         />
                                     )}
                                     {/* Preview layer — fades in on top, no exit */}
@@ -355,6 +397,9 @@ const ImageLightbox: React.FC<ImageLightboxProps> = ({
                                             animate={{ opacity: previewLoaded ? 1 : 0 }}
                                             transition={{ duration: 0.35, ease: 'easeInOut' }}
                                             className='absolute inset-0 h-full w-full object-contain'
+                                            onContextMenu={(e) => e.preventDefault()}
+                                            onDragStart={(e) => e.preventDefault()}
+                                            style={{ WebkitTouchCallout: 'none', userSelect: 'none' }}
                                         />
                                     )}
                                 </div>

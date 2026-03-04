@@ -159,7 +159,7 @@ func main() {
 		AlbumGroupHandler:      &handlers.AlbumGroupHandler{GroupRepo: albumGroupRepo, ImageRepo: imageRepo},
 		AdminImageTagHandler:   &handlers.AdminImageTagHandler{TagRepo: imageTagRepo, AlbumRepo: albumRepo, ImageRepo: imageRepo},
 		AdminCollectionHandler: handlers.NewAdminCollectionHandler(collectionRepo, cfg, mediaProcessor),
-		CollectionHandler:      &handlers.CollectionHandler{CollectionRepo: collectionRepo, ImageRepo: imageRepo},
+		CollectionHandler:      &handlers.CollectionHandler{CollectionRepo: collectionRepo, ImageRepo: imageRepo, Cfg: &cfg},
 		SetupHandler:           handlers.NewSetupHandler(gormDB, userRepo, roleRepo),
 	}
 

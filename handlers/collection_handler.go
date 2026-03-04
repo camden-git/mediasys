@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"github.com/camden-git/mediasysbackend/config"
 	"github.com/camden-git/mediasysbackend/database"
 	"github.com/camden-git/mediasysbackend/models"
 	"github.com/camden-git/mediasysbackend/repository"
@@ -18,6 +19,7 @@ import (
 type CollectionHandler struct {
 	CollectionRepo repository.CollectionRepositoryInterface
 	ImageRepo      repository.ImageRepositoryInterface
+	Cfg            *config.Config
 }
 
 // collectionPublicResponse is the public view of a collection with banners as paths.
@@ -28,6 +30,7 @@ type collectionPublicResponse struct {
 	Description              *string                      `json:"description,omitempty"`
 	IsPublic                 bool                         `json:"is_public"`
 	FilterMatch              string                       `json:"filter_match"`
+	SortOrder                string                       `json:"sort_order"`
 	InheritBannersFromAlbums bool                         `json:"inherit_banners_from_albums"`
 	Banners                  []string                     `json:"banners"`
 	Filters                  []models.CollectionTagFilter `json:"filters,omitempty"`
@@ -57,6 +60,7 @@ func (h *CollectionHandler) buildPublicResponse(c *models.Collection) *collectio
 		Description:              c.Description,
 		IsPublic:                 c.IsPublic,
 		FilterMatch:              c.FilterMatch,
+		SortOrder:                c.SortOrder,
 		InheritBannersFromAlbums: c.InheritBannersFromAlbums,
 		Banners:                  bannerPaths,
 		Filters:                  c.Filters,
@@ -126,7 +130,7 @@ func (h *CollectionHandler) GetCollectionPhotos(w http.ResponseWriter, r *http.R
 		}
 	}
 
-	paths, total, err := h.CollectionRepo.GetImagePathsMatchingFilters(c.ID, offset, limit)
+	paths, err := h.CollectionRepo.GetImagePathsMatchingFilters(c.ID)
 	if err != nil {
 		log.Printf("Error querying collection photos for '%s': %v", slug, err)
 		WriteAPIError(w, http.StatusInternalServerError, "CollectionPhotosError", "Failed to retrieve collection photos")
@@ -137,7 +141,7 @@ func (h *CollectionHandler) GetCollectionPhotos(w http.ResponseWriter, r *http.R
 		WriteAPIResponse(w, http.StatusOK, DirectoryListing{
 			Path:    "/collections/" + slug + "/photos",
 			Files:   []FileInfo{},
-			Total:   total,
+			Total:   0,
 			Offset:  offset,
 			Limit:   limit,
 			HasMore: false,
@@ -152,7 +156,7 @@ func (h *CollectionHandler) GetCollectionPhotos(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	files := make([]FileInfo, 0, len(images))
+	allFiles := make([]FileInfo, 0, len(images))
 	for _, img := range images {
 		fi := FileInfo{
 			Name:            filepath.Base(img.OriginalPath),
@@ -180,16 +184,30 @@ func (h *CollectionHandler) GetCollectionPhotos(w http.ResponseWriter, r *http.R
 			fullThumbURL := "/api" + thumbnailApiPrefix + thumbFilename
 			fi.ThumbnailPath = &fullThumbURL
 		}
-		files = append(files, fi)
+		allFiles = append(allFiles, fi)
+	}
+
+	sortCollectionFiles(allFiles, c.SortOrder)
+
+	total := len(allFiles)
+	end := offset + limit
+	if end > total {
+		end = total
+	}
+	var page []FileInfo
+	if offset < total {
+		page = allFiles[offset:end]
+	} else {
+		page = []FileInfo{}
 	}
 
 	listing := DirectoryListing{
 		Path:    "/collections/" + slug + "/photos",
-		Files:   files,
+		Files:   page,
 		Total:   total,
 		Offset:  offset,
 		Limit:   limit,
-		HasMore: offset+len(files) < total,
+		HasMore: end < total,
 	}
 	setCacheHeaders(w, 60)
 	WriteAPIResponse(w, http.StatusOK, listing)

@@ -127,6 +127,7 @@ export interface Collection {
     is_public: boolean;
     inherit_banners_from_albums: boolean;
     filter_match: string; // "all" | "any"
+    sort_order?: string;
     created_at: number;
     updated_at: number;
     filters?: CollectionTagFilter[];

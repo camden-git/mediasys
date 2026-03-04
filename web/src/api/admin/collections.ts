@@ -20,6 +20,7 @@ export interface CollectionUpdatePayload {
     description?: string;
     is_public?: boolean;
     filter_match?: 'all' | 'any';
+    sort_order?: string;
 }
 
 export const listCollections = async (): Promise<AdminCollectionResponse[]> => {

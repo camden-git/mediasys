@@ -39,6 +39,7 @@ func RunMigrations(db *gorm.DB) error {
 		migrateCollectionFilterExpansion,
 		migrateAddImageTagsImagePathIndex,
 		migrateAddMultiBanners,
+		migrateAddCollectionSortOrder,
 	}
 
 	migrationNames := []string{
@@ -48,6 +49,7 @@ func RunMigrations(db *gorm.DB) error {
 		"collection_filter_expansion",
 		"add_image_tags_image_path_index",
 		"add_multi_banners",
+		"add_collection_sort_order",
 	}
 
 	// Run pending migrations
@@ -201,6 +203,16 @@ func migrateAddMultiBanners(db *gorm.DB) error {
 	}
 
 	log.Println("add_multi_banners migration completed.")
+	return nil
+}
+
+// migrateAddCollectionSortOrder adds the sort_order column to the collections table.
+func migrateAddCollectionSortOrder(db *gorm.DB) error {
+	log.Println("Running add_collection_sort_order migration...")
+	if err := db.AutoMigrate(&models.Collection{}); err != nil {
+		return fmt.Errorf("failed to add sort_order column to collections: %w", err)
+	}
+	log.Println("add_collection_sort_order migration completed.")
 	return nil
 }
 

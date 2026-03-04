@@ -402,6 +402,9 @@ func RegisterRoutes(r chi.Router, deps AppDependencies) {
 			r.Route("/albums", func(r chi.Router) {
 				r.Get("/{album_identifier}", deps.AlbumHandler.ShareAlbumHTML)
 			})
+			r.Route("/collections", func(r chi.Router) {
+				r.Get("/{slug}", deps.CollectionHandler.ShareCollectionHTML)
+			})
 		})
 
 		r.Route("/people", func(r chi.Router) {

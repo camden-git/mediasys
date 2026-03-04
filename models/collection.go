@@ -13,6 +13,7 @@ type Collection struct {
 	Banners                  []CollectionBanner    `gorm:"foreignKey:CollectionID" json:"-"`
 	IsPublic                 bool                  `gorm:"not null;default:true" json:"is_public"`
 	FilterMatch              string                `gorm:"not null;default:'all'" json:"filter_match"`
+	SortOrder                string                `gorm:"not null;default:'filename_asc'" json:"sort_order"`
 	CreatedAt                int64                 `gorm:"not null" json:"created_at"`
 	UpdatedAt                int64                 `gorm:"not null" json:"updated_at"`
 	DeletedAt                gorm.DeletedAt        `gorm:"index" json:"deleted_at,omitempty"`

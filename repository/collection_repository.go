@@ -54,13 +54,14 @@ func (r *GormCollectionRepository) ListAll() ([]models.Collection, error) {
 	return collections, err
 }
 
-func (r *GormCollectionRepository) Update(collectionID uint, name, slug string, description *string, isPublic bool, filterMatch string) error {
+func (r *GormCollectionRepository) Update(collectionID uint, name, slug string, description *string, isPublic bool, filterMatch string, sortOrder string) error {
 	updates := map[string]interface{}{
 		"name":         name,
 		"slug":         slug,
 		"description":  description,
 		"is_public":    isPublic,
 		"filter_match": filterMatch,
+		"sort_order":   sortOrder,
 		"updated_at":   time.Now().Unix(),
 	}
 	return r.db.Model(&models.Collection{}).Where("id = ?", collectionID).Updates(updates).Error
@@ -120,7 +121,7 @@ func (r *GormCollectionRepository) SetInheritBanners(collectionID uint, inherit 
 // GetInheritedBannerPaths returns banner image paths from all albums whose folder_path
 // matches the directories of images in this collection.
 func (r *GormCollectionRepository) GetInheritedBannerPaths(collectionID uint) ([]string, error) {
-	paths, _, err := r.GetImagePathsMatchingFilters(collectionID, 0, 500)
+	paths, err := r.GetImagePathsMatchingFilters(collectionID)
 	if err != nil {
 		return nil, err
 	}
@@ -167,20 +168,21 @@ func (r *GormCollectionRepository) SetFilters(collectionID uint, filters []model
 	})
 }
 
-// GetImagePathsMatchingFilters returns paginated image paths matching the collection's tag filters.
+// GetImagePathsMatchingFilters returns all image paths matching the collection's tag filters.
 // Positive filters (Negate=false): image must have the tag.
 // Negative filters (Negate=true): image must NOT have the tag.
 // FilterMatch="all": image must match every positive inclusion group (AND across keys, OR within key).
 // FilterMatch="any": image must match at least one positive inclusion group (OR across groups).
 // Negative filters always apply regardless of filter_match mode.
-func (r *GormCollectionRepository) GetImagePathsMatchingFilters(collectionID uint, offset, limit int) ([]string, int, error) {
+// Sorting and pagination are performed by the caller after fetching all matching paths.
+func (r *GormCollectionRepository) GetImagePathsMatchingFilters(collectionID uint) ([]string, error) {
 	// Load filters
 	var filters []models.CollectionTagFilter
 	if err := r.db.Where("collection_id = ?", collectionID).Find(&filters).Error; err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	if len(filters) == 0 {
-		return []string{}, 0, nil
+		return []string{}, nil
 	}
 
 	// Load filter_match from collection
@@ -188,7 +190,7 @@ func (r *GormCollectionRepository) GetImagePathsMatchingFilters(collectionID uin
 		FilterMatch string
 	}
 	if err := r.db.Model(&models.Collection{}).Select("filter_match").Where("id = ?", collectionID).Scan(&coll).Error; err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	filterMatch := coll.FilterMatch
 	if filterMatch != "any" {
@@ -210,7 +212,7 @@ func (r *GormCollectionRepository) GetImagePathsMatchingFilters(collectionID uin
 
 	// Require at least one positive filter
 	if len(positiveByKey) == 0 {
-		return []string{}, 0, nil
+		return []string{}, nil
 	}
 
 	// Build positive WHERE clause: (tag_key=? AND tag_value IN (?,?)) OR ...
@@ -249,7 +251,7 @@ func (r *GormCollectionRepository) GetImagePathsMatchingFilters(collectionID uin
 
 	if filterMatch == "any" {
 		baseSQL = fmt.Sprintf(
-			`SELECT DISTINCT image_path FROM image_tags WHERE (%s)%s ORDER BY image_path`,
+			`SELECT DISTINCT image_path FROM image_tags WHERE (%s)%s`,
 			posWhere, notInSQL,
 		)
 		baseArgs = append(posArgs, notInArgs...)
@@ -257,32 +259,21 @@ func (r *GormCollectionRepository) GetImagePathsMatchingFilters(collectionID uin
 		// "all": must match every positive key group
 		distinctKeyCount := len(positiveByKey)
 		baseSQL = fmt.Sprintf(
-			`SELECT image_path FROM image_tags WHERE (%s)%s GROUP BY image_path HAVING COUNT(DISTINCT tag_key) = ? ORDER BY image_path`,
+			`SELECT image_path FROM image_tags WHERE (%s)%s GROUP BY image_path HAVING COUNT(DISTINCT tag_key) = ?`,
 			posWhere, notInSQL,
 		)
 		baseArgs = append(posArgs, notInArgs...)
 		baseArgs = append(baseArgs, distinctKeyCount)
 	}
 
-	// Count total using a SQL COUNT to avoid fetching all rows
-	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM (%s)", baseSQL)
-	var total int
-	if err := r.db.Raw(countSQL, baseArgs...).Scan(&total).Error; err != nil {
-		return nil, 0, err
-	}
-
-	// Fetch paginated paths
-	paginatedSQL := baseSQL + " LIMIT ? OFFSET ?"
-	paginatedArgs := append(baseArgs, limit, offset)
-
 	var rows []struct{ ImagePath string }
-	if err := r.db.Raw(paginatedSQL, paginatedArgs...).Scan(&rows).Error; err != nil {
-		return nil, 0, err
+	if err := r.db.Raw(baseSQL, baseArgs...).Scan(&rows).Error; err != nil {
+		return nil, err
 	}
 
 	paths := make([]string, 0, len(rows))
 	for _, row := range rows {
 		paths = append(paths, row.ImagePath)
 	}
-	return paths, total, nil
+	return paths, nil
 }

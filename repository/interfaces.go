@@ -185,14 +185,15 @@ type CollectionRepositoryInterface interface {
 	GetBySlug(slug string) (*models.Collection, error)
 	ListPublic() ([]models.Collection, error)
 	ListAll() ([]models.Collection, error)
-	Update(collectionID uint, name, slug string, description *string, isPublic bool, filterMatch string) error
+	Update(collectionID uint, name, slug string, description *string, isPublic bool, filterMatch string, sortOrder string) error
 	Delete(id uint) error
 	// SetFilters replaces all tag filters for a collection in a transaction.
 	SetFilters(collectionID uint, filters []models.CollectionTagFilter) error
-	// GetImagePathsMatchingFilters returns image paths that match the collection's tag filters.
+	// GetImagePathsMatchingFilters returns all image paths that match the collection's tag filters.
 	// Behaviour is controlled by Collection.FilterMatch ("all" = AND across inclusion groups, "any" = OR).
 	// Filters with Negate=true exclude images that have the given tag.
-	GetImagePathsMatchingFilters(collectionID uint, offset, limit int) ([]string, int, error)
+	// Sorting and pagination are handled by the caller.
+	GetImagePathsMatchingFilters(collectionID uint) ([]string, error)
 	GetBanners(collectionID uint) ([]models.CollectionBanner, error)
 	AddBanner(banner *models.CollectionBanner) error
 	DeleteCollectionBanner(bannerID uint, collectionID uint) error

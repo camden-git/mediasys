@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/camden-git/mediasysbackend/config"
+	"github.com/camden-git/mediasysbackend/database"
 	"github.com/camden-git/mediasysbackend/media"
 	"github.com/camden-git/mediasysbackend/models"
 	"github.com/camden-git/mediasysbackend/repository"
@@ -25,6 +26,7 @@ type adminCollectionResponse struct {
 	Description              *string                      `json:"description,omitempty"`
 	IsPublic                 bool                         `json:"is_public"`
 	FilterMatch              string                       `json:"filter_match"`
+	SortOrder                string                       `json:"sort_order"`
 	InheritBannersFromAlbums bool                         `json:"inherit_banners_from_albums"`
 	Banners                  []models.CollectionBanner    `json:"banners"`
 	Filters                  []models.CollectionTagFilter `json:"filters,omitempty"`
@@ -43,6 +45,7 @@ func buildCollectionAdminResponse(c *models.Collection, banners []models.Collect
 		Description:              c.Description,
 		IsPublic:                 c.IsPublic,
 		FilterMatch:              c.FilterMatch,
+		SortOrder:                c.SortOrder,
 		InheritBannersFromAlbums: c.InheritBannersFromAlbums,
 		Banners:                  banners,
 		Filters:                  c.Filters,
@@ -180,6 +183,7 @@ func (h *AdminCollectionHandler) UpdateCollection(w http.ResponseWriter, r *http
 		Description *string `json:"description"`
 		IsPublic    *bool   `json:"is_public"`
 		FilterMatch *string `json:"filter_match"`
+		SortOrder   *string `json:"sort_order"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request body: "+err.Error())
@@ -193,6 +197,10 @@ func (h *AdminCollectionHandler) UpdateCollection(w http.ResponseWriter, r *http
 	filterMatch := c.FilterMatch
 	if filterMatch == "" {
 		filterMatch = "all"
+	}
+	sortOrder := c.SortOrder
+	if sortOrder == "" {
+		sortOrder = "filename_asc"
 	}
 
 	if req.Name != nil {
@@ -214,8 +222,15 @@ func (h *AdminCollectionHandler) UpdateCollection(w http.ResponseWriter, r *http
 	if req.FilterMatch != nil && (*req.FilterMatch == "all" || *req.FilterMatch == "any") {
 		filterMatch = *req.FilterMatch
 	}
+	if req.SortOrder != nil {
+		if !database.IsValidSortOrder(*req.SortOrder) {
+			WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Invalid sort order")
+			return
+		}
+		sortOrder = *req.SortOrder
+	}
 
-	if err := h.CollectionRepo.Update(id, name, slug, description, isPublic, filterMatch); err != nil {
+	if err := h.CollectionRepo.Update(id, name, slug, description, isPublic, filterMatch, sortOrder); err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {
 			WriteAPIError(w, http.StatusConflict, "CollectionConflict", "Collection name or slug already exists")
 		} else {

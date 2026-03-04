@@ -6,6 +6,7 @@ import { RadioGroup, RadioField, Radio } from '../../elements/Radio';
 import { Input } from '../../elements/Input';
 import { Textarea } from '../../elements/Textarea';
 import { CheckboxField, Checkbox } from '../../elements/Checkbox';
+import { Listbox, ListboxLabel, ListboxOption } from '../../elements/Listbox';
 import {
     updateCollection,
     setCollectionFilters,
@@ -34,6 +35,7 @@ const EditCollectionForm: React.FC<EditCollectionFormProps> = ({ isOpen, onClose
     const [description, setDescription] = useState('');
     const [isPublic, setIsPublic] = useState(true);
     const [filterMatch, setFilterMatch] = useState<'all' | 'any'>('all');
+    const [sortOrder, setSortOrder] = useState('filename_asc');
     const [filters, setFilters] = useState<Array<{ tag_key: string; tag_value: string; negate: boolean }>>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [inheritBanners, setInheritBanners] = useState(false);
@@ -47,6 +49,7 @@ const EditCollectionForm: React.FC<EditCollectionFormProps> = ({ isOpen, onClose
             setDescription(collection.description ?? '');
             setIsPublic(collection.is_public);
             setFilterMatch((collection.filter_match as 'all' | 'any') ?? 'all');
+            setSortOrder(collection.sort_order ?? 'filename_asc');
             setFilters(
                 collection.filters?.map((f) => ({ tag_key: f.tag_key, tag_value: f.tag_value, negate: f.negate })) ??
                     [],
@@ -68,6 +71,7 @@ const EditCollectionForm: React.FC<EditCollectionFormProps> = ({ isOpen, onClose
                 description: description || undefined,
                 is_public: isPublic,
                 filter_match: filterMatch,
+                sort_order: sortOrder,
             });
             await setCollectionFilters(collection.id, filters);
             onUpdated();
@@ -152,6 +156,67 @@ const EditCollectionForm: React.FC<EditCollectionFormProps> = ({ isOpen, onClose
                                 </RadioField>
                             </RadioGroup>
                         </Fieldset>
+                        <Field>
+                            <Label>Sort Order</Label>
+                            <Listbox value={sortOrder} onChange={(val) => setSortOrder(val)}>
+                                <ListboxOption value='filename_asc'>
+                                    <ListboxLabel>Filename (A–Z)</ListboxLabel>
+                                </ListboxOption>
+                                <ListboxOption value='filename_desc'>
+                                    <ListboxLabel>Filename (Z–A)</ListboxLabel>
+                                </ListboxOption>
+                                <ListboxOption value='filename_nat'>
+                                    <ListboxLabel>Filename (Natural)</ListboxLabel>
+                                </ListboxOption>
+                                <ListboxOption value='date_asc'>
+                                    <ListboxLabel>Capture Date (Oldest First)</ListboxLabel>
+                                </ListboxOption>
+                                <ListboxOption value='date_desc'>
+                                    <ListboxLabel>Capture Date (Newest First)</ListboxLabel>
+                                </ListboxOption>
+                                <ListboxOption value='mod_time_desc'>
+                                    <ListboxLabel>Modified Time (Newest First)</ListboxLabel>
+                                </ListboxOption>
+                                <ListboxOption value='mod_time_asc'>
+                                    <ListboxLabel>Modified Time (Oldest First)</ListboxLabel>
+                                </ListboxOption>
+                                <ListboxOption value='file_size_desc'>
+                                    <ListboxLabel>File Size (Largest First)</ListboxLabel>
+                                </ListboxOption>
+                                <ListboxOption value='file_size_asc'>
+                                    <ListboxLabel>File Size (Smallest First)</ListboxLabel>
+                                </ListboxOption>
+                                <ListboxOption value='iso_asc'>
+                                    <ListboxLabel>ISO (Low to High)</ListboxLabel>
+                                </ListboxOption>
+                                <ListboxOption value='iso_desc'>
+                                    <ListboxLabel>ISO (High to Low)</ListboxLabel>
+                                </ListboxOption>
+                                <ListboxOption value='aperture_asc'>
+                                    <ListboxLabel>Aperture (Small to Large)</ListboxLabel>
+                                </ListboxOption>
+                                <ListboxOption value='aperture_desc'>
+                                    <ListboxLabel>Aperture (Large to Small)</ListboxLabel>
+                                </ListboxOption>
+                                <ListboxOption value='shutter_speed_desc'>
+                                    <ListboxLabel>Shutter Speed (Fast to Slow)</ListboxLabel>
+                                </ListboxOption>
+                                <ListboxOption value='shutter_speed_asc'>
+                                    <ListboxLabel>Shutter Speed (Slow to Fast)</ListboxLabel>
+                                </ListboxOption>
+                                <ListboxOption value='focal_length_asc'>
+                                    <ListboxLabel>Focal Length (Short to Long)</ListboxLabel>
+                                </ListboxOption>
+                                <ListboxOption value='focal_length_desc'>
+                                    <ListboxLabel>Focal Length (Long to Short)</ListboxLabel>
+                                </ListboxOption>
+                                <ListboxOption value='camera_asc'>
+                                    <ListboxLabel>Camera (A–Z)</ListboxLabel>
+                                </ListboxOption>
+                            </Listbox>
+                            <Description>How images in this collection should be sorted</Description>
+                        </Field>
+
                         <Field>
                             <Label>Tag Filters</Label>
                             <CollectionFiltersEditor filters={filters} onChange={setFilters} />
