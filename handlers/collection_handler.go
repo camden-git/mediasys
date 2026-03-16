@@ -82,7 +82,7 @@ func (h *CollectionHandler) ListCollections(w http.ResponseWriter, r *http.Reque
 		c := c
 		result[i] = h.buildPublicResponse(&c)
 	}
-	setCacheHeaders(w, 60)
+	setCacheHeaders(w, 300)
 	WriteAPIResponse(w, http.StatusOK, result)
 }
 
@@ -99,7 +99,7 @@ func (h *CollectionHandler) GetCollection(w http.ResponseWriter, r *http.Request
 		}
 		return
 	}
-	setCacheHeaders(w, 60)
+	setCacheHeaders(w, 300)
 	WriteAPIResponse(w, http.StatusOK, h.buildPublicResponse(c))
 }
 
@@ -209,6 +209,6 @@ func (h *CollectionHandler) GetCollectionPhotos(w http.ResponseWriter, r *http.R
 		Limit:   limit,
 		HasMore: end < total,
 	}
-	setCacheHeaders(w, 60)
+	setCacheHeaders(w, 300)
 	WriteAPIResponse(w, http.StatusOK, listing)
 }

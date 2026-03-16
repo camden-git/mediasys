@@ -623,14 +623,18 @@ func listDirectoryContents(baseDirFullPath string, requestPathPrefix string, cfg
 			if !recordExists || imageInfo == nil {
 				queueThumbnail = true
 				queueMetadata = true
-				queueDetection = true
+				if imgProc.Config.FaceRecognitionEnabled {
+					queueDetection = true
+				}
 				queuePreview = true
 				log.Printf("Queuing all tasks for new or unreadable image record: %s", dbKeyPath)
 			} else if modTimeUnix > imageInfo.LastModified {
 				// file is newer than last DB update, re-queue everything
 				queueThumbnail = true
 				queueMetadata = true
-				queueDetection = true
+				if imgProc.Config.FaceRecognitionEnabled {
+					queueDetection = true
+				}
 				queuePreview = true
 				log.Printf("Queuing all tasks for updated image file: %s (ModTime: %d > DB: %d)", dbKeyPath, modTimeUnix, imageInfo.LastModified)
 			} else {
@@ -643,7 +647,8 @@ func listDirectoryContents(baseDirFullPath string, requestPathPrefix string, cfg
 					queueMetadata = true
 					log.Printf("Re-queuing metadata task for %s (status: %s)", dbKeyPath, imageInfo.MetadataStatus)
 				}
-				if imageInfo.DetectionStatus != database.StatusDone && imageInfo.DetectionStatus != database.StatusNotRequired {
+				if imgProc.Config.FaceRecognitionEnabled &&
+					imageInfo.DetectionStatus != database.StatusDone && imageInfo.DetectionStatus != database.StatusNotRequired {
 					queueDetection = true
 					log.Printf("Re-queuing detection task for %s (status: %s)", dbKeyPath, imageInfo.DetectionStatus)
 				}

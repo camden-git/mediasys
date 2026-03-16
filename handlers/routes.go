@@ -51,20 +51,24 @@ func RegisterRoutes(r chi.Router, deps AppDependencies) {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Compress(5))
 	r.Use(middleware.Timeout(60 * time.Second))
-	r.Use(cors.New(cors.Options{
+
+	// CORS is scoped to only auth and admin routes to avoid Vary: Origin on public
+	// cacheable endpoints (albums, groups, collections).
+	credentialedCORS := cors.New(cors.Options{
 		AllowedOrigins:   []string{"http://localhost:5173", "http://localhost:4173", "http://127.0.0.1:5173", "http://127.0.0.1:4173", "http://10.247.36.80:5173", "http://10.247.36.80:4173", "https://media.camdenrush.com"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "Content-Length"},
 		ExposedHeaders:   []string{"Link"},
 		MaxAge:           300,
 		AllowCredentials: true,
-	}).Handler)
+	}).Handler
 
 	r.Route("/api", func(r chi.Router) {
 		r.Post("/setup/initial-admin", deps.SetupHandler.CreateFirstAdmin)
 
 		// authentication routes
 		r.Route("/auth", func(r chi.Router) {
+			r.Use(credentialedCORS)
 			r.Post("/login", deps.AuthHandler.Login)
 			r.Post("/register", deps.AuthHandler.Register)
 			r.Post("/logout", deps.AuthHandler.Logout)
@@ -86,6 +90,7 @@ func RegisterRoutes(r chi.Router, deps AppDependencies) {
 
 		// admin routes for User and Role management
 		r.Route("/admin", func(r chi.Router) {
+			r.Use(credentialedCORS)
 			r.Use(func(next http.Handler) http.Handler {
 				return AuthMiddleware(deps.UserRepo, next)
 			})

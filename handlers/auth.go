@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -127,11 +128,14 @@ func verifyTurnstile(secret, responseToken, remoteIP string) (bool, error) {
 		return false, err
 	}
 	var parsed struct {
-		Success bool `json:"success"`
-		// ErrorCodes []string `json:"error-codes"` // optional
+		Success    bool     `json:"success"`
+		ErrorCodes []string `json:"error-codes"`
 	}
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		return false, err
+	}
+	if !parsed.Success {
+		log.Printf("Turnstile verification failed: error-codes=%v", parsed.ErrorCodes)
 	}
 	return parsed.Success, nil
 }

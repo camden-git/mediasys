@@ -143,7 +143,7 @@ func (ah *AlbumHandler) ListAlbums(w http.ResponseWriter, r *http.Request) {
 	if albums == nil {
 		albums = []models.Album{} // ensure an empty array instead of null for JSON
 	}
-	setCacheHeaders(w, 60)
+	setCacheHeaders(w, 300)
 	writeJSON(w, http.StatusOK, albums)
 }
 
@@ -189,7 +189,7 @@ func (ah *AlbumHandler) GetAlbum(w http.ResponseWriter, r *http.Request) {
 		Artists []map[string]interface{} `json:"artists,omitempty"`
 		Banners []string                 `json:"banners"`
 	}
-	setCacheHeaders(w, 60)
+	setCacheHeaders(w, 300)
 	writeJSON(w, http.StatusOK, albumWithArtists{Album: album, Artists: artists, Banners: bannerPaths})
 }
 

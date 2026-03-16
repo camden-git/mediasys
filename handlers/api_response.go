@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"net/http"
 	"slices"
@@ -159,6 +160,6 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 
 // setCacheHeaders sets public Cache-Control headers with stale-while-revalidate support.
 func setCacheHeaders(w http.ResponseWriter, maxAge int) {
-	w.Header().Set("Cache-Control", "public, max-age=60, stale-while-revalidate=300")
-	_ = maxAge // kept for future per-endpoint tuning
+	swr := maxAge * 5
+	w.Header().Set("Cache-Control", fmt.Sprintf("public, max-age=%d, stale-while-revalidate=%d", maxAge, swr))
 }

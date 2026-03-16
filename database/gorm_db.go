@@ -25,7 +25,7 @@ func InitGormDB(dataSourceName string) (*gorm.DB, error) {
 		},
 	)
 
-	db, err := gorm.Open(sqlite.Open(dataSourceName), &gorm.Config{
+	db, err := gorm.Open(sqlite.Open(dataSourceName+"?_journal_mode=WAL&_synchronous=NORMAL&_busy_timeout=5000"), &gorm.Config{
 		Logger: gormLogger,
 	})
 
@@ -38,9 +38,9 @@ func InitGormDB(dataSourceName string) (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to get underlying sql.DB from GORM: %w", err)
 	}
 
-	sqlDB.SetMaxIdleConns(10)
-	sqlDB.SetMaxOpenConns(100)
-	sqlDB.SetConnMaxLifetime(time.Hour)
+	sqlDB.SetMaxOpenConns(1)
+	sqlDB.SetMaxIdleConns(1)
+	sqlDB.SetConnMaxLifetime(0)
 
 	log.Println("GORM Database initialized successfully at", dataSourceName)
 	return db, nil
