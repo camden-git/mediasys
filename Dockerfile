@@ -7,9 +7,9 @@ FROM ghcr.io/hybridgroup/gocv:0.41.0-cuda11.8-ubuntu22.04 AS builder
 
 WORKDIR /src
 
-# Install build prerequisites for Go modules (git, ca-certs)
+# Install build prerequisites for Go modules (git, ca-certs, libwebp for CGO)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates git && \
+    ca-certificates git libwebp-dev && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy go.mod/go.sum first for cached deps
@@ -27,6 +27,9 @@ RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o /app/medi
 FROM ghcr.io/hybridgroup/gocv:0.41.0-cuda11.8-ubuntu22.04
 
 WORKDIR /app
+
+# Install libwebp runtime library
+RUN apt-get update && apt-get install -y --no-install-recommends libwebp7 && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
 RUN useradd -m -u 10001 appuser

@@ -40,6 +40,7 @@ func RunMigrations(db *gorm.DB) error {
 		migrateAddImageTagsImagePathIndex,
 		migrateAddMultiBanners,
 		migrateAddCollectionSortOrder,
+		migrateResetThumbnailsPreviewsForWebP,
 	}
 
 	migrationNames := []string{
@@ -50,6 +51,7 @@ func RunMigrations(db *gorm.DB) error {
 		"add_image_tags_image_path_index",
 		"add_multi_banners",
 		"add_collection_sort_order",
+		"reset_thumbnails_previews_for_webp",
 	}
 
 	// Run pending migrations
@@ -213,6 +215,22 @@ func migrateAddCollectionSortOrder(db *gorm.DB) error {
 		return fmt.Errorf("failed to add sort_order column to collections: %w", err)
 	}
 	log.Println("add_collection_sort_order migration completed.")
+	return nil
+}
+
+// migrateResetThumbnailsPreviewsForWebP resets existing JPEG thumbnails and previews
+// to pending so they are regenerated as WebP by the worker.
+func migrateResetThumbnailsPreviewsForWebP(db *gorm.DB) error {
+	log.Println("Running reset_thumbnails_previews_for_webp migration...")
+
+	if err := db.Exec(`UPDATE images SET thumbnail_status = 'pending', thumbnail_path = NULL WHERE thumbnail_path LIKE '%.jpg'`).Error; err != nil {
+		return fmt.Errorf("failed to reset thumbnail paths: %w", err)
+	}
+	if err := db.Exec(`UPDATE images SET preview_status = 'pending', preview_path = NULL WHERE preview_path LIKE '%.jpg'`).Error; err != nil {
+		return fmt.Errorf("failed to reset preview paths: %w", err)
+	}
+
+	log.Println("reset_thumbnails_previews_for_webp migration completed.")
 	return nil
 }
 

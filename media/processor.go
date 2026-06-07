@@ -2,6 +2,7 @@ package media
 
 import (
 	"fmt"
+	"github.com/chai2010/webp"
 	"github.com/disintegration/imaging"
 	"github.com/google/uuid"
 	"image"
@@ -12,14 +13,14 @@ import (
 
 const (
 	BannerTargetWidth   = 2000
-	BannerJpegQuality   = 80
-	BannerFileExtension = ".jpg"
+	BannerQuality       = 80
+	BannerFileExtension = ".webp"
 
-	ThumbnailJpegQuality   = 90
-	ThumbnailFileExtension = ".jpg"
+	ThumbnailQuality       = 90
+	ThumbnailFileExtension = ".webp"
 
-	PreviewJpegQuality      = 85
-	PreviewFileExtension    = ".jpg"
+	PreviewQuality          = 85
+	PreviewFileExtension    = ".webp"
 	PreviewLandscapeMaxLong = 3400
 	PreviewPortraitMaxLong  = 2200
 )
@@ -69,7 +70,7 @@ func (p *Processor) GenerateThumbnail(originalImg image.Image, originalRelPath s
 
 	go func() {
 		defer writer.Close()
-		err := imaging.Encode(writer, thumb, imaging.JPEG, imaging.JPEGQuality(ThumbnailJpegQuality))
+		err := webp.Encode(writer, thumb, &webp.Options{Quality: float32(ThumbnailQuality)})
 		if err != nil {
 			log.Printf("processor: Failed to encode thumbnail: %v", err)
 			writer.CloseWithError(fmt.Errorf("thumbnail encoding failed: %w", err))
@@ -122,7 +123,7 @@ func (p *Processor) GeneratePreview(src image.Image, originalRelPath string) (st
 	reader, writer := io.Pipe()
 	go func() {
 		defer writer.Close()
-		err := imaging.Encode(writer, resized, imaging.JPEG, imaging.JPEGQuality(PreviewJpegQuality))
+		err := webp.Encode(writer, resized, &webp.Options{Quality: float32(PreviewQuality)})
 		if err != nil {
 			log.Printf("processor: Failed to encode preview: %v", err)
 			writer.CloseWithError(fmt.Errorf("preview encoding failed: %w", err))
@@ -159,7 +160,7 @@ func (p *Processor) ProcessBanner(fileData io.Reader) (string, error) {
 	reader, writer := io.Pipe()
 	go func() {
 		defer writer.Close()
-		err := imaging.Encode(writer, processedImg, imaging.JPEG, imaging.JPEGQuality(BannerJpegQuality))
+		err := webp.Encode(writer, processedImg, &webp.Options{Quality: float32(BannerQuality)})
 		if err != nil {
 			log.Printf("processor: Failed to encode banner: %v", err)
 			writer.CloseWithError(fmt.Errorf("banner encoding failed: %w", err))

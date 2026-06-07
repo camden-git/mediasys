@@ -14,6 +14,7 @@ import (
 
 	"github.com/camden-git/mediasysbackend/config"
 	"github.com/camden-git/mediasysbackend/repository"
+	"github.com/chai2010/webp"
 	"github.com/disintegration/imaging"
 	"github.com/go-chi/chi/v5"
 	"gocv.io/x/gocv"
@@ -184,10 +185,10 @@ func (iph *ImagePreviewHandler) ServeScaledPreview(w http.ResponseWriter, r *htt
 		}
 	}
 
-	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("Content-Type", "image/webp")
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 
-	if err := imaging.Encode(w, src, imaging.JPEG, imaging.JPEGQuality(85)); err != nil {
+	if err := webp.Encode(w, src, &webp.Options{Quality: 85}); err != nil {
 		log.Printf("ServeScaledPreview: encode error for %s: %v", fullPath, err)
 	}
 }
