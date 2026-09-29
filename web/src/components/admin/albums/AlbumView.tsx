@@ -5,6 +5,14 @@ import { getBannerUrl } from '../../../api.ts';
 import { Heading } from '../../elements/Heading';
 import { DescriptionList, DescriptionItem } from '../../elements/DescriptionList';
 
+const zipStatusLabels: Record<string, string> = {
+    notRequired: 'Not generated',
+    pending: 'Pending',
+    processing: 'Generating',
+    done: 'Ready',
+    error: 'Error',
+};
+
 const AlbumView: React.FC = () => {
     const album = useAlbumContextStore((s) => s.data!);
 
@@ -72,14 +80,16 @@ const AlbumView: React.FC = () => {
                         details={
                             <span
                                 className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                                    album.zip_status === 'ready'
+                                    album.zip_status === 'done'
                                         ? 'bg-green-100 text-green-800'
-                                        : album.zip_status === 'generating'
+                                        : album.zip_status === 'pending' || album.zip_status === 'processing'
                                           ? 'bg-yellow-100 text-yellow-800'
-                                          : 'bg-gray-100 text-gray-800'
+                                          : album.zip_status === 'error'
+                                            ? 'bg-red-100 text-red-800'
+                                            : 'bg-gray-100 text-gray-800'
                                 }`}
                             >
-                                {album.zip_status || 'Not generated'}
+                                {zipStatusLabels[album.zip_status] ?? 'Not generated'}
                             </span>
                         }
                     />
