@@ -8,18 +8,22 @@ import "gorm.io/gorm"
 // identifier used throughout the API.
 type Image struct {
 	OriginalPath string `gorm:"primaryKey" json:"original_path"`
-	AlbumID      uint   `gorm:"not null;index" json:"album_id"`
+	// idx_images_album_taken and idx_images_album_modified are composite indexes
+	// (leftmost column album_id) that support the common "images in an album,
+	// ordered by capture/mod time" listing queries; see database.SQLOrderClause.
+	AlbumID      uint   `gorm:"not null;index:idx_images_album_taken,priority:1;index:idx_images_album_modified,priority:1" json:"album_id"`
 	ObjectKey    string `gorm:"not null;uniqueIndex" json:"-"`
 	Size         int64  `gorm:"not null;default:0" json:"size"`
 	ContentType  string `gorm:"not null;default:''" json:"content_type"`
-	LastModified int64  `gorm:"not null" json:"last_modified"`
+	LastModified int64  `gorm:"not null;index:idx_images_album_modified,priority:2" json:"last_modified"`
 	CreatedAt    int64  `gorm:"not null" json:"created_at"`
 
 	UploadedByUserID *uint `gorm:"index" json:"uploaded_by_user_id,omitempty"`
 
-	Width        *int     `gorm:"" json:"width,omitempty"`         // Nullable
-	Height       *int     `gorm:"" json:"height,omitempty"`        // Nullable
-	TakenAt      *int64   `gorm:"index" json:"taken_at,omitempty"` // Nullable, Unix timestamp
+	Width  *int `gorm:"" json:"width,omitempty"`  // Nullable
+	Height *int `gorm:"" json:"height,omitempty"` // Nullable
+	// Nullable, Unix timestamp
+	TakenAt      *int64   `gorm:"index:idx_images_album_taken,priority:2" json:"taken_at,omitempty"`
 	CameraMake   *string  `gorm:"" json:"camera_make,omitempty"`   // Nullable
 	CameraModel  *string  `gorm:"" json:"camera_model,omitempty"`  // Nullable
 	LensMake     *string  `gorm:"" json:"lens_make,omitempty"`     // Nullable
