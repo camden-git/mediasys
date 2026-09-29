@@ -10,7 +10,7 @@ import { Button } from '../../elements/Button';
 import { Input } from '../../elements/Input';
 import { Field, FieldGroup, Label, Description, ErrorMessage } from '../../elements/Fieldset';
 import { Checkbox } from '../../elements/Checkbox';
-import { Listbox, ListboxLabel, ListboxOption } from '../../elements/Listbox';
+import SortOrderListbox from '../shared/SortOrderListbox';
 
 const validationSchema = Yup.object({
     name: Yup.string().required('Name is required').min(1, 'Name must be at least 1 character'),
@@ -169,62 +169,10 @@ const CreateAlbumForm: React.FC = () => {
 
                             <Field>
                                 <Label>Sort Order</Label>
-                                <Listbox value={values.sort_order} onChange={(val) => setFieldValue('sort_order', val)}>
-                                    <ListboxOption value='filename_asc'>
-                                        <ListboxLabel>Filename (A–Z)</ListboxLabel>
-                                    </ListboxOption>
-                                    <ListboxOption value='filename_desc'>
-                                        <ListboxLabel>Filename (Z–A)</ListboxLabel>
-                                    </ListboxOption>
-                                    <ListboxOption value='filename_nat'>
-                                        <ListboxLabel>Filename (Natural)</ListboxLabel>
-                                    </ListboxOption>
-                                    <ListboxOption value='date_asc'>
-                                        <ListboxLabel>Capture Date (Oldest First)</ListboxLabel>
-                                    </ListboxOption>
-                                    <ListboxOption value='date_desc'>
-                                        <ListboxLabel>Capture Date (Newest First)</ListboxLabel>
-                                    </ListboxOption>
-                                    <ListboxOption value='mod_time_desc'>
-                                        <ListboxLabel>Modified Time (Newest First)</ListboxLabel>
-                                    </ListboxOption>
-                                    <ListboxOption value='mod_time_asc'>
-                                        <ListboxLabel>Modified Time (Oldest First)</ListboxLabel>
-                                    </ListboxOption>
-                                    <ListboxOption value='file_size_desc'>
-                                        <ListboxLabel>File Size (Largest First)</ListboxLabel>
-                                    </ListboxOption>
-                                    <ListboxOption value='file_size_asc'>
-                                        <ListboxLabel>File Size (Smallest First)</ListboxLabel>
-                                    </ListboxOption>
-                                    <ListboxOption value='iso_asc'>
-                                        <ListboxLabel>ISO (Low to High)</ListboxLabel>
-                                    </ListboxOption>
-                                    <ListboxOption value='iso_desc'>
-                                        <ListboxLabel>ISO (High to Low)</ListboxLabel>
-                                    </ListboxOption>
-                                    <ListboxOption value='aperture_asc'>
-                                        <ListboxLabel>Aperture (Small to Large)</ListboxLabel>
-                                    </ListboxOption>
-                                    <ListboxOption value='aperture_desc'>
-                                        <ListboxLabel>Aperture (Large to Small)</ListboxLabel>
-                                    </ListboxOption>
-                                    <ListboxOption value='shutter_speed_desc'>
-                                        <ListboxLabel>Shutter Speed (Fast to Slow)</ListboxLabel>
-                                    </ListboxOption>
-                                    <ListboxOption value='shutter_speed_asc'>
-                                        <ListboxLabel>Shutter Speed (Slow to Fast)</ListboxLabel>
-                                    </ListboxOption>
-                                    <ListboxOption value='focal_length_asc'>
-                                        <ListboxLabel>Focal Length (Short to Long)</ListboxLabel>
-                                    </ListboxOption>
-                                    <ListboxOption value='focal_length_desc'>
-                                        <ListboxLabel>Focal Length (Long to Short)</ListboxLabel>
-                                    </ListboxOption>
-                                    <ListboxOption value='camera_asc'>
-                                        <ListboxLabel>Camera (A–Z)</ListboxLabel>
-                                    </ListboxOption>
-                                </Listbox>
+                                <SortOrderListbox
+                                    value={values.sort_order}
+                                    onChange={(val) => setFieldValue('sort_order', val)}
+                                />
                                 <Description>How images in this album should be sorted</Description>
                             </Field>
 
