@@ -16,6 +16,9 @@ import (
 	"gorm.io/gorm"
 )
 
+// maxFaceListLimit caps the limit query param on the admin face listing endpoints.
+const maxFaceListLimit = 100
+
 type FaceHandler struct {
 	FaceRepo               repository.FaceRepositoryInterface
 	EmbeddingRepo          repository.FaceEmbeddingRepositoryInterface
@@ -315,7 +318,7 @@ func (fh *FaceHandler) GetSimilarFaces(w http.ResponseWriter, r *http.Request) {
 	limit := 10
 	if limitStr != "" {
 		if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 {
-			limit = parsedLimit
+			limit = min(parsedLimit, maxFaceListLimit)
 		}
 	}
 
@@ -348,7 +351,7 @@ func (fh *FaceHandler) GetUntaggedFaces(w http.ResponseWriter, r *http.Request) 
 	limit := 20
 	if limitStr := q.Get("limit"); limitStr != "" {
 		if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 {
-			limit = parsedLimit
+			limit = min(parsedLimit, maxFaceListLimit)
 		}
 	}
 

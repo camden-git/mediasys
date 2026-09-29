@@ -446,13 +446,13 @@ func RegisterRoutes(r chi.Router, deps AppDependencies) {
 		})
 
 		r.Route("/faces", func(r chi.Router) {
-			r.Get("/untagged", deps.FaceHandler.GetUntaggedFaces)
+			r.With(credentialedCORS, requireFaceManage).Get("/untagged", deps.FaceHandler.GetUntaggedFaces)
 			r.Route("/{face_id}", func(r chi.Router) {
-				r.Get("/", deps.FaceHandler.GetFace)
+				r.With(credentialedCORS, requireFaceManage).Get("/", deps.FaceHandler.GetFace)
 				r.With(credentialedCORS, requireFaceManage).Put("/", deps.FaceHandler.UpdateFace)
 				r.With(credentialedCORS, requireFaceManage).Delete("/", deps.FaceHandler.DeleteFace)
-				r.Get("/similar", deps.FaceHandler.GetSimilarFaces)
-				r.Get("/suggest", deps.FaceHandler.SuggestFace)
+				r.With(credentialedCORS, requireFaceManage).Get("/similar", deps.FaceHandler.GetSimilarFaces)
+				r.With(credentialedCORS, requireFaceManage).Get("/suggest", deps.FaceHandler.SuggestFace)
 				r.With(credentialedCORS, requireFaceManage).Post("/tag", deps.FaceHandler.TagFace)
 				r.With(credentialedCORS, requireFaceManage).Post("/auto-tag", deps.FaceHandler.AutoTagFace)
 			})
