@@ -7,6 +7,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/camden-git/mediasysbackend/models"
 )
@@ -150,6 +151,44 @@ func TestUploadCannotOverwriteOtherAlbum(t *testing.T) {
 	orig := doRequest(t, http.MethodGet, "/api/originals"+listing.Files[0].Path, "", nil, "")
 	if orig.StatusCode != http.StatusOK || !bytes.Equal(orig.Body, original) {
 		t.Fatalf("B's original was modified: status %d", orig.StatusCode)
+	}
+}
+
+func TestZipInvalidatedWhenImagesChange(t *testing.T) {
+	env := requireShared(t)
+	s := randomSuffix()
+	a := createAlbum(t, env.adminToken, "Zip "+s, "zip-"+s, "")
+	zipURL := fmt.Sprintf("/api/admin/albums/%d/zip", a.ID)
+
+	for _, name := range []string{"top/one.jpg", "top/two.jpg"} {
+		if res := uploadWithPath(t, a.ID, name, generateJPEG(t, 24, 24)); res.Uploaded != 1 {
+			t.Fatalf("upload failed: %+v", res)
+		}
+	}
+	requestZip := func() {
+		if resp := doRequest(t, http.MethodPost, zipURL, env.adminToken, nil, ""); resp.StatusCode != http.StatusAccepted {
+			t.Fatalf("zip request: %d %s", resp.StatusCode, resp.Body)
+		}
+		pollUntil(t, 20*time.Second, 200*time.Millisecond, "zip to be ready", func() bool {
+			return doRequest(t, http.MethodGet, zipURL, env.adminToken, nil, "").StatusCode == http.StatusOK
+		})
+	}
+
+	requestZip()
+	del := doRequest(t, http.MethodDelete, fmt.Sprintf("/api/admin/albums/%d/images?path=%s/one.jpg", a.ID, a.FolderPath), env.adminToken, nil, "")
+	if del.StatusCode != http.StatusNoContent {
+		t.Fatalf("delete image: %d %s", del.StatusCode, del.Body)
+	}
+	if resp := doRequest(t, http.MethodGet, zipURL, env.adminToken, nil, ""); resp.StatusCode == http.StatusOK {
+		t.Fatalf("stale zip still served after image delete")
+	}
+
+	requestZip()
+	if res := uploadWithPath(t, a.ID, "top/three.jpg", generateJPEG(t, 24, 24)); res.Uploaded != 1 {
+		t.Fatalf("upload failed: %+v", res)
+	}
+	if resp := doRequest(t, http.MethodGet, zipURL, env.adminToken, nil, ""); resp.StatusCode == http.StatusOK {
+		t.Fatalf("stale zip still served after upload")
 	}
 }
 

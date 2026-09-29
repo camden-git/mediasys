@@ -55,6 +55,19 @@ func cleanUploadPath(rel, filename string) (string, bool) {
 	return rel, true
 }
 
+// invalidateAlbumZip drops the album's archive after its images changed so a
+// stale zip is never served.
+func (h *AdminAlbumHandler) invalidateAlbumZip(albumID uint) {
+	oldZip, err := h.AlbumRepo.InvalidateZip(albumID)
+	if err != nil {
+		log.Printf("Error invalidating zip for album %d: %v", albumID, err)
+		return
+	}
+	if oldZip != nil && *oldZip != "" {
+		_ = h.Store.Delete(context.Background(), *oldZip)
+	}
+}
+
 // UploadImages streams multipart uploads straight into object storage and queues processing
 func (h *AdminAlbumHandler) UploadImages(w http.ResponseWriter, r *http.Request) {
 	albumID, err := strconv.ParseUint(chi.URLParam(r, "id"), 10, 64)
@@ -209,6 +222,9 @@ func (h *AdminAlbumHandler) UploadImages(w http.ResponseWriter, r *http.Request)
 		h.ImgProc.Wake()
 		saved++
 	}
+	if saved > 0 {
+		h.invalidateAlbumZip(album.ID)
+	}
 
 	WriteAPIResponse(w, http.StatusCreated, map[string]any{"uploaded": saved, "failed": failed})
 }
@@ -278,6 +294,7 @@ func (h *AdminAlbumHandler) DeleteAlbumImage(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	h.Store.DeleteKeys(context.Background(), keys)
+	h.invalidateAlbumZip(img.AlbumID)
 
 	w.WriteHeader(http.StatusNoContent)
 }

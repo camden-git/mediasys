@@ -172,6 +172,35 @@ func (r *AlbumRepository) RequestZip(albumID uint) error {
 	return nil
 }
 
+// InvalidateZip discards a finished (or failed) archive because the album's
+// images changed, and returns the old archive's object key so the caller can
+// delete it. Archives that are still pending or processing are left alone: they
+// read the album's images when they run.
+func (r *AlbumRepository) InvalidateZip(albumID uint) (*string, error) {
+	var oldPath *string
+	err := r.DB.Transaction(func(tx *gorm.DB) error {
+		var album models.Album
+		if err := tx.Select("id", "zip_status", "zip_path").First(&album, albumID).Error; err != nil {
+			return err
+		}
+		if album.ZipStatus != database.StatusDone && album.ZipStatus != database.StatusError {
+			return nil
+		}
+		oldPath = album.ZipPath
+		return tx.Model(&models.Album{}).Where("id = ?", albumID).Updates(map[string]interface{}{
+			"zip_status": database.StatusNotRequired,
+			"zip_path":   gorm.Expr("NULL"),
+			"zip_size":   gorm.Expr("NULL"),
+			"zip_error":  gorm.Expr("NULL"),
+			"updated_at": time.Now().Unix(),
+		}).Error
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to invalidate zip for album ID %d: %w", albumID, err)
+	}
+	return oldPath, nil
+}
+
 // MarkZipProcessing updates album status to indicate zip generation is in progress
 func (r *AlbumRepository) MarkZipProcessing(albumID uint) error {
 	now := time.Now().Unix()

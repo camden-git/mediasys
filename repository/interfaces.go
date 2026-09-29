@@ -28,6 +28,7 @@ type AlbumRepositoryInterface interface {
 	FolderPathConflicts(folder string) (bool, error)
 	Update(albumID uint, name string, description *string, isHidden *bool, location *string) error
 	RequestZip(albumID uint) error
+	InvalidateZip(albumID uint) (*string, error)
 	MarkZipProcessing(albumID uint) error
 	SetZipResult(albumID uint, zipPath *string, zipSize *int64, taskErr error) error
 	ListPendingZips() ([]models.Album, error)
