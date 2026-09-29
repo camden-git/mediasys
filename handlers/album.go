@@ -110,4 +110,3 @@ func (ah *AlbumHandler) GetAlbum(w http.ResponseWriter, r *http.Request) {
 	setCacheHeaders(w, 300)
 	writeJSON(w, http.StatusOK, albumWithArtists{Album: album, Artists: artists, Banners: bannerPaths})
 }
-
