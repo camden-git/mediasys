@@ -10,6 +10,7 @@ import { formatDistanceToNow } from 'date-fns';
 import PageContentBlock from '../../elements/PageContentBlock.tsx';
 import { Heading } from '../../elements/Heading';
 import { Text } from '../../elements/Text';
+import FlashMessageRender from '../../elements/FlashMessageRender';
 
 const AlbumManagementContainer: React.FC = () => {
     const { albums, isLoading, error } = useAdminAlbums();
@@ -28,6 +29,8 @@ const AlbumManagementContainer: React.FC = () => {
 
     return (
         <PageContentBlock title={'Albums'} className='space-y-6'>
+            <FlashMessageRender byKey='album-created' />
+            <FlashMessageRender byKey='album-deleted' />
             <div className='mb-6 flex w-full flex-wrap items-end justify-between gap-4'>
                 <div>
                     <Heading>Albums</Heading>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { useAlbumContextStore } from '../../../store/useAlbumContextStore';
+import { useAlbumData } from '../../../store/albumContextHooks';
 import { formatDistanceToNow } from 'date-fns';
 import { getBannerUrl } from '../../../api.ts';
 import { Heading } from '../../elements/Heading';
@@ -14,7 +14,7 @@ const zipStatusLabels: Record<string, string> = {
 };
 
 const AlbumView: React.FC = () => {
-    const album = useAlbumContextStore((s) => s.data!);
+    const album = useAlbumData();
 
     return (
         <div className='space-y-8'>

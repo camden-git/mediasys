@@ -1,17 +1,19 @@
-import { useAlbumContextStore } from '../../../../store/useAlbumContextStore';
+import { useAlbumData } from '../../../../store/albumContextHooks';
+import { invalidateAlbums } from '../../../../lib/queryClient';
+import FlashMessageRender from '../../../elements/FlashMessageRender';
 import { useUIStore } from '../../../../store/useUIStore';
 import HeaderedContent from '../../../elements/HeaderedContent.tsx';
-import { addAlbumBanner, deleteAlbumBanner, getAlbum, reorderAlbumBanners } from '../../../../api/admin/albums';
+import { addAlbumBanner, deleteAlbumBanner, reorderAlbumBanners } from '../../../../api/admin/albums';
 import { BannerManager } from '../../shared/BannerManager';
 
 export function BannerUpload() {
-    const albumId = useAlbumContextStore((s) => s.data!.id);
-    const banners = useAlbumContextStore((s) => s.data?.banners ?? []);
+    const album = useAlbumData();
+    const albumId = album.id;
+    const banners = album.banners ?? [];
     const addFlash = useUIStore((s) => s.addFlash);
-    const setAlbum = useAlbumContextStore((s) => s.setAlbum);
 
     const refreshAlbum = async () => {
-        setAlbum(await getAlbum(albumId));
+        await invalidateAlbums();
     };
 
     const handleAdd = async (file: File) => {
@@ -62,6 +64,7 @@ export function BannerUpload() {
             description='Upload one or more banner images. They will cycle every 7 seconds on the public album page.'
             className='mt-16 pb-8'
         >
+            <FlashMessageRender byKey='banner-error' />
             <BannerManager banners={banners} onAdd={handleAdd} onDelete={handleDelete} onReorder={handleReorder} />
         </HeaderedContent>
     );

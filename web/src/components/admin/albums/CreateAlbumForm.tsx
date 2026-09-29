@@ -4,8 +4,8 @@ import { Formik, Form } from 'formik';
 import * as Yup from 'yup';
 import { CreateAlbumPayload, createAlbum as createAlbumAPI } from '../../../api/admin/albums';
 import { useUIStore } from '../../../store/useUIStore';
-import { useQueryClient } from '@tanstack/react-query';
-import { queryKeys } from '../../../lib/queryKeys';
+import { invalidateAlbums } from '../../../lib/queryClient';
+import FlashMessageRender from '../../elements/FlashMessageRender';
 import { Button } from '../../elements/Button';
 import { Input } from '../../elements/Input';
 import { Field, FieldGroup, Label, Description, ErrorMessage } from '../../elements/Fieldset';
@@ -28,7 +28,6 @@ const validationSchema = Yup.object({
 const CreateAlbumForm: React.FC = () => {
     const navigate = useNavigate();
     const addFlash = useUIStore((s) => s.addFlash);
-    const queryClient = useQueryClient();
 
     const initialValues: CreateAlbumPayload = {
         name: '',
@@ -42,6 +41,7 @@ const CreateAlbumForm: React.FC = () => {
 
     return (
         <div className='mx-auto max-w-2xl'>
+            <FlashMessageRender byKey='album-create-error' />
             <div className='mb-6'>
                 <h1 className='text-2xl font-bold text-gray-900'>Create Album</h1>
                 <p className='text-gray-600'>Create a new album to organize your media files.</p>
@@ -53,7 +53,7 @@ const CreateAlbumForm: React.FC = () => {
                 onSubmit={async (values, { setSubmitting }) => {
                     try {
                         await createAlbumAPI(values);
-                        queryClient.invalidateQueries({ queryKey: queryKeys.albums.all() });
+                        void invalidateAlbums();
                         addFlash({
                             key: 'album-created',
                             type: 'success',
@@ -63,7 +63,7 @@ const CreateAlbumForm: React.FC = () => {
                         navigate('/admin/albums');
                     } catch (err: any) {
                         addFlash({
-                            key: 'album-created-error',
+                            key: 'album-create-error',
                             type: 'error',
                             title: 'Error',
                             message: err.message || 'Failed to create album',

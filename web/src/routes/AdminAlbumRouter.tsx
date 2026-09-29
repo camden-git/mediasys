@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { Routes, Route, useParams } from 'react-router-dom';
 import ProtectedRoute from '../components/router/ProtectedRoute';
 import { StackedLayout } from '../components/elements/StackedLayout.tsx';
@@ -18,7 +18,6 @@ import {
     DropdownMenu,
 } from '../components/elements/Dropdown.tsx';
 import { ChevronDownIcon, Cog8ToothIcon } from '@heroicons/react/16/solid';
-import { useAlbumContextStore } from '../store/useAlbumContextStore';
 import { useQuery } from '@tanstack/react-query';
 import { getAlbumBySlug, listAlbums } from '../api/admin/albums';
 import { queryKeys } from '../lib/queryKeys';
@@ -35,41 +34,33 @@ export interface AdminAlbumRouteDefinition {
 
 const AdminAlbumRouter: React.FC = () => {
     const { slug } = useParams<{ slug: string }>();
-    const setAlbum = useAlbumContextStore((s) => s.setAlbum);
-    const clearAlbum = useAlbumContextStore((s) => s.clearAlbum);
-    const albumContext = useAlbumContextStore((s) => s.data);
-    const albumName = albumContext?.name;
-
     const { data: albumsData } = useQuery({
         queryKey: queryKeys.albums.list(),
         queryFn: listAlbums,
     });
     const albums = albumsData ?? [];
 
-    const { data, isLoading, error } = useQuery({
+    const {
+        data: album,
+        isLoading,
+        error,
+    } = useQuery({
         queryKey: queryKeys.albums.bySlug(slug!),
         queryFn: () => getAlbumBySlug(slug!),
         enabled: !!slug,
     });
+    const albumName = album?.name;
 
-    useEffect(() => {
-        if (data) setAlbum(data);
-    }, [data, setAlbum]);
+    if (error && !album) {
+        return <div className='text-center text-red-600'>Error loading album: {(error as Error).message}</div>;
+    }
 
-    useEffect(() => {
-        return () => clearAlbum();
-    }, [slug, clearAlbum]);
-
-    if (isLoading || (!data && !error) || !albumContext) {
+    if (isLoading || !album) {
         return (
             <div className='flex h-64 items-center justify-center'>
                 <LoadingSpinner />
             </div>
         );
-    }
-
-    if (error) {
-        return <div className='text-center text-red-600'>Error loading album: {(error as Error).message}</div>;
     }
 
     const navItems: AdminAlbumRouteDefinition[] = [
@@ -138,7 +129,7 @@ const AdminAlbumRouter: React.FC = () => {
                     </Dropdown>
                     <NavbarSection className='max-lg:hidden'>
                         {navItems.map(({ path, permission, name }) => (
-                            <Can permission={permission} albumId={albumContext.id} key={path}>
+                            <Can permission={permission} albumId={album.id} key={path}>
                                 <NavbarItem to={`/admin/albums/view/${slug}${path}`}>{name}</NavbarItem>
                             </Can>
                         ))}
@@ -150,7 +141,7 @@ const AdminAlbumRouter: React.FC = () => {
                     <SidebarBody>
                         <SidebarSection>
                             {navItems.map(({ path, permission, name }) => (
-                                <Can permission={permission} albumId={albumContext.id} key={path}>
+                                <Can permission={permission} albumId={album.id} key={path}>
                                     <SidebarItem to={`/admin/albums/view/${slug}${path}`}>{name}</SidebarItem>
                                 </Can>
                             ))}
@@ -166,7 +157,7 @@ const AdminAlbumRouter: React.FC = () => {
                             path={path.replace(/\/$/, '')}
                             key={path}
                             element={
-                                <Can permission={permission} albumId={albumContext.id}>
+                                <Can permission={permission} albumId={album.id}>
                                     <Component key={slug} />
                                 </Can>
                             }

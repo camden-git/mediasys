@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
-import { useAlbumContextStore } from '../../../../store/useAlbumContextStore';
+import { useAlbumData } from '../../../../store/albumContextHooks';
+import { invalidateAlbums } from '../../../../lib/queryClient';
+import FlashMessageRender from '../../../elements/FlashMessageRender';
 import { useUIStore } from '../../../../store/useUIStore';
 import { Button } from '../../../elements/Button';
 import HeaderedContent from '../../../elements/HeaderedContent.tsx';
@@ -9,10 +11,9 @@ import { listGroups, setAlbumGroup } from '../../../../api/admin/groups';
 import { AlbumGroup } from '../../../../types';
 
 export function GroupAssignment() {
-    const album = useAlbumContextStore((s) => s.data!);
+    const album = useAlbumData();
     const albumId = album.id;
     const addFlash = useUIStore((s) => s.addFlash);
-    const setAlbum = useAlbumContextStore((s) => s.setAlbum);
 
     const [groups, setGroups] = useState<AlbumGroup[]>([]);
     const [selectedGroupId, setSelectedGroupId] = useState<string>(album.group_id?.toString() ?? '');
@@ -42,7 +43,7 @@ export function GroupAssignment() {
         try {
             const groupId = selectedGroupId ? parseInt(selectedGroupId, 10) : null;
             await setAlbumGroup(albumId, groupId);
-            setAlbum({ ...album, group_id: groupId ?? undefined });
+            await invalidateAlbums();
             addFlash({
                 key: `album-${albumId}`,
                 type: 'success',
@@ -67,6 +68,7 @@ export function GroupAssignment() {
             description={'Assign this album to a group collection shown on the home page.'}
             className={'mt-16 pb-8'}
         >
+            <FlashMessageRender byKey={`album-${albumId}`} />
             <Field>
                 <Label htmlFor='group_id'>Group</Label>
                 <Select

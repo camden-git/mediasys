@@ -8,6 +8,8 @@ import {
     AddUserToAlbumPayload,
     UpdateUserAlbumPermissionsPayload,
 } from '../../../api/admin/albums';
+import { useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '../../../lib/queryKeys';
 import { useFlash } from '../../../hooks/useFlash';
 import { Button } from '../../elements/Button';
 import { Dialog, DialogActions, DialogBody, DialogDescription, DialogTitle } from '../../elements/Dialog';
@@ -18,18 +20,16 @@ import { Checkbox } from '../../elements/Checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../elements/Table';
 import LoadingSpinner from '../../elements/LoadingSpinner';
 import { usePermissionDefinitions } from '../../../api/query/useRoles';
-import { useAlbumContextStore } from '../../../store/useAlbumContextStore';
+import { useAlbumId } from '../../../store/albumContextHooks';
+import FlashMessageRender from '../../elements/FlashMessageRender';
 
 const AlbumSubusersPage: React.FC = () => {
-    const albumId = useAlbumContextStore((s) => s.data!.id);
+    const albumId = useAlbumId();
     const { addFlash } = useFlash();
+    const queryClient = useQueryClient();
+    const refreshAlbumUsers = () => queryClient.invalidateQueries({ queryKey: queryKeys.albums.detail(albumId) });
 
-    const {
-        users: albumUsers,
-        isLoading: isLoadingUsers,
-        error: usersError,
-        mutate: mutateUsers,
-    } = useAlbumUsers(albumId);
+    const { users: albumUsers, isLoading: isLoadingUsers, error: usersError } = useAlbumUsers(albumId);
     const { users: availableUsers } = useAvailableUsers(albumId);
     const { data: permissionDefinitions } = usePermissionDefinitions();
 
@@ -70,7 +70,7 @@ const AlbumSubusersPage: React.FC = () => {
 
             await addUserToAlbum(albumId!, payload);
             addFlash({
-                key: 'album-user-added',
+                key: 'album-subusers',
                 type: 'success',
                 title: 'Success',
                 message: 'User added to album successfully',
@@ -78,10 +78,10 @@ const AlbumSubusersPage: React.FC = () => {
             setShowAddModal(false);
             setSelectedUserId(null);
             setSelectedPermissions([]);
-            mutateUsers();
+            refreshAlbumUsers();
         } catch (error: any) {
             addFlash({
-                key: 'album-user-added-error',
+                key: 'album-subusers',
                 type: 'error',
                 title: 'Error',
                 message: error.message || 'Failed to add user to album',
@@ -109,7 +109,7 @@ const AlbumSubusersPage: React.FC = () => {
                 });
             }
             addFlash({
-                key: 'album-permissions-updated',
+                key: 'album-subusers',
                 type: 'success',
                 title: 'Success',
                 message: 'User permissions updated successfully',
@@ -117,10 +117,10 @@ const AlbumSubusersPage: React.FC = () => {
             setShowEditModal(false);
             setSelectedUser(null);
             setSelectedPermissions([]);
-            mutateUsers();
+            refreshAlbumUsers();
         } catch (error: any) {
             addFlash({
-                key: 'album-permissions-updated-error',
+                key: 'album-subusers',
                 type: 'error',
                 title: 'Error',
                 message: error.message || 'Failed to update user permissions',
@@ -141,17 +141,17 @@ const AlbumSubusersPage: React.FC = () => {
         try {
             await removeUserFromAlbum(albumId!, userToRemove.id);
             addFlash({
-                key: 'album-user-removed',
+                key: 'album-subusers',
                 type: 'success',
                 title: 'Success',
                 message: 'User removed from album successfully',
             });
             setShowRemoveModal(false);
             setUserToRemove(null);
-            mutateUsers();
+            refreshAlbumUsers();
         } catch (error: any) {
             addFlash({
-                key: 'album-user-removed-error',
+                key: 'album-subusers',
                 type: 'error',
                 title: 'Error',
                 message: error.message || 'Failed to remove user from album',
@@ -179,6 +179,7 @@ const AlbumSubusersPage: React.FC = () => {
 
     return (
         <div className='space-y-6'>
+            <FlashMessageRender byKey='album-subusers' />
             <div className='flex items-center justify-between'>
                 <Heading>Album Subusers</Heading>
                 <Can permission={['album.manage.members.global', 'album.manage.members']} albumId={albumId}>

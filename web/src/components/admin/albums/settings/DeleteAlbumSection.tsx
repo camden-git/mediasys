@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAlbumContextStore } from '../../../../store/useAlbumContextStore';
+import { useAlbumData } from '../../../../store/albumContextHooks';
+import { invalidateAlbums } from '../../../../lib/queryClient';
+import FlashMessageRender from '../../../elements/FlashMessageRender';
 import { useUIStore } from '../../../../store/useUIStore';
 import { deleteAlbum as deleteAlbumAPI } from '../../../../api/admin/albums';
 import { Button } from '../../../elements/Button';
@@ -10,7 +12,7 @@ import { Input } from '../../../elements/Input';
 import HeaderedContent from '../../../elements/HeaderedContent';
 
 export function DeleteAlbumSection() {
-    const album = useAlbumContextStore((s) => s.data!);
+    const album = useAlbumData();
     const addFlash = useUIStore((s) => s.addFlash);
     const navigate = useNavigate();
 
@@ -20,6 +22,8 @@ export function DeleteAlbumSection() {
     const handleDelete = async () => {
         try {
             await deleteAlbumAPI(album.id);
+            // Mark stale without refetching the album that no longer exists; the list refetches on mount.
+            await invalidateAlbums('none');
             addFlash({
                 key: 'album-deleted',
                 type: 'success',
@@ -49,6 +53,7 @@ export function DeleteAlbumSection() {
             description='Permanently delete this album and all associated data. This action cannot be undone.'
             className={'mt-16 pb-8'}
         >
+            <FlashMessageRender byKey='album-deleted-error' />
             <Button color='red' onClick={() => setIsOpen(true)}>
                 Delete Album
             </Button>

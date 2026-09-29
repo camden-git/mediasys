@@ -25,15 +25,18 @@ export const queryKeys = {
         list: (p?: PaginationRequest) => [...queryKeys.inviteCodes.all(), 'list', p ?? {}] as const,
     },
     groups: {
-        list: () => ['groups', 'list'] as const,
-        detail: (slug: string) => ['groups', slug] as const,
+        all: () => ['groups'] as const,
+        list: () => [...queryKeys.groups.all(), 'list'] as const,
+        detail: (slug: string) => [...queryKeys.groups.all(), slug] as const,
     },
     collections: {
-        list: () => ['collections', 'list'] as const,
-        detail: (slug: string) => ['collections', slug] as const,
+        all: () => ['collections'] as const,
+        list: () => [...queryKeys.collections.all(), 'list'] as const,
+        detail: (slug: string) => [...queryKeys.collections.all(), slug] as const,
     },
     publicAlbum: {
-        detail: (id: string) => ['public-album', id] as const,
-        contents: (id: string) => ['public-album', id, 'contents'] as const,
+        all: () => ['public-album'] as const,
+        detail: (id: string) => [...queryKeys.publicAlbum.all(), id] as const,
+        contents: (id: string) => [...queryKeys.publicAlbum.all(), id, 'contents'] as const,
     },
 };

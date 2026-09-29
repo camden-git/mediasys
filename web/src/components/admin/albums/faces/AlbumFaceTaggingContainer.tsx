@@ -5,12 +5,12 @@ import PageContentBlock from '../../../elements/PageContentBlock.tsx';
 import LoadingSpinner from '../../../elements/LoadingSpinner';
 import { UntaggedFaceResult, Person } from '../../../../types';
 import { getUntaggedFaces, getPeople } from '../../../../api';
-import { useAlbumContextStore } from '../../../../store/useAlbumContextStore';
+import { useAlbumData } from '../../../../store/albumContextHooks';
 import FaceThumbnail from '../../faces/shared/FaceThumbnail';
 import FaceLightboxModal from '../../faces/shared/FaceLightboxModal';
 
 const AlbumFaceTaggingContainer: React.FC = () => {
-    const album = useAlbumContextStore((s) => s.data);
+    const album = useAlbumData();
 
     const [allFaces, setAllFaces] = useState<UntaggedFaceResult[]>([]);
     const [faces, setFaces] = useState<UntaggedFaceResult[]>([]);

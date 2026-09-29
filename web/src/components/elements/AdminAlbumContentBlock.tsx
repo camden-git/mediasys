@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { clsx } from 'clsx';
-import { useAlbumContextStore } from '../../store/useAlbumContextStore';
+import { useAlbumData } from '../../store/albumContextHooks';
 
 export interface AdminAlbumContentBlockProps {
     title?: string;
@@ -14,7 +14,7 @@ const AdminAlbumContentBlock: React.FC<AdminAlbumContentBlockProps> = ({
     width = 'max-w-6xl p-6 lg:p-10',
     children,
 }) => {
-    const album = useAlbumContextStore((s) => s.data!);
+    const album = useAlbumData();
 
     useEffect(() => {
         if (title) {

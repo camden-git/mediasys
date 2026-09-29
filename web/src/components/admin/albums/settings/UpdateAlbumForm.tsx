@@ -1,6 +1,8 @@
 import { Formik, Form } from 'formik';
 import * as Yup from 'yup';
-import { useAlbumContextStore } from '../../../../store/useAlbumContextStore';
+import { useAlbumData } from '../../../../store/albumContextHooks';
+import { queryClient, invalidateAlbums } from '../../../../lib/queryClient';
+import { queryKeys } from '../../../../lib/queryKeys';
 import { useUIStore } from '../../../../store/useUIStore';
 import { UpdateAlbumPayload, updateAlbum as updateAlbumAPI } from '../../../../api/admin/albums';
 import { Field, FieldGroup, Label, Description } from '../../../elements/Fieldset';
@@ -20,10 +22,9 @@ const validationSchema = Yup.object({
 });
 
 export function UpdateAlbumForm() {
-    const album = useAlbumContextStore((s) => s.data!);
-    const albumId = useAlbumContextStore((s) => s.data!.id);
+    const album = useAlbumData();
+    const albumId = album.id;
     const addFlash = useUIStore((s) => s.addFlash);
-    const setAlbum = useAlbumContextStore((s) => s.setAlbum);
 
     const initialValues: UpdateAlbumPayload = {
         name: album.name,
@@ -48,7 +49,8 @@ export function UpdateAlbumForm() {
                     onSubmit={async (values, { setSubmitting }) => {
                         try {
                             const updated = await updateAlbumAPI(albumId, values);
-                            setAlbum(updated);
+                            queryClient.setQueryData(queryKeys.albums.bySlug(updated.slug), updated);
+                            void invalidateAlbums();
                             addFlash({
                                 key: 'album-update',
                                 type: 'success',
