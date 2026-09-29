@@ -48,6 +48,11 @@ func TestMigrationsUpgradeAutoMigrateDatabase(t *testing.T) {
 		`INSERT INTO albums (name, slug, folder_path, created_at, updated_at) VALUES ('old', 'old', 'old', 1, 1)`,
 		`INSERT INTO images (original_path, album_id, object_key, last_modified, created_at)
 			VALUES ('old/a.jpg', 1, 'old/a.jpg', 1, 1)`,
+		// orphans (no foreign keys existed) that the FK migration must clean up
+		`INSERT INTO image_tags (image_path, tag_key, tag_value, source, created_at)
+			VALUES ('gone.jpg', 'k', 'v', 'manual', now())`,
+		`INSERT INTO albums (name, slug, folder_path, group_id, created_at, updated_at)
+			VALUES ('grouped', 'grouped', 'grouped', 999, 1, 1)`,
 	} {
 		if _, err := db.Exec(stmt); err != nil {
 			t.Fatalf("legacy setup %q failed: %v", stmt, err)
@@ -99,6 +104,17 @@ func TestMigrationsUpgradeAutoMigrateDatabase(t *testing.T) {
 		`INSERT INTO albums (name, slug, folder_path, created_at, updated_at) VALUES ('old', 'old', 'old', 1, 1)`,
 	); err != nil {
 		t.Errorf("re-using a soft-deleted album name failed: %v", err)
+	}
+
+	var orphanTags, danglingGroups int
+	if err := db.QueryRow("SELECT count(*) FROM image_tags").Scan(&orphanTags); err != nil {
+		t.Fatalf("failed to count image_tags: %v", err)
+	}
+	if err := db.QueryRow("SELECT count(*) FROM albums WHERE group_id IS NOT NULL").Scan(&danglingGroups); err != nil {
+		t.Fatalf("failed to count albums: %v", err)
+	}
+	if orphanTags != 0 || danglingGroups != 0 {
+		t.Errorf("orphans not cleaned up: image_tags=%d albums with dangling group=%d", orphanTags, danglingGroups)
 	}
 
 	var images int
