@@ -17,11 +17,10 @@ import (
 type SetupHandler struct {
 	UserRepo repository.UserRepository
 	RoleRepo repository.RoleRepository
-	DB       *gorm.DB
 }
 
-func NewSetupHandler(db *gorm.DB, userRepo repository.UserRepository, roleRepo repository.RoleRepository) *SetupHandler {
-	return &SetupHandler{UserRepo: userRepo, RoleRepo: roleRepo, DB: db}
+func NewSetupHandler(userRepo repository.UserRepository, roleRepo repository.RoleRepository) *SetupHandler {
+	return &SetupHandler{UserRepo: userRepo, RoleRepo: roleRepo}
 }
 
 type FirstAdminPayload struct {
@@ -92,8 +91,8 @@ func SyncSuperAdminRole(roleRepo repository.RoleRepository) error {
 // CreateFirstAdmin handles the creation of the initial administrator user
 // This endpoint should only be usable if no other users exist in the system!!
 func (h *SetupHandler) CreateFirstAdmin(w http.ResponseWriter, r *http.Request) {
-	var count int64
-	if err := h.DB.Model(&models.User{}).Count(&count).Error; err != nil {
+	count, err := h.UserRepo.CountAll()
+	if err != nil {
 		http.Error(w, "Database error while checking for existing users.", http.StatusInternalServerError)
 		return
 	}
@@ -113,49 +112,24 @@ func (h *SetupHandler) CreateFirstAdmin(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	txErr := h.DB.Transaction(func(tx *gorm.DB) error {
-		var innerCount int64
-		if err := tx.Model(&models.User{}).Count(&innerCount).Error; err != nil {
-			return fmt.Errorf("failed to count existing users in transaction: %w", err)
-		}
-		if innerCount > 0 {
-			return errors.New("setup already completed")
-		}
+	adminUser := &models.User{
+		Username: payload.Username,
+	}
+	if err := adminUser.SetPassword(payload.Password); err != nil {
+		http.Error(w, "Failed to create first admin user: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 
-		var superAdminRole models.Role
-		err := tx.Where("name = ?", models.SuperAdminRoleName).First(&superAdminRole).Error
-		if err != nil {
-			return fmt.Errorf("could not find the '%s' role, which should have been auto-generated: %w", models.SuperAdminRoleName, err)
-		}
-
-		adminUser := &models.User{
-			Username: payload.Username,
-		}
-		if err := adminUser.SetPassword(payload.Password); err != nil {
-			return fmt.Errorf("failed to hash password: %w", err)
-		}
-
-		if err := tx.Create(adminUser).Error; err != nil {
-			return fmt.Errorf("failed to create admin user: %w", err)
-		}
-
-		userRole := models.UserRole{UserID: adminUser.ID, RoleID: superAdminRole.ID}
-		if err := tx.Create(&userRole).Error; err != nil {
-			return fmt.Errorf("failed to assign super admin role to user: %w", err)
-		}
-
-		fmt.Printf("Successfully created initial admin user '%s' with Super Administrator role.\n", adminUser.Username)
-		return nil
-	})
-
-	if txErr != nil {
-		if txErr.Error() == "setup already completed" {
+	if err := h.UserRepo.CreateFirstAdmin(adminUser, models.SuperAdminRoleName); err != nil {
+		if errors.Is(err, repository.ErrSetupAlreadyCompleted) {
 			http.Error(w, "Setup has already been completed.", http.StatusForbidden)
 		} else {
-			http.Error(w, "Failed to create first admin user: "+txErr.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to create first admin user: "+err.Error(), http.StatusInternalServerError)
 		}
 		return
 	}
+
+	fmt.Printf("Successfully created initial admin user '%s' with Super Administrator role.\n", adminUser.Username)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)

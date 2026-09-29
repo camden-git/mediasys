@@ -1,12 +1,17 @@
 package repository
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/camden-git/mediasysbackend/models"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
+
+// ErrSetupAlreadyCompleted is returned by CreateFirstAdmin when a user
+// already exists, meaning initial setup has already been completed.
+var ErrSetupAlreadyCompleted = errors.New("setup already completed")
 
 type GormUserRepository struct {
 	db *gorm.DB
@@ -134,6 +139,43 @@ func (r *GormUserRepository) ListAll() ([]models.User, error) {
 		return nil, err
 	}
 	return users, nil
+}
+
+func (r *GormUserRepository) CountAll() (int64, error) {
+	var count int64
+	err := r.db.Model(&models.User{}).Count(&count).Error
+	return count, err
+}
+
+// CreateFirstAdmin atomically creates the given user and assigns them the
+// named role, failing with an error if any user already exists. Intended for
+// bootstrapping the very first administrator during initial setup.
+func (r *GormUserRepository) CreateFirstAdmin(user *models.User, roleName string) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var count int64
+		if err := tx.Model(&models.User{}).Count(&count).Error; err != nil {
+			return fmt.Errorf("failed to count existing users: %w", err)
+		}
+		if count > 0 {
+			return ErrSetupAlreadyCompleted
+		}
+
+		var role models.Role
+		if err := tx.Where("name = ?", roleName).First(&role).Error; err != nil {
+			return fmt.Errorf("could not find the '%s' role, which should have been auto-generated: %w", roleName, err)
+		}
+
+		if err := tx.Create(user).Error; err != nil {
+			return fmt.Errorf("failed to create admin user: %w", err)
+		}
+
+		userRole := models.UserRole{UserID: user.ID, RoleID: role.ID}
+		if err := tx.Create(&userRole).Error; err != nil {
+			return fmt.Errorf("failed to assign role to user: %w", err)
+		}
+
+		return nil
+	})
 }
 
 func (r *GormUserRepository) AddRoleToUser(userID uint, roleID uint) error {

@@ -121,6 +121,11 @@ type UserRepository interface {
 	Update(user *models.User) error
 	Delete(id uint) error
 	ListAll() ([]models.User, error)
+	CountAll() (int64, error)
+
+	// CreateFirstAdmin atomically creates the initial admin user and assigns
+	// them the named role, failing if any user already exists.
+	CreateFirstAdmin(user *models.User, roleName string) error
 
 	// role management for a user
 	AddRoleToUser(userID uint, roleID uint) error

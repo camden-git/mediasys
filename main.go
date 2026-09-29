@@ -134,7 +134,7 @@ func main() {
 		AdminImageTagHandler:   &handlers.AdminImageTagHandler{TagRepo: imageTagRepo, AlbumRepo: albumRepo, ImageRepo: imageRepo},
 		AdminCollectionHandler: handlers.NewAdminCollectionHandler(collectionRepo, cfg, mediaProcessor, mediaStore),
 		CollectionHandler:      &handlers.CollectionHandler{CollectionRepo: collectionRepo, ImageRepo: imageRepo, Cfg: &cfg},
-		SetupHandler:           handlers.NewSetupHandler(gormDB, userRepo, roleRepo),
+		SetupHandler:           handlers.NewSetupHandler(userRepo, roleRepo),
 	}
 
 	r := chi.NewRouter()
