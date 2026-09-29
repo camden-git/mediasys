@@ -176,8 +176,6 @@ func (r *RetinaFaceDetector) DetectFaces(img gocv.Mat) []DetectionResult {
 
 	r.Net.SetInput(blob, "")
 
-	// gocv's ForwardLayers doesn't work reliably for multi-output ONNX models.
-	// Individual Forward(name) calls share cached computation and do work.
 	// Discover the actual output layer names at runtime rather than hardcoding them.
 	allNames := r.Net.GetLayerNames()
 	outIDs := r.Net.GetUnconnectedOutLayers()
@@ -192,11 +190,9 @@ func (r *RetinaFaceDetector) DetectFaces(img gocv.Mat) []DetectionResult {
 		return nil
 	}
 
-	// Run inference — Forward caches intermediate results so subsequent calls are cheap.
-	mats := make([]gocv.Mat, len(outputNames))
-	for i, name := range outputNames {
-		mats[i] = r.Net.Forward(name)
-	}
+	// Fetch all outputs in one pass: separate Forward(name) calls reuse internal
+	// buffers, so earlier outputs get overwritten and detections come out garbage.
+	mats := r.Net.ForwardLayers(outputNames)
 	defer func() {
 		for i := range mats {
 			mats[i].Close()
