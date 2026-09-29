@@ -140,7 +140,11 @@ func (f *FaceRecognitionModel) ExtractEmbedding(faceRegion gocv.Mat) []float32 {
 
 	var blob gocv.Mat
 	if f.ModelName == "arcface" || f.ModelName == "facenet" {
-		blob = gocv.BlobFromImage(processed, 1.0/255.0, image.Pt(f.InputSizeW, f.InputSizeH), gocv.NewScalar(0, 0, 0, 0), false, false)
+		// arcface.onnx bakes (pixel - 127.5) * 0.0078125 normalization into the graph
+		// itself (Sub/Mul nodes on the "data" input), so pass raw 0-255 pixel values
+		// here rather than pre-scaling to 0-1 — otherwise the network's internal
+		// subtraction wipes out nearly all of the input signal.
+		blob = gocv.BlobFromImage(processed, 1.0, image.Pt(f.InputSizeW, f.InputSizeH), gocv.NewScalar(0, 0, 0, 0), false, false)
 	} else {
 		blob = gocv.BlobFromImage(processed, f.ScaleFactor, image.Pt(f.InputSizeW, f.InputSizeH), f.MeanVal, false, false)
 	}
