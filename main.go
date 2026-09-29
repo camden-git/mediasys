@@ -56,7 +56,7 @@ func main() {
 	}
 	defer sqlDB.Close()
 
-	if err := database.AutoMigrateModels(gormDB); err != nil {
+	if err := database.RunMigrations(context.Background(), sqlDB); err != nil {
 		log.Fatalf("FATAL: Failed to migrate database schema: %v", err)
 	}
 

@@ -40,6 +40,32 @@ is tracked in the database, so nothing is lost on restart or when queues fill up
 The backend proxies all media with range, ETag and cache headers, so the bucket
 never needs to be public.
 
+### Database migrations
+
+The schema is defined by versioned SQL migrations in `database/migrations/`,
+embedded into the binary and applied automatically at startup with
+[goose](https://github.com/pressly/goose) (see `database/migrate.go`). Multiple
+instances can start concurrently; goose takes a Postgres advisory lock so only one
+of them actually runs the migrations while the others wait.
+
+To add a migration, create a new file following goose's naming convention, e.g.:
+
+```sh
+go run github.com/pressly/goose/v3/cmd/goose@v3.24.3 -dir database/migrations create add_foo_column sql
+```
+
+or copy an existing file and bump the numeric prefix by hand. Write the schema
+change under `-- +goose Up` and its reverse under `-- +goose Down`. The GORM model
+struct tags in `models/` are kept as documentation of the Go <-> SQL mapping, but no
+longer drive the schema — update both the migration and the model tags together
+when a model changes.
+
+`database/migrate_schema_test.go` guards against drift between the two: when
+`TEST_DATABASE_URL` is set to an admin connection on a throwaway Postgres server, it
+applies the migrations to one scratch database, runs the old GORM AutoMigrate
+directly off the models package on another, and fails if the resulting tables,
+columns or indexes differ.
+
 ### Face models
 
 Put these in `ml-models/` (or point `MODELS_DIR` elsewhere):
