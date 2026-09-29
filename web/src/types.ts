@@ -11,6 +11,12 @@ export interface Alias {
     name: string;
 }
 
+export interface PersonImageResult {
+    image_path: string;
+    /** Relative thumbnail URL (e.g. "/thumbnails/<uuid>.webp"), when the image has one. */
+    thumbnail_path?: string;
+}
+
 export interface UntaggedFaceResult {
     face_id: number;
     image_path: string;

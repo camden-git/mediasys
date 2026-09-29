@@ -281,19 +281,19 @@ func (fh *FaceHandler) SearchFacesByPerson(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if len(personIDs) == 0 {
-		writeJSON(w, http.StatusOK, []string{}) // return an empty list of image paths
+		writeJSON(w, http.StatusOK, []repository.PersonImageResult{})
 		return
 	}
-	imagePaths, err := fh.PersonRepo.FindImagesByPersonIDs(personIDs)
+	images, err := fh.PersonRepo.FindImagesByPersonIDs(personIDs)
 	if err != nil {
 		log.Printf("Error finding images for person IDs %v: %v", personIDs, err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to find images associated with person"})
 		return
 	}
-	if imagePaths == nil {
-		imagePaths = []string{}
+	if images == nil {
+		images = []repository.PersonImageResult{}
 	}
-	writeJSON(w, http.StatusOK, imagePaths)
+	writeJSON(w, http.StatusOK, images)
 }
 
 // GetSimilarFaces finds faces similar to a given face ID

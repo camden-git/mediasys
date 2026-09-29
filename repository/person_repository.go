@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/camden-git/mediasysbackend/database"
 	"github.com/camden-git/mediasysbackend/models"
 	"gorm.io/gorm"
 )
@@ -178,10 +179,18 @@ func (r *PersonRepository) FindPersonIDsByNameOrAlias(query string) ([]uint, err
 	return uniqueIDs, nil
 }
 
-// FindImagesByPersonIDs retrieves distinct image paths associated with a list of person IDs
-func (r *PersonRepository) FindImagesByPersonIDs(personIDs []uint) ([]string, error) {
+// PersonImageResult is an image associated with a person, along with its thumbnail (when
+// available) so callers can render a grid without falling back to full-size previews.
+type PersonImageResult struct {
+	ImagePath     string  `json:"image_path"`
+	ThumbnailPath *string `json:"thumbnail_path,omitempty"`
+}
+
+// FindImagesByPersonIDs retrieves the distinct images associated with a list of person IDs,
+// including each image's thumbnail path.
+func (r *PersonRepository) FindImagesByPersonIDs(personIDs []uint) ([]PersonImageResult, error) {
 	if len(personIDs) == 0 {
-		return []string{}, nil
+		return []PersonImageResult{}, nil
 	}
 	var imagePaths []string
 	err := r.DB.Model(&models.Face{}).
@@ -189,11 +198,30 @@ func (r *PersonRepository) FindImagesByPersonIDs(personIDs []uint) ([]string, er
 		Order("image_path ASC").
 		Distinct().
 		Pluck("image_path", &imagePaths).Error
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to find images by person IDs: %w", err)
 	}
-	return imagePaths, nil
+	if len(imagePaths) == 0 {
+		return []PersonImageResult{}, nil
+	}
+
+	var images []models.Image
+	if err := r.DB.Where("original_path IN ?", imagePaths).Find(&images).Error; err != nil {
+		return nil, fmt.Errorf("failed to load images by person IDs: %w", err)
+	}
+	thumbnailByPath := make(map[string]*string, len(images))
+	for _, img := range images {
+		if img.ThumbnailPath != nil && img.ThumbnailStatus == database.StatusDone {
+			u := "/" + *img.ThumbnailPath
+			thumbnailByPath[img.OriginalPath] = &u
+		}
+	}
+
+	results := make([]PersonImageResult, 0, len(imagePaths))
+	for _, p := range imagePaths {
+		results = append(results, PersonImageResult{ImagePath: p, ThumbnailPath: thumbnailByPath[p]})
+	}
+	return results, nil
 }
 
 // SearchByNameOrAlias searches for people by primary name or alias, returning up to limit results.

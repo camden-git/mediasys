@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Person, FileInfo } from '../../types.ts';
-import { getPersonById, searchFacesByName, getPreviewImageUrl } from '../../api.ts';
+import { Person, FileInfo, PersonImageResult } from '../../types.ts';
+import { getPersonById, searchFacesByName, getPreviewImageUrl, getThumbnailUrl } from '../../api.ts';
 import AdvancedImageGrid from '../album/AdvancedImageGrid.tsx';
 import ImageLightbox from '../album/ImageLightbox.tsx';
 import LoadingSpinner from '../elements/LoadingSpinner.tsx';
@@ -10,7 +10,7 @@ import { UserCircleIcon, ArrowLeftIcon } from '@heroicons/react/24/outline';
 const PersonView: React.FC = () => {
     const { personId } = useParams<{ personId: string }>();
     const [person, setPerson] = useState<Person | null>(null);
-    const [imagePaths, setImagePaths] = useState<string[]>([]);
+    const [images, setImages] = useState<PersonImageResult[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [selectedImage, setSelectedImage] = useState<FileInfo | null>(null);
@@ -25,8 +25,8 @@ const PersonView: React.FC = () => {
             try {
                 const personData = await getPersonById(Number(personId), controller.signal);
                 setPerson(personData);
-                const paths = await searchFacesByName(personData.primary_name, controller.signal);
-                setImagePaths(paths);
+                const results = await searchFacesByName(personData.primary_name, controller.signal);
+                setImages(results);
             } catch (err: any) {
                 if (err.name !== 'AbortError') {
                     setError(err.message || 'Failed to load person data');
@@ -39,15 +39,15 @@ const PersonView: React.FC = () => {
         return () => controller.abort();
     }, [personId]);
 
-    // Convert image paths to FileInfo objects for the grid
-    // We use previewImageUrl for display since we don't have thumbnail paths from the face search
-    const imageFiles: FileInfo[] = imagePaths.map((path) => ({
+    // Convert face search results to FileInfo objects for the grid, preferring the
+    // lightweight thumbnail over the full-size preview when one is available.
+    const imageFiles: FileInfo[] = images.map(({ image_path: path, thumbnail_path }) => ({
         name: path.split('/').pop() ?? path,
         path: '/' + path,
         is_dir: false,
         size: 0,
         mod_time: 0,
-        thumbnail_path: getPreviewImageUrl(path),
+        thumbnail_path: thumbnail_path ? getThumbnailUrl(thumbnail_path) : getPreviewImageUrl(path),
     }));
 
     const selectedIndex = selectedImage ? imageFiles.findIndex((f) => f.path === selectedImage.path) : -1;
@@ -78,7 +78,7 @@ const PersonView: React.FC = () => {
                 <div>
                     <h1 className='text-3xl font-bold text-gray-950 dark:text-white'>{person.primary_name}</h1>
                     <p className='mt-1 text-sm text-gray-500 dark:text-gray-400'>
-                        {imagePaths.length} photo{imagePaths.length !== 1 ? 's' : ''} found
+                        {images.length} photo{images.length !== 1 ? 's' : ''} found
                     </p>
                 </div>
             </div>

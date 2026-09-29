@@ -6,6 +6,7 @@ import {
     FaceData,
     LoginPayload,
     Person,
+    PersonImageResult,
     RegisterPayload,
     UntaggedFaceResult,
     User,
@@ -232,9 +233,9 @@ export const getPersonById = async (id: number, signal?: AbortSignal): Promise<P
     return (await response.json()) as Person;
 };
 
-export const searchFacesByName = async (query: string, signal?: AbortSignal): Promise<string[]> => {
+export const searchFacesByName = async (query: string, signal?: AbortSignal): Promise<PersonImageResult[]> => {
     const response = await apiClient(`/search/faces?query=${encodeURIComponent(query)}`, {}, signal);
-    return (await response.json()) as string[];
+    return (await response.json()) as PersonImageResult[];
 };
 
 export const searchPeople = async (q: string, limit = 5, signal?: AbortSignal): Promise<Person[]> => {
