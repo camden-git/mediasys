@@ -26,5 +26,5 @@ export interface UpdateProfilePayload {
 
 export const updateProfile = async (payload: UpdateProfilePayload): Promise<User> => {
     const response = await http.put('/auth/me', payload);
-    return response.data;
+    return response.data.data;
 };
