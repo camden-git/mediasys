@@ -54,7 +54,7 @@ services:
       S3_BUCKET: ${S3_BUCKET:-mediasys}
       S3_USE_SSL: "false"
       JWT_SECRET: ${JWT_SECRET:-}
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8080}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8080,http://localhost:5173}
       FACE_RECOGNITION_ENABLED: ${FACE_RECOGNITION_ENABLED:-true}
       FACE_RECOGNITION_MODEL_NAME: ${FACE_RECOGNITION_MODEL_NAME:-arcface}
       CUDA_ENABLED: ${CUDA_ENABLED:-false}
