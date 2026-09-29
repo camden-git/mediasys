@@ -8,6 +8,7 @@ import (
 	"github.com/camden-git/mediasysbackend/database"
 	"github.com/camden-git/mediasysbackend/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // PersonRepository handles database operations for Person and related Alias entities
@@ -119,21 +120,35 @@ func (r *PersonRepository) Update(person *models.Person) error {
 	return nil
 }
 
-// Delete removes a person by their ID
+// Delete removes a person by their ID. In one transaction it unassigns the person's faces
+// (so they return to the untagged queue), deletes their aliases, then deletes the person.
 func (r *PersonRepository) Delete(id uint) error {
-	// result := r.DB.Unscoped().Delete(&models.Person{}, id)
+	return r.DB.Transaction(func(tx *gorm.DB) error {
+		// lock the person row so concurrent tagging can't race the delete
+		var person models.Person
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").First(&person, id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+			return fmt.Errorf("failed to load person ID %d for delete: %w", id, err)
+		}
 
-	// result := r.DB.Delete(&models.Person{}, id)
-
-	result := r.DB.Delete(&models.Person{}, id)
-
-	if result.Error != nil {
-		return fmt.Errorf("failed to delete person ID %d: %w", id, result.Error)
-	}
-	if result.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
-	}
-	return nil
+		err := tx.Model(&models.Face{}).Where("person_id = ?", id).Updates(map[string]interface{}{
+			"person_id":  gorm.Expr("NULL"),
+			"confirmed":  false,
+			"updated_at": time.Now().Unix(),
+		}).Error
+		if err != nil {
+			return fmt.Errorf("failed to unassign faces of person ID %d: %w", id, err)
+		}
+		if err := tx.Where("person_id = ?", id).Delete(&models.Alias{}).Error; err != nil {
+			return fmt.Errorf("failed to delete aliases of person ID %d: %w", id, err)
+		}
+		if err := tx.Delete(&models.Person{}, id).Error; err != nil {
+			return fmt.Errorf("failed to delete person ID %d: %w", id, err)
+		}
+		return nil
+	})
 }
 
 // AddAlias adds a new alias for a person

@@ -514,6 +514,17 @@ func (fh *FaceHandler) AutoTagFace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// the suggestion may reference a person that has since been deleted
+	if _, err := fh.PersonRepo.GetByID(*personID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			WriteAPIError(w, http.StatusNotFound, "PersonNotFound", "No suitable person found for this face")
+		} else {
+			log.Printf("Error verifying suggested person %d for face %d: %v", *personID, faceID, err)
+			WriteAPIError(w, http.StatusInternalServerError, "PersonFetchError", "Failed to verify person")
+		}
+		return
+	}
+
 	// Tag the face with the suggested person; auto-tagging is never confirmed
 	err = fh.FaceRecognitionService.TagFaceWithPerson(uint(faceID), *personID, false)
 	if err != nil {
