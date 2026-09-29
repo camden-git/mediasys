@@ -107,7 +107,7 @@ export const RegisterForm: React.FC = () => {
                         label='Invite code'
                         type='text'
                         inputMode='numeric'
-                        pattern='\\d{6}'
+                        pattern='\d{6}'
                         maxLength={6}
                         placeholder='6-digit PIN'
                         disabled={isRegistering || isSubmitting}
