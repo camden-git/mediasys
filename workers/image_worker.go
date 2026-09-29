@@ -208,11 +208,11 @@ func (ip *ImageProcessor) done(job ImageJob) {
 	ip.mutex.Unlock()
 }
 
-func (ip *ImageProcessor) broadcast(path, task, status string, err error) {
+func (ip *ImageProcessor) broadcast(albumID uint, path, task, status string, err error) {
 	if ip.Hub == nil {
 		return
 	}
-	ev := realtime.Event{Type: "task", Path: path, Task: task, Status: status, Timestamp: time.Now().Unix()}
+	ev := realtime.Event{Type: "task", AlbumID: albumID, Path: path, Task: task, Status: status, Timestamp: time.Now().Unix()}
 	if err != nil {
 		ev.Error = err.Error()
 	}
@@ -310,7 +310,7 @@ func (ip *ImageProcessor) processImage(job ImageJob) {
 	}
 
 	if needMeta {
-		ip.runTask(img.OriginalPath, TaskMetadata, func() error {
+		ip.runTask(img.AlbumID, img.OriginalPath, TaskMetadata, func() error {
 			if dlErr != nil {
 				return ip.ImageRepo.UpdateMetadataResult(img.OriginalPath, nil, dlErr)
 			}
@@ -333,7 +333,7 @@ func (ip *ImageProcessor) processImage(job ImageJob) {
 	}
 
 	if needThumb {
-		ip.runTask(img.OriginalPath, TaskThumbnail, func() error {
+		ip.runTask(img.AlbumID, img.OriginalPath, TaskThumbnail, func() error {
 			var key *string
 			taskErr := firstErr(dlErr, decodeErr)
 			if taskErr == nil {
@@ -352,7 +352,7 @@ func (ip *ImageProcessor) processImage(job ImageJob) {
 	}
 
 	if needPreview {
-		ip.runTask(img.OriginalPath, TaskPreview, func() error {
+		ip.runTask(img.AlbumID, img.OriginalPath, TaskPreview, func() error {
 			var key *string
 			taskErr := firstErr(dlErr, decodeErr)
 			if taskErr == nil {
@@ -372,18 +372,18 @@ func (ip *ImageProcessor) processImage(job ImageJob) {
 }
 
 // runTask wraps a sub-task with status bookkeeping and realtime events.
-func (ip *ImageProcessor) runTask(path, task string, fn func() error) {
+func (ip *ImageProcessor) runTask(albumID uint, path, task string, fn func() error) {
 	if err := ip.ImageRepo.MarkTaskProcessing(path, task+"_status"); err != nil {
 		log.Printf("Worker: cannot mark %s processing for %s: %v", task, path, err)
 		return
 	}
-	ip.broadcast(path, task, "processing", nil)
+	ip.broadcast(albumID, path, task, "processing", nil)
 	if err := fn(); err != nil {
 		log.Printf("Worker: %s failed for %s: %v", task, path, err)
-		ip.broadcast(path, task, "error", err)
+		ip.broadcast(albumID, path, task, "error", err)
 		return
 	}
-	ip.broadcast(path, task, "done", nil)
+	ip.broadcast(albumID, path, task, "done", nil)
 }
 
 // buildXMPTags converts raw XMP keyword strings into ImageTag records.
@@ -423,7 +423,7 @@ func (ip *ImageProcessor) processDetection(job ImageJob, faceDetector *media.DNN
 		return
 	}
 
-	ip.runTask(img.OriginalPath, TaskDetection, func() error {
+	ip.runTask(img.AlbumID, img.OriginalPath, TaskDetection, func() error {
 		var detections []media.DetectionResult
 		taskErr := func() error {
 			localPath, cleanup, err := ip.Store.Download(context.Background(), img.ObjectKey)
@@ -466,7 +466,7 @@ func (ip *ImageProcessor) processAlbumZip(job ImageJob) {
 		return
 	}
 	path := fmt.Sprintf("album:%d", job.AlbumID)
-	ip.broadcast(path, TaskAlbumZip, "processing", nil)
+	ip.broadcast(job.AlbumID, path, TaskAlbumZip, "processing", nil)
 
 	var key *string
 	var size *int64
@@ -494,14 +494,14 @@ func (ip *ImageProcessor) processAlbumZip(job ImageJob) {
 	}
 	if taskErr != nil {
 		log.Printf("Worker: zip failed for album %d: %v", job.AlbumID, taskErr)
-		ip.broadcast(path, TaskAlbumZip, "error", taskErr)
+		ip.broadcast(job.AlbumID, path, TaskAlbumZip, "error", taskErr)
 		return
 	}
 	// remove the archive this one replaced
 	if album.ZipPath != nil && *album.ZipPath != *key {
 		_ = ip.Store.Delete(context.Background(), *album.ZipPath)
 	}
-	ip.broadcast(path, TaskAlbumZip, "done", nil)
+	ip.broadcast(job.AlbumID, path, TaskAlbumZip, "done", nil)
 }
 
 // StartMemoryTrimmer starts a background goroutine that calls runtime.GC() and

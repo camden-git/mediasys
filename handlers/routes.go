@@ -5,6 +5,7 @@ import (
 
 	"github.com/camden-git/mediasysbackend/config"
 	"github.com/camden-git/mediasysbackend/media"
+	"github.com/camden-git/mediasysbackend/models"
 	"github.com/camden-git/mediasysbackend/realtime"
 	"github.com/camden-git/mediasysbackend/repository"
 	"github.com/go-chi/chi/v5"
@@ -508,7 +509,8 @@ func RegisterRoutes(r chi.Router, deps AppDependencies) {
 			req.Header.Set("Authorization", "Bearer "+protos[1])
 		}
 		AuthMiddleware(deps.UserRepo, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			deps.Hub.ServeWS(w, r)
+			user, _ := r.Context().Value(UserContextKey).(*models.User)
+			deps.Hub.ServeWS(w, r, user)
 		})).ServeHTTP(w, req)
 	})
 }

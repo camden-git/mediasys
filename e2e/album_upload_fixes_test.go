@@ -2,12 +2,17 @@ package e2e_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
+	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/gorilla/websocket"
 
 	"github.com/camden-git/mediasysbackend/models"
 )
@@ -234,6 +239,95 @@ func TestPerAlbumPermissionBySlug(t *testing.T) {
 	resp = doRequest(t, http.MethodGet, "/api/admin/albums/no-such-slug-"+s, token, nil, "")
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("expected 403 for unknown slug, got %d: %s", resp.StatusCode, resp.Body)
+	}
+}
+
+// wsCollect connects to /api/ws and collects decoded events until closed.
+func wsCollect(t *testing.T, token string) (events func() []map[string]any, closeFn func()) {
+	t.Helper()
+	env := requireShared(t)
+	url := "ws" + strings.TrimPrefix(env.server.URL, "http") + "/api/ws"
+	conn, _, err := websocket.DefaultDialer.Dial(url, http.Header{"Sec-WebSocket-Protocol": {"bearer, " + token}})
+	if err != nil {
+		t.Fatalf("ws dial failed: %v", err)
+	}
+	var mu sync.Mutex
+	var got []map[string]any
+	go func() {
+		for {
+			_, data, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			var ev map[string]any
+			if json.Unmarshal(data, &ev) == nil {
+				mu.Lock()
+				got = append(got, ev)
+				mu.Unlock()
+			}
+		}
+	}()
+	return func() []map[string]any {
+			mu.Lock()
+			defer mu.Unlock()
+			return append([]map[string]any(nil), got...)
+		}, func() {
+			conn.Close()
+		}
+}
+
+func TestWebSocketEventsAreScopedByAlbum(t *testing.T) {
+	env := requireShared(t)
+	s := randomSuffix()
+	a := createAlbum(t, env.adminToken, "WS A "+s, "ws-a-"+s, "")
+	b := createAlbum(t, env.adminToken, "WS B "+s, "ws-b-"+s, "")
+
+	scopedName, nobodyName, pw := "wsscoped_"+s, "wsnobody_"+s, "test-password-"+s
+	scopedID := createUser(t, env.adminToken, scopedName, pw)
+	createUser(t, env.adminToken, nobodyName, pw)
+	grantAlbumPermission(t, env.adminToken, a.ID, scopedID, []string{"album.view.content"})
+	scopedToken, err := login(env.server.URL, scopedName, pw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nobodyToken, err := login(env.server.URL, nobodyName, pw)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	adminEvents, closeAdmin := wsCollect(t, env.adminToken)
+	defer closeAdmin()
+	scopedEvents, closeScoped := wsCollect(t, scopedToken)
+	defer closeScoped()
+	nobodyEvents, closeNobody := wsCollect(t, nobodyToken)
+	defer closeNobody()
+	time.Sleep(200 * time.Millisecond) // let the hub register the clients
+
+	uploadWithPath(t, a.ID, "top/a.jpg", generateJPEG(t, 16, 16))
+	uploadWithPath(t, b.ID, "top/b.jpg", generateJPEG(t, 16, 16))
+
+	albumIDs := func(evs []map[string]any) map[float64]bool {
+		ids := map[float64]bool{}
+		for _, ev := range evs {
+			if id, ok := ev["album_id"].(float64); ok {
+				ids[id] = true
+			}
+		}
+		return ids
+	}
+	pollUntil(t, 10*time.Second, 100*time.Millisecond, "admin to see both albums", func() bool {
+		ids := albumIDs(adminEvents())
+		return ids[float64(a.ID)] && ids[float64(b.ID)]
+	})
+	pollUntil(t, 10*time.Second, 100*time.Millisecond, "scoped user to see album A", func() bool {
+		return albumIDs(scopedEvents())[float64(a.ID)]
+	})
+	time.Sleep(500 * time.Millisecond)
+	if albumIDs(scopedEvents())[float64(b.ID)] {
+		t.Fatalf("scoped user received events for an album they cannot view")
+	}
+	if n := len(nobodyEvents()); n != 0 {
+		t.Fatalf("user without permissions received %d events", n)
 	}
 }
 

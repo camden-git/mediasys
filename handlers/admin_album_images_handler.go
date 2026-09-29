@@ -100,7 +100,7 @@ func (h *AdminAlbumHandler) UploadImages(w http.ResponseWriter, r *http.Request)
 
 	broadcast := func(p, status, errMsg string) {
 		if h.Hub != nil {
-			h.Hub.Broadcast(realtime.Event{Type: "upload", Path: p, Status: status, Error: errMsg, Timestamp: time.Now().Unix()})
+			h.Hub.Broadcast(realtime.Event{Type: "upload", AlbumID: album.ID, Path: p, Status: status, Error: errMsg, Timestamp: time.Now().Unix()})
 		}
 	}
 

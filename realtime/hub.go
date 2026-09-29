@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
+	"time"
 
+	"github.com/camden-git/mediasysbackend/models"
 	"github.com/gorilla/websocket"
 )
 
@@ -44,9 +46,11 @@ func writeUpgradeError(w http.ResponseWriter, status int, reason error) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
-// Event represents a message sent to websocket clients
+// Event represents a message sent to websocket clients. AlbumID scopes delivery
+// to users who may view that album's content.
 type Event struct {
 	Type      string                 `json:"type"`
+	AlbumID   uint                   `json:"album_id,omitempty"`
 	Path      string                 `json:"path,omitempty"`
 	Task      string                 `json:"task,omitempty"`
 	Status    string                 `json:"status,omitempty"`
@@ -55,17 +59,47 @@ type Event struct {
 	Timestamp int64                  `json:"timestamp"`
 }
 
+const (
+	// permissions required to see an album's events: the global one matches the
+	// admin album images listing, the album-scoped one its per-album counterpart.
+	globalViewPermission = "album.list"
+	albumViewPermission  = "album.view.content"
+
+	maxReadSize = 4096
+	pongWait    = 60 * time.Second
+	pingPeriod  = 50 * time.Second
+	writeWait   = 10 * time.Second
+)
+
 type Client struct {
 	conn *websocket.Conn
 	send chan []byte
+	user *models.User
 }
 
-// Hub is a simple global pubsub for websocket clients
+// canView reports whether the client's user may receive the event.
+func (c *Client) canView(ev Event) bool {
+	if c.user == nil {
+		return false
+	}
+	if c.user.HasGlobalPermission(globalViewPermission) {
+		return true
+	}
+	return ev.AlbumID != 0 && c.user.HasAlbumPermission(ev.AlbumID, albumViewPermission)
+}
+
+type message struct {
+	event Event
+	data  []byte
+}
+
+// Hub is a simple pubsub for websocket clients; events are only delivered to
+// clients whose user may view the event's album.
 type Hub struct {
 	clients    map[*Client]bool
 	register   chan *Client
 	unregister chan *Client
-	broadcast  chan []byte
+	broadcast  chan message
 	mu         sync.RWMutex
 }
 
@@ -74,7 +108,7 @@ func NewHub() *Hub {
 		clients:    make(map[*Client]bool),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
-		broadcast:  make(chan []byte, 256),
+		broadcast:  make(chan message, 256),
 	}
 }
 
@@ -92,17 +126,20 @@ func (h *Hub) Run() {
 				close(client.send)
 			}
 			h.mu.Unlock()
-		case message := <-h.broadcast:
-			h.mu.RLock()
+		case msg := <-h.broadcast:
+			h.mu.Lock()
 			for client := range h.clients {
+				if !client.canView(msg.event) {
+					continue
+				}
 				select {
-				case client.send <- message:
+				case client.send <- msg.data:
 				default:
 					close(client.send)
 					delete(h.clients, client)
 				}
 			}
-			h.mu.RUnlock()
+			h.mu.Unlock()
 		}
 	}
 }
@@ -114,7 +151,7 @@ func (h *Hub) Broadcast(event Event) {
 		return
 	}
 	select {
-	case h.broadcast <- encoded:
+	case h.broadcast <- message{event: event, data: encoded}:
 	default:
 		log.Printf("realtime: dropping event, broadcast channel full")
 	}
@@ -127,8 +164,9 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-// ServeWS upgrades the connection and registers a client
-func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
+// ServeWS upgrades the connection and registers a client for the given
+// (already authenticated) user.
+func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request, user *models.User) {
 	// echo back the negotiated subprotocol (if any) so the handshake completes
 	// cleanly; the auth token itself is carried as a subprotocol value rather
 	// than a query parameter so it never ends up in access logs (see AuthMiddleware
@@ -143,20 +181,43 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 		log.Printf("realtime: websocket upgrade error: %v", err)
 		return
 	}
-	client := &Client{conn: conn, send: make(chan []byte, 256)}
+	if user != nil {
+		user.HasGlobalPermission("") // compute effective permissions now, before the hub goroutine reads them
+	}
+	client := &Client{conn: conn, send: make(chan []byte, 256), user: user}
 	h.register <- client
 
 	// writer
 	go func() {
-		for msg := range client.send {
-			if err := client.conn.WriteMessage(websocket.TextMessage, msg); err != nil {
-				break
+		ticker := time.NewTicker(pingPeriod)
+		defer ticker.Stop()
+		defer client.conn.Close()
+		for {
+			select {
+			case msg, ok := <-client.send:
+				_ = client.conn.SetWriteDeadline(time.Now().Add(writeWait))
+				if !ok {
+					_ = client.conn.WriteMessage(websocket.CloseMessage, nil)
+					return
+				}
+				if err := client.conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+					return
+				}
+			case <-ticker.C:
+				_ = client.conn.SetWriteDeadline(time.Now().Add(writeWait))
+				if err := client.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+					return
+				}
 			}
 		}
-		client.conn.Close()
 	}()
 
-	// reader (just consume pings/close)
+	// reader: clients send nothing, so this only services pongs and detects dead connections
+	conn.SetReadLimit(maxReadSize)
+	_ = conn.SetReadDeadline(time.Now().Add(pongWait))
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(pongWait))
+	})
 	for {
 		if _, _, err := conn.ReadMessage(); err != nil {
 			break
