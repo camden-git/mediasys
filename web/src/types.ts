@@ -99,7 +99,7 @@ export interface Album {
     artists?: { id: number; username: string; first_name?: string; last_name?: string }[];
 }
 
-export interface ImageTag {
+interface ImageTag {
     id: number;
     image_path: string;
     tag_key: string;
@@ -116,7 +116,7 @@ export interface AlbumDefaultTag {
     created_at: string;
 }
 
-export interface CollectionTagFilter {
+interface CollectionTagFilter {
     id: number;
     collection_id: number;
     tag_key: string;
@@ -186,12 +186,12 @@ export interface Role {
     // album_permissions are likely too complex for a simple Role DTO here
 }
 
-export interface AlbumPermissionGrants {
+interface AlbumPermissionGrants {
     for_all?: string[];
     by_album?: Record<string, string[]>;
 }
 
-export interface UserEffectivePermissions {
+interface UserEffectivePermissions {
     global?: string[];
     album?: AlbumPermissionGrants;
 }
@@ -234,7 +234,7 @@ export interface AuthResponse {
 }
 
 // For Admin User Management DTOs (align with backend UserResponseDTO)
-export interface UserAlbumPermission {
+interface UserAlbumPermission {
     id: number;
     user_id: number;
     album_id: number;
@@ -253,7 +253,7 @@ export interface UserSummary {
 }
 
 // For Admin Role Management DTOs (align with backend RoleResponseDTO)
-export interface RoleAlbumPermission {
+interface RoleAlbumPermission {
     id: number;
     role_id: number;
     album_id: number;
@@ -267,10 +267,6 @@ export interface AdminRoleResponse extends Role {
     created_at: string;
     updated_at: string;
     users?: UserSummary[]; // Optional list of users
-}
-export interface UserSummary {
-    id: number;
-    username: string;
 }
 
 // For Admin Invite Code Management DTOs
@@ -293,14 +289,8 @@ export interface InviteCodeCreatePayload {
     is_active?: boolean; // Defaults to true if not provided
 }
 
-export interface InviteCodeUpdatePayload {
-    expires_at?: string | null; // Allow sending null to clear
-    max_uses?: number | null; // Allow sending null to clear
-    is_active?: boolean;
-}
-
 // Payloads for creating/updating Roles
-export interface RoleAlbumPermissionCreate {
+interface RoleAlbumPermissionCreate {
     album_id: number;
     permissions: string[];
 }
@@ -312,7 +302,7 @@ export interface RoleCreatePayload {
     album_permissions: RoleAlbumPermissionCreate[];
 }
 
-export interface RoleAlbumPermissionInput {
+interface RoleAlbumPermissionInput {
     id?: number; // For existing permissions to update
     album_id: number;
     permissions: string[];
@@ -326,7 +316,7 @@ export interface RoleUpdatePayload {
 }
 
 // For Permission Definitions API
-export interface PermissionDefinition {
+interface PermissionDefinition {
     key: string;
     name: string;
     description: string;
@@ -338,12 +328,6 @@ export interface PermissionGroupDefinition {
     name: string;
     description: string;
     permissions: PermissionDefinition[];
-}
-
-// Stub for album selection in forms, expand as needed
-export interface AlbumStub {
-    id: number;
-    name: string;
 }
 
 export interface UserCreatePayload {
