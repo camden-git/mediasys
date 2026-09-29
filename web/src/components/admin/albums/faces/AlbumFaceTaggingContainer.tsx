@@ -3,8 +3,8 @@ import { Heading } from '../../../elements/Heading';
 import { Text } from '../../../elements/Text';
 import PageContentBlock from '../../../elements/PageContentBlock.tsx';
 import LoadingSpinner from '../../../elements/LoadingSpinner';
-import { UntaggedFaceResult, Person } from '../../../../types';
-import { getUntaggedFaces, getPeople } from '../../../../api';
+import { UntaggedFaceResult } from '../../../../types';
+import { getUntaggedFaces } from '../../../../api';
 import { useAlbumData } from '../../../../store/albumContextHooks';
 import FaceThumbnail from '../../faces/shared/FaceThumbnail';
 import FaceLightboxModal from '../../faces/shared/FaceLightboxModal';
@@ -14,7 +14,6 @@ const AlbumFaceTaggingContainer: React.FC = () => {
 
     const [allFaces, setAllFaces] = useState<UntaggedFaceResult[]>([]);
     const [faces, setFaces] = useState<UntaggedFaceResult[]>([]);
-    const [people, setPeople] = useState<Person[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
@@ -22,11 +21,8 @@ const AlbumFaceTaggingContainer: React.FC = () => {
     useEffect(() => {
         setLoading(true);
         setError(null);
-        Promise.all([getUntaggedFaces({ limit: 100 }), getPeople()])
-            .then(([f, p]) => {
-                setAllFaces(f);
-                setPeople(p);
-            })
+        getUntaggedFaces({ limit: 100 })
+            .then(setAllFaces)
             .catch((e) => setError(e.message))
             .finally(() => setLoading(false));
     }, []);
@@ -53,8 +49,6 @@ const AlbumFaceTaggingContainer: React.FC = () => {
     };
 
     const handleDeleted = (faceId: number) => handleTagged(faceId);
-
-    const handlePersonCreated = (person: Person) => setPeople((prev) => [...prev, person]);
 
     const handleSuggestionUpdated = (
         faceId: number,
@@ -131,12 +125,10 @@ const AlbumFaceTaggingContainer: React.FC = () => {
                 <FaceLightboxModal
                     faces={faces}
                     currentIndex={lightboxIndex}
-                    people={people}
                     onClose={() => setLightboxIndex(null)}
                     onNavigate={setLightboxIndex}
                     onTagged={handleTagged}
                     onDeleted={handleDeleted}
-                    onPersonCreated={handlePersonCreated}
                     onSuggestionUpdated={handleSuggestionUpdated}
                 />
             )}

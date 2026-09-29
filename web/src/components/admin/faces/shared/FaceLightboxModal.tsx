@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { XMarkIcon, ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
-import { UntaggedFaceResult, Person } from '../../../../types';
+import { UntaggedFaceResult } from '../../../../types';
 import { getPreviewImageUrl, getOriginalImageUrl } from '../../../../api';
 import FaceTaggingPanel from './FaceTaggingPanel';
 
@@ -63,8 +63,6 @@ interface FaceLightboxModalProps {
         personName: string | null,
         suggestionCount: number,
     ) => void;
-    people?: Person[];
-    onPersonCreated?: (person: Person) => void;
 }
 
 const FaceLightboxModal: React.FC<FaceLightboxModalProps> = ({
