@@ -55,10 +55,29 @@ func InitGormDB(dsn string, logLevel logger.LogLevel) (*gorm.DB, error) {
 	return db, nil
 }
 
+// EnsureNaturalSortCollation creates the ICU collation used by SQLOrderClause for
+// filename_nat (natural filename sort, e.g. "img2" before "img10"), if it doesn't
+// already exist. Requires a Postgres build with ICU support, which is standard on
+// the official postgres image (both debian and alpine variants, and images built
+// on top of it such as pgvector/pgvector) since Postgres 15.
+func EnsureNaturalSortCollation(db *gorm.DB) error {
+	stmt := fmt.Sprintf(
+		"CREATE COLLATION IF NOT EXISTS %s (provider = icu, locale = 'und-u-kn-true')",
+		NaturalSortCollation,
+	)
+	if err := db.Exec(stmt).Error; err != nil {
+		return fmt.Errorf("failed to create natural sort collation: %w", err)
+	}
+	return nil
+}
+
 // AutoMigrateModels creates or updates the schema for all models.
 func AutoMigrateModels(db *gorm.DB) error {
 	if err := db.Exec("CREATE EXTENSION IF NOT EXISTS vector").Error; err != nil {
 		return fmt.Errorf("failed to create pgvector extension: %w", err)
+	}
+	if err := EnsureNaturalSortCollation(db); err != nil {
+		return err
 	}
 
 	err := db.AutoMigrate(

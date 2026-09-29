@@ -51,6 +51,12 @@ func IsValidSortOrder(order string) bool {
 	}
 }
 
+// NaturalSortCollation is the name of the ICU collation created by
+// EnsureNaturalSortCollation and used by SQLOrderClause for filename_nat. ICU's
+// 'und-u-kn-true' locale enables numeric ordering ("kn" = numeric collation), so
+// digit runs compare by value (2 < 10) instead of lexically (10 < 2).
+const NaturalSortCollation = "natural_sort"
+
 // basenameExpr extracts the filename component of images.original_path (which is
 // stored as "<album folder>/<filename>", and can differ in folder prefix across
 // albums when images are pulled together for a collection), so name-based sorts
@@ -78,11 +84,12 @@ func SQLOrderClause(order string) string {
 	case SortFilenameDesc:
 		return "LOWER(" + basenameExpr + ") DESC, original_path DESC"
 	case SortFilenameNat:
-		// approximate natural sort: shorter names first, then lexical. this
-		// correctly orders runs like IMG_2.jpg < IMG_10.jpg as long as the
-		// differing digits are the only length difference, which covers the
-		// common camera-filename case without needing a natural sort collation.
-		return "LENGTH(" + basenameExpr + ") ASC, LOWER(" + basenameExpr + ") ASC, original_path ASC"
+		// true natural sort via the ICU "natural_sort" collation (numeric digit
+		// runs ordered by value, e.g. IMG_2.jpg < IMG_10.jpg < DSC_0001.jpg is
+		// ordered on "D" vs "I", not by string length). Case-insensitivity is
+		// applied via LOWER() beforehand, matching the old Go natsort behavior
+		// of lowercasing both sides before comparing.
+		return "LOWER(" + basenameExpr + ") COLLATE " + NaturalSortCollation + " ASC, original_path ASC"
 	case SortDateDesc:
 		return "COALESCE(taken_at, last_modified) DESC, original_path DESC"
 	case SortDateAsc:
