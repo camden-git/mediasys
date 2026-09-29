@@ -14,3 +14,4 @@ DNN_models/*
 face_models/*
 
 .idea/
+ml-models/

@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"net/url"
 	"strings"
 	"time"
@@ -16,8 +17,14 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// TODO: Move JWT secret and expiration to config
-var jwtKey = []byte("your_super_secret_key_that_should_be_in_config")
+// jwtKey signs auth tokens. Set JWT_SECRET in production.
+var jwtKey = func() []byte {
+	if s := os.Getenv("JWT_SECRET"); s != "" {
+		return []byte(s)
+	}
+	log.Println("WARNING: JWT_SECRET is not set, using an insecure default")
+	return []byte("your_super_secret_key_that_should_be_in_config")
+}()
 
 const jwtExpirationHours = 24
 

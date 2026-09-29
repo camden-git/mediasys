@@ -1,42 +1,88 @@
-version: "3.8"
+name: mediasys
 
 services:
-  mediasysbackend:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mediasys}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mediasys}
+      POSTGRES_DB: ${POSTGRES_DB:-mediasys}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # community-maintained MinIO fork (upstream MinIO is archived)
+  storage:
+    image: pgsty/silo:RELEASE.2026-09-16T00-00-00Z
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-mediasys}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-change-me-please}
+    volumes:
+      - storage-data:/data
+    ports:
+      - "${STORAGE_CONSOLE_PORT:-9001}:9001"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9000/minio/health/live || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  backend:
     build:
       context: .
-      dockerfile: Dockerfile
-    image: mediasysbackend:local
-    container_name: mediasysbackend
+      args:
+        OPENCV_IMAGE: ${OPENCV_IMAGE:-ghcr.io/hybridgroup/opencv:4.11.0}
+    image: mediasys-backend:local
     restart: unless-stopped
-    ports:
-      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      storage:
+        condition: service_healthy
     environment:
-      ROOT_DIRECTORY: /data
-      MEDIA_STORAGE_PATH: /data/media_storage
-      DATABASE_PATH: /data/db/images.db
-      THUMBNAILS_SUBDIR: thumbnails
-      BANNERS_SUBDIR: album_banners
-      ARCHIVES_SUBDIR: album_archives
-      FACE_DNN_CONFIG_PATH: /data/models/deploy.prototxt
-      FACE_DNN_MODEL_PATH: /data/models/res10_300x300_ssd_iter_140000_fp16.caffemodel
-      RETINAFACE_MODEL_PATH: /data/models/retinaface.onnx
-      FACE_RECOGNITION_MODEL_PATH: /data/models/arcface.onnx
-      FACE_RECOGNITION_MODEL_NAME: arcface
-      FACE_RECOGNITION_ENABLED: "true"
-      CUDA_ENABLED: "false"
-      PORT: "8080"
+      DATABASE_URL: postgres://${POSTGRES_USER:-mediasys}:${POSTGRES_PASSWORD:-mediasys}@postgres:5432/${POSTGRES_DB:-mediasys}?sslmode=disable
+      S3_ENDPOINT: storage:9000
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-mediasys}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-change-me-please}
+      S3_BUCKET: ${S3_BUCKET:-mediasys}
+      S3_USE_SSL: "false"
+      JWT_SECRET: ${JWT_SECRET:-}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8080}
+      FACE_RECOGNITION_ENABLED: ${FACE_RECOGNITION_ENABLED:-true}
+      FACE_RECOGNITION_MODEL_NAME: ${FACE_RECOGNITION_MODEL_NAME:-arcface}
+      CUDA_ENABLED: ${CUDA_ENABLED:-false}
+      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+      MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-200}
     volumes:
-      # Map your host folders here
-      - ./data:/data
-      # Or, individually:
-      # - /path/to/your/media:/data
-      # - /path/to/your/models:/data/models
-      # - /path/to/your/db:/data/db
-    # Uncomment to enable NVIDIA GPU if available (requires nvidia-container-runtime)
+      # face detection / recognition model files (read-only)
+      - ${MODELS_DIR:-./ml-models}:/models:ro
+    # Uncomment for NVIDIA GPUs (also build with a CUDA-enabled OPENCV_IMAGE)
     # deploy:
     #   resources:
     #     reservations:
     #       devices:
     #         - capabilities: ["gpu"]
-    # runtime: nvidia
 
+  web:
+    build:
+      context: ./web
+      args:
+        VITE_TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
+    image: mediasys-web:local
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+
+volumes:
+  postgres-data:
+  storage-data:
