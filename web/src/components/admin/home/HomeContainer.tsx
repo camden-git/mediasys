@@ -18,7 +18,7 @@ const HomeContainer: React.FC = () => {
 
     const handleLogout = () => {
         logout();
-        navigate('/login');
+        navigate('/auth/login');
     };
 
     if (!user) {
