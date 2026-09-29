@@ -12,7 +12,6 @@ export interface LayoutOptions {
     boxSpacing: number;
     stretchLastRow?: boolean;
     maxRowHeightRatio?: number | null;
-    debug?: boolean;
 }
 
 const getAspectRatio = (image: FileInfo): number => {
@@ -23,24 +22,9 @@ const getAspectRatio = (image: FileInfo): number => {
 };
 
 export const computeLayout = (images: FileInfo[], options: LayoutOptions): ProcessedRow[] => {
-    const {
-        containerWidth,
-        targetRowHeight,
-        boxSpacing,
-        stretchLastRow = false,
-        maxRowHeightRatio = 2.5,
-        debug = false,
-    } = options;
-
-    const t0 = performance.now();
-
-    if (debug)
-        console.debug(
-            `layout debug: computeLayout (v5) called. images: ${images.length}, width: ${containerWidth}, targetHeight: ${targetRowHeight}, spacing: ${boxSpacing}, maxRatio: ${maxRowHeightRatio ?? 'none'}`,
-        );
+    const { containerWidth, targetRowHeight, boxSpacing, stretchLastRow = false, maxRowHeightRatio = 2.5 } = options;
 
     if (!containerWidth || containerWidth <= 0 || images.length === 0) {
-        if (debug) console.debug('layout debug: aborting - invalid container width or no images.');
         return [];
     }
 
@@ -61,10 +45,7 @@ export const computeLayout = (images: FileInfo[], options: LayoutOptions): Proce
     };
 
     const finalizeRow = (items: FileInfo[], arSum: number, isLastOverallRow: boolean): void => {
-        const rowStart = performance.now();
-
         if (items.length === 0) {
-            if (debug) console.debug(`layout debug: row ${currentRowIndex}: attempted to finalize empty row.`);
             return;
         }
 
@@ -87,14 +68,7 @@ export const computeLayout = (images: FileInfo[], options: LayoutOptions): Proce
 
         processedRows.push({ items, height: finalHeight, rowIndex: currentRowIndex });
         currentRowIndex++;
-
-        if (debug) {
-            const rowEnd = performance.now();
-            console.debug(`layout debug: row ${currentRowIndex - 1} finalized in ${(rowEnd - rowStart).toFixed(2)}ms`);
-        }
     };
-
-    const loopStart = performance.now();
 
     images.forEach((image) => {
         const aspectRatio = getAspectRatio(image);
@@ -142,19 +116,7 @@ export const computeLayout = (images: FileInfo[], options: LayoutOptions): Proce
         }
     });
 
-    const loopEnd = performance.now();
-
     finalizeRow(currentRowItems, currentRowAspectRatioSum, true);
-
-    const t1 = performance.now();
-
-    if (debug) {
-        console.debug(`layout debug: computeLayout finished.`);
-        console.debug(`  Time - Total: ${(t1 - t0).toFixed(2)}ms`);
-        console.debug(`  Time - Loop : ${(loopEnd - loopStart).toFixed(2)}ms`);
-        console.debug(`  Time - Finalize Last Row: ${(t1 - loopEnd).toFixed(2)}ms`);
-        console.debug(`  Rows Generated: ${processedRows.length}`);
-    }
 
     return processedRows;
 };
