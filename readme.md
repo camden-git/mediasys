@@ -78,6 +78,75 @@ Set `FACE_RECOGNITION_ENABLED=false` to run without them. For GPU builds, pass a
 CUDA-enabled OpenCV image via `OPENCV_IMAGE` and uncomment the `deploy` block in
 `docker-compose.yml`.
 
+## Development
+
+### Backend tests
+
+`go test ./...` always runs the ordinary Go unit tests. Two extra suites need a
+real throwaway Postgres (pgvector) server and a real S3-compatible object store,
+and are skipped unless the following env vars are set:
+
+- `TEST_DATABASE_URL` — an admin connection string, e.g.
+  `postgres://mediasys:mediasys@localhost:5432/postgres?sslmode=disable`. It must
+  be able to `CREATE`/`DROP DATABASE` and `CREATE EXTENSION vector`; each test run
+  creates its own scratch database(s) and drops them afterwards.
+- `TEST_S3_ENDPOINT`, `TEST_S3_ACCESS_KEY`, `TEST_S3_SECRET_KEY` — an S3-compatible
+  endpoint (MinIO/Silo). Optional: `TEST_S3_REGION` (default `us-east-1`),
+  `TEST_S3_USE_SSL` (default `false`). Each test run creates its own scratch bucket
+  and empties/removes it afterwards.
+
+With those set:
+
+- `database/migrate_schema_test.go` checks the versioned SQL migrations produce
+  the same schema as the old GORM AutoMigrate path (drift guard).
+- `./e2e/...` spins up the real HTTP router (`app.New`, the same constructor
+  `main.go` uses) behind an `httptest.Server` and exercises it end-to-end: auth,
+  anonymous access being rejected on mutating/debug routes, the standard error
+  response shape, album creation/upload/processing/serving, per-album
+  permissions, and a few regression tests (private collections, group/collection
+  slug reuse after delete, album listing sort/paging). See the doc comment at the
+  top of `e2e/main_test.go` for details.
+
+One-liner to start throwaway containers for local test runs (matches what CI uses):
+
+```sh
+docker run -d --name mediasys-test-pg -e POSTGRES_USER=mediasys \
+  -e POSTGRES_PASSWORD=mediasys -e POSTGRES_DB=mediasys -p 15432:5432 pgvector/pgvector:pg17
+docker run -d --name mediasys-test-minio -e MINIO_ROOT_USER=mediasys \
+  -e MINIO_ROOT_PASSWORD=change-me-please -p 19000:9000 pgsty/silo:RELEASE.2026-09-16T00-00-00Z \
+  server /data --console-address ":9001"
+
+TEST_DATABASE_URL="postgres://mediasys:mediasys@localhost:15432/postgres?sslmode=disable" \
+TEST_S3_ENDPOINT="localhost:19000" TEST_S3_ACCESS_KEY=mediasys TEST_S3_SECRET_KEY=change-me-please \
+go test ./...
+
+docker rm -f mediasys-test-pg mediasys-test-minio
+```
+
+gocv needs OpenCV 4's headers/libs to build; on macOS with Homebrew:
+`PKG_CONFIG_PATH=$(brew --prefix opencv@4)/lib/pkgconfig go test ./...`.
+
+Face detection/recognition itself isn't exercised by the e2e tests (no ONNX
+models are available in the test environment); uploads run with
+`FACE_RECOGNITION_ENABLED=false`, which still covers metadata/thumbnail/preview
+processing.
+
+### Frontend checks
+
+```sh
+cd web
+pnpm install --frozen-lockfile
+./node_modules/.bin/tsc -b       # type-check
+./node_modules/.bin/eslint .     # lint
+./node_modules/.bin/vite build   # build
+```
+
+### CI
+
+`.github/workflows/ci.yml` runs the backend suite (inside the same OpenCV base
+image the production Dockerfile builds against, with throwaway pgvector/Postgres
+and MinIO) and the frontend checks above on every push/PR.
+
 ## License
 
 See [LICENSE](https://github.com/camden-git/mediasys/blob/master/LICENSE) for more information regarding the MIT license.
