@@ -14,18 +14,24 @@ async function traverseEntry(
 ): Promise<void> {
     if (entry.isFile) {
         const fileEntry = entry as FileSystemFileEntry;
-        await new Promise<void>((resolve) => {
+        await new Promise<void>((resolve, reject) => {
             fileEntry.file((f) => {
                 out.push({ file: f, relativePath: pathPrefix + f.name });
                 resolve();
-            });
+            }, reject);
         });
     } else if (entry.isDirectory) {
         const dirEntry = entry as FileSystemDirectoryEntry;
         const reader = dirEntry.createReader();
-        const entries = await new Promise<FileSystemEntry[]>((resolve) => {
-            reader.readEntries((results) => resolve(Array.from(results)));
-        });
+        // readEntries returns results in batches (~100 in Chrome); keep reading until an empty batch
+        const entries: FileSystemEntry[] = [];
+        for (;;) {
+            const batch = await new Promise<FileSystemEntry[]>((resolve, reject) => {
+                reader.readEntries((results) => resolve(Array.from(results)), reject);
+            });
+            if (batch.length === 0) break;
+            entries.push(...batch);
+        }
         for (const child of entries) {
             await traverseEntry(child, pathPrefix + entry.name + '/', out);
         }
@@ -53,17 +59,26 @@ const UploadZone: React.FC<UploadZoneProps> = ({ disabled, onFiles }) => {
         if (disabled) return;
 
         const collected: Array<{ file: File; relativePath: string }> = [];
-        const items = Array.from(e.dataTransfer.items);
 
-        for (const item of items) {
+        // DataTransfer items are invalidated once the handler yields, so grab everything synchronously first
+        const entries: FileSystemEntry[] = [];
+        for (const item of Array.from(e.dataTransfer.items)) {
             if (item.kind !== 'file') continue;
             const entry = item.webkitGetAsEntry?.();
             if (entry) {
-                await traverseEntry(entry, '', collected);
+                entries.push(entry);
             } else {
                 const f = item.getAsFile();
                 if (f) collected.push({ file: f, relativePath: f.name });
             }
+        }
+
+        try {
+            for (const entry of entries) {
+                await traverseEntry(entry, '', collected);
+            }
+        } catch (err) {
+            console.error('Failed to read dropped files', err);
         }
 
         if (collected.length > 0) onFiles(collected);
