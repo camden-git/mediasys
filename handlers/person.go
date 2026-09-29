@@ -101,7 +101,7 @@ func (ph *PersonHandler) GetPerson(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	person, err := ph.PersonRepo.GetByID(uint(personID))
+	person, err := ph.PersonRepo.GetPublicByID(uint(personID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			WriteAPIError(w, http.StatusNotFound, "PersonNotFound", "Person not found")
@@ -111,7 +111,6 @@ func (ph *PersonHandler) GetPerson(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	// GetByID should preload aliases if defined in repository method
 	writeJSON(w, http.StatusOK, person)
 }
 

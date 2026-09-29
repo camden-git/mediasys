@@ -50,6 +50,27 @@ func (r *PersonRepository) GetByID(id uint) (*models.Person, error) {
 	return &person, nil
 }
 
+// visibleImagePathsSQL selects the paths of images that are not soft-deleted and do not
+// belong to a hidden album, i.e. images that may appear in public listings.
+const visibleImagePathsSQL = "SELECT i.original_path FROM images i JOIN albums a ON a.id = i.album_id " +
+	"WHERE i.deleted_at IS NULL AND a.deleted_at IS NULL AND a.is_hidden = false"
+
+// GetPublicByID retrieves a person like GetByID, but only preloads faces whose images are
+// not in hidden albums so the result is safe for public responses.
+func (r *PersonRepository) GetPublicByID(id uint) (*models.Person, error) {
+	var person models.Person
+	err := r.DB.Preload("Aliases").
+		Preload("Faces", "image_path IN ("+visibleImagePathsSQL+")").
+		First(&person, id).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("failed to get person by ID %d: %w", id, err)
+	}
+	return &person, nil
+}
+
 // ListAll retrieves all people, ordered by primary_name, preloading Aliases
 func (r *PersonRepository) ListAll() ([]models.Person, error) {
 	var people []models.Person
@@ -195,6 +216,7 @@ func (r *PersonRepository) FindImagesByPersonIDs(personIDs []uint) ([]PersonImag
 	var imagePaths []string
 	err := r.DB.Model(&models.Face{}).
 		Where("person_id IN ?", personIDs).
+		Where("image_path IN ("+visibleImagePathsSQL+")").
 		Order("image_path ASC").
 		Distinct().
 		Pluck("image_path", &imagePaths).Error

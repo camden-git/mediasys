@@ -43,6 +43,7 @@ type AlbumRepositoryInterface interface {
 type PersonRepositoryInterface interface {
 	Create(person *models.Person) error
 	GetByID(id uint) (*models.Person, error)
+	GetPublicByID(id uint) (*models.Person, error)
 	ListAll() ([]models.Person, error)
 	Update(person *models.Person) error
 	UpdateKeyPhoto(personID uint, faceID *uint) error
