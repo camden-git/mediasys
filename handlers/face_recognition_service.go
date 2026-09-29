@@ -220,35 +220,6 @@ func (s *FaceRecognitionService) GetUntaggedFacesWithSuggestions(limit int, filt
 		untaggedEmbeddings = filtered
 	}
 
-	// Query 2: ALL embeddings with Face + Person preloaded (GORM issues batched preload queries)
-	allEmbeddings, err := s.embeddingRepo.GetAllEmbeddings()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get all embeddings: %w", err)
-	}
-
-	// Build in-memory index: faceID -> vector + person info — O(M) once
-	type embeddingInfo struct {
-		vector     []float32
-		personID   *uint
-		personName *string
-	}
-	embeddingIndex := make(map[uint]embeddingInfo, len(allEmbeddings))
-	for _, e := range allEmbeddings {
-		vec := e.GetEmbedding()
-		if vec == nil {
-			continue
-		}
-		info := embeddingInfo{vector: vec}
-		if e.Face != nil {
-			info.personID = e.Face.PersonID
-			if e.Face.Person != nil {
-				name := e.Face.Person.PrimaryName
-				info.personName = &name
-			}
-		}
-		embeddingIndex[e.FaceID] = info
-	}
-
 	var results []map[string]interface{}
 	for i, embedding := range untaggedEmbeddings {
 		if i >= limit {
@@ -259,25 +230,43 @@ func (s *FaceRecognitionService) GetUntaggedFacesWithSuggestions(limit int, filt
 			continue
 		}
 
-		// Find similar faces entirely in memory — no DB calls
+		// Find similar faces via pgvector's HNSW index instead of scanning every
+		// embedding in memory. Over-fetch a little since the target face itself
+		// may be included in the results.
+		similarEmbeddings, err := s.embeddingRepo.FindSimilarFaces(targetVec, s.similarityThreshold, 21)
+		if err != nil {
+			return nil, fmt.Errorf("failed to find similar faces for face %d: %w", embedding.FaceID, err)
+		}
+
 		type simResult struct {
 			personID   *uint
 			personName *string
 			similarity float32
 		}
 		var similar []simResult
-		for otherFaceID, info := range embeddingIndex {
-			if otherFaceID == embedding.FaceID {
+		for _, other := range similarEmbeddings {
+			if other.FaceID == embedding.FaceID || other.Face == nil {
 				continue
 			}
-			sim := s.CalculateSimilarity(targetVec, info.vector)
-			if sim >= s.similarityThreshold {
-				similar = append(similar, simResult{
-					personID:   info.personID,
-					personName: info.personName,
-					similarity: sim,
-				})
+			otherVec := other.GetEmbedding()
+			if otherVec == nil {
+				continue
 			}
+			sim := s.CalculateSimilarity(targetVec, otherVec)
+			var personID *uint
+			var personName *string
+			if other.Face.PersonID != nil {
+				personID = other.Face.PersonID
+				if other.Face.Person != nil {
+					name := other.Face.Person.PrimaryName
+					personName = &name
+				}
+			}
+			similar = append(similar, simResult{
+				personID:   personID,
+				personName: personName,
+				similarity: sim,
+			})
 		}
 
 		// Vote for suggested person by count, breaking ties by similarity

@@ -3,11 +3,10 @@ package repository
 import (
 	"errors"
 	"fmt"
-	"math"
-	"sort"
 	"time"
 
 	"github.com/camden-git/mediasysbackend/models"
+	"github.com/pgvector/pgvector-go"
 	"gorm.io/gorm"
 )
 
@@ -68,11 +67,11 @@ func (r *FaceEmbeddingRepository) GetByID(id uint) (*models.FaceEmbedding, error
 // Update updates an existing face embedding
 func (r *FaceEmbeddingRepository) Update(embedding *models.FaceEmbedding) error {
 	embedding.UpdatedAt = time.Now().Unix()
-	result := r.DB.Model(&models.FaceEmbedding{ID: embedding.ID}).Updates(models.FaceEmbedding{
-		EmbeddingData:  embedding.EmbeddingData,
-		EmbeddingModel: embedding.EmbeddingModel,
-		QualityScore:   embedding.QualityScore,
-		UpdatedAt:      embedding.UpdatedAt,
+	result := r.DB.Model(&models.FaceEmbedding{ID: embedding.ID}).Updates(map[string]interface{}{
+		"embedding":       embedding.Embedding,
+		"embedding_model": embedding.EmbeddingModel,
+		"quality_score":   embedding.QualityScore,
+		"updated_at":      embedding.UpdatedAt,
 	})
 
 	if result.Error != nil {
@@ -114,16 +113,6 @@ func (r *FaceEmbeddingRepository) GetEmbeddingsByPersonID(personID uint) ([]mode
 		Find(&embeddings).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to get embeddings for person ID %d: %w", personID, err)
-	}
-	return embeddings, nil
-}
-
-// GetAllEmbeddings retrieves all face embeddings with Face and Person preloaded
-func (r *FaceEmbeddingRepository) GetAllEmbeddings() ([]models.FaceEmbedding, error) {
-	var embeddings []models.FaceEmbedding
-	err := r.DB.Preload("Face").Preload("Face.Person").Find(&embeddings).Error
-	if err != nil {
-		return nil, fmt.Errorf("failed to get all embeddings: %w", err)
 	}
 	return embeddings, nil
 }
@@ -187,74 +176,30 @@ func (r *FaceEmbeddingRepository) GetEmbeddingsByImagePath(imagePath string) ([]
 	return embeddings, nil
 }
 
-// FindSimilarFaces finds faces with similar embeddings to a given embedding
+// FindSimilarFaces finds faces with similar embeddings to a given embedding, ordered by
+// cosine similarity (highest first), using pgvector's HNSW index (embedding <=> $1) rather
+// than pulling every embedding into memory. threshold is a minimum cosine similarity
+// (0.0 disables filtering); it is translated to a max cosine *distance* of (1 - threshold)
+// for the SQL WHERE clause, since pgvector's <=> operator returns cosine distance.
 func (r *FaceEmbeddingRepository) FindSimilarFaces(targetEmbedding []float32, threshold float32, limit int) ([]models.FaceEmbedding, error) {
+	target := pgvector.NewVector(targetEmbedding)
+
 	var embeddings []models.FaceEmbedding
+	q := r.DB.Preload("Face").
+		Preload("Face.Person").
+		Where("embedding IS NOT NULL")
 
-	// Get all embeddings to compare against
-	err := r.DB.Preload("Face").Find(&embeddings).Error
+	if threshold > 0 {
+		q = q.Where("(embedding <=> ?) <= ?", target, 1-threshold)
+	}
+
+	// gorm's Order() has no (query, args) overload, so the vector is rendered inline; it is
+	// safe to embed since pgvector.Vector.String() only emits floats, e.g. "[0.1,0.2,...]".
+	orderExpr := fmt.Sprintf("embedding <=> '%s'", target.String())
+	err := q.Order(orderExpr).Limit(limit).Find(&embeddings).Error
 	if err != nil {
-		return nil, fmt.Errorf("failed to get embeddings for similarity search: %w", err)
+		return nil, fmt.Errorf("failed to find similar faces: %w", err)
 	}
 
-	// Calculate similarities and create pairs for sorting
-	type embeddingWithSimilarity struct {
-		embedding  models.FaceEmbedding
-		similarity float32
-	}
-
-	var embeddingPairs []embeddingWithSimilarity
-	for _, embedding := range embeddings {
-		embeddingVector := embedding.GetEmbedding()
-		if embeddingVector != nil {
-			similarity := calculateCosineSimilarity(targetEmbedding, embeddingVector)
-			embeddingPairs = append(embeddingPairs, embeddingWithSimilarity{
-				embedding:  embedding,
-				similarity: similarity,
-			})
-		}
-	}
-
-	// Sort by similarity (highest first)
-	sort.Slice(embeddingPairs, func(i, j int) bool {
-		return embeddingPairs[i].similarity > embeddingPairs[j].similarity
-	})
-
-	// Return top results (let the service handle threshold filtering)
-	var result []models.FaceEmbedding
-	for i, pair := range embeddingPairs {
-		if i >= limit {
-			break
-		}
-		result = append(result, pair.embedding)
-	}
-
-	return result, nil
-}
-
-// calculateCosineSimilarity calculates cosine similarity between two embedding vectors
-func calculateCosineSimilarity(embedding1, embedding2 []float32) float32 {
-	if len(embedding1) != len(embedding2) || len(embedding1) == 0 {
-		return 0.0
-	}
-
-	var dotProduct float32
-	var norm1 float32
-	var norm2 float32
-
-	for i := 0; i < len(embedding1); i++ {
-		dotProduct += embedding1[i] * embedding2[i]
-		norm1 += embedding1[i] * embedding1[i]
-		norm2 += embedding2[i] * embedding2[i]
-	}
-
-	if norm1 == 0 || norm2 == 0 {
-		return 0.0
-	}
-
-	// Calculate the square roots of the squared norms to get the actual L2 norms
-	norm1Sqrt := float32(math.Sqrt(float64(norm1)))
-	norm2Sqrt := float32(math.Sqrt(float64(norm2)))
-
-	return dotProduct / (norm1Sqrt * norm2Sqrt)
+	return embeddings, nil
 }

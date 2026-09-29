@@ -57,6 +57,10 @@ func InitGormDB(dsn string, logLevel logger.LogLevel) (*gorm.DB, error) {
 
 // AutoMigrateModels creates or updates the schema for all models.
 func AutoMigrateModels(db *gorm.DB) error {
+	if err := db.Exec("CREATE EXTENSION IF NOT EXISTS vector").Error; err != nil {
+		return fmt.Errorf("failed to create pgvector extension: %w", err)
+	}
+
 	err := db.AutoMigrate(
 		&models.AlbumGroup{},
 		&models.Person{},
@@ -81,6 +85,16 @@ func AutoMigrateModels(db *gorm.DB) error {
 	if err != nil {
 		return fmt.Errorf("GORM AutoMigrate failed: %w", err)
 	}
+
+	// HNSW index for approximate nearest-neighbour cosine similarity search over face
+	// embeddings. Faces are compared by cosine similarity (see media.FaceRecognitionModel
+	// .CalculateSimilarity and handlers.FaceRecognitionService.CalculateSimilarity), so use
+	// vector_cosine_ops to match that semantics.
+	if err := db.Exec("CREATE INDEX IF NOT EXISTS idx_face_embeddings_embedding_hnsw_cosine " +
+		"ON face_embeddings USING hnsw (embedding vector_cosine_ops)").Error; err != nil {
+		return fmt.Errorf("failed to create face embedding HNSW index: %w", err)
+	}
+
 	log.Println("GORM AutoMigrate completed successfully.")
 	return nil
 }

@@ -12,6 +12,7 @@ require (
 	github.com/gorilla/websocket v1.5.1
 	github.com/joho/godotenv v1.5.1
 	github.com/minio/minio-go/v7 v7.3.0
+	github.com/pgvector/pgvector-go v0.3.0
 	github.com/rs/cors v1.11.1
 	github.com/rwcarlsen/goexif v0.0.0-20190401172101-9e8deecbddbd
 	gocv.io/x/gocv v0.41.0

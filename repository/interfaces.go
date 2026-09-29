@@ -51,7 +51,7 @@ type PersonRepositoryInterface interface {
 	ListAliasesByPersonID(personID uint) ([]models.Alias, error)
 	DeleteAlias(aliasID uint) error
 	FindPersonIDsByNameOrAlias(query string) ([]uint, error)
-	FindImagesByPersonIDs(personIDs []uint) ([]string, error)
+	FindImagesByPersonIDs(personIDs []uint) ([]PersonImageResult, error)
 	SearchByNameOrAlias(query string, limit int) ([]models.Person, error)
 }
 
@@ -106,7 +106,6 @@ type FaceEmbeddingRepositoryInterface interface {
 	Delete(id uint) error
 	DeleteByFaceID(faceID uint) error
 	GetEmbeddingsByPersonID(personID uint) ([]models.FaceEmbedding, error)
-	GetAllEmbeddings() ([]models.FaceEmbedding, error)
 	GetUntaggedEmbeddings() ([]models.FaceEmbedding, error)
 	GetUntaggedEmbeddingsFiltered(filter UntaggedFaceFilter) ([]models.FaceEmbedding, error)
 	GetEmbeddingsByImagePath(imagePath string) ([]models.FaceEmbedding, error)
