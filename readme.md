@@ -60,11 +60,20 @@ struct tags in `models/` are kept as documentation of the Go <-> SQL mapping, bu
 longer drive the schema — update both the migration and the model tags together
 when a model changes.
 
+Databases created before goose was introduced (schema built by GORM AutoMigrate, no
+`goose_db_version` table) are upgraded automatically: if the version table is absent
+but the app schema already exists, startup records migration 1 as applied and then
+runs the rest, where `00002_reconcile_legacy_schema.sql` idempotently fixes up
+differences from the old schema (table-wide unique constraints replaced by partial
+indexes, missing indexes, extension and collation).
+
 `database/migrate_schema_test.go` guards against drift between the two: when
 `TEST_DATABASE_URL` is set to an admin connection on a throwaway Postgres server, it
 applies the migrations to one scratch database, runs the old GORM AutoMigrate
-directly off the models package on another, and fails if the resulting tables,
-columns or indexes differ.
+directly off the models package on another, and fails if the tables or columns
+differ, or if an index declared by the models is missing. Foreign keys and extra
+indexes that exist only in SQL are allowed. `migrate_upgrade_test.go` covers the
+AutoMigrate-era upgrade path and `migrate_fk_test.go` the foreign key delete behavior.
 
 ### Face models
 
