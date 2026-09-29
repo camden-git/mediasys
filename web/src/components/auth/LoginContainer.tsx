@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Turnstile } from '@marsidev/react-turnstile';
+import React, { useEffect, useRef, useState } from 'react';
+import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useNavigate } from 'react-router-dom';
 import { Heading } from '../elements/Heading.tsx';
@@ -16,6 +16,7 @@ import * as Yup from 'yup';
 export const LoginContainer: React.FC = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+    const turnstileRef = useRef<TurnstileInstance>(null);
     const siteKey = (import.meta as any).env.VITE_TURNSTILE_SITE_KEY as string | undefined;
 
     const login = useAuthStore((s) => s.login);
@@ -47,6 +48,9 @@ export const LoginContainer: React.FC = () => {
                     await login({ ...values, turnstile_token: siteKey ? (turnstileToken ?? undefined) : undefined });
                 } catch (err: any) {
                     clearAndAddHttpError({ error: err, key: 'auth:login' });
+                    // Turnstile tokens are single-use; get a fresh one for the retry
+                    setTurnstileToken(null);
+                    turnstileRef.current?.reset();
                 } finally {
                     setIsLoading(false);
                     setSubmitting(false);
@@ -74,6 +78,7 @@ export const LoginContainer: React.FC = () => {
 
                     {siteKey ? (
                         <Turnstile
+                            ref={turnstileRef}
                             siteKey={siteKey}
                             className='w-full'
                             options={{ theme: 'light', size: 'flexible' }}
