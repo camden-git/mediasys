@@ -4,7 +4,6 @@ import (
 	"errors"
 	"log"
 	"net/http"
-	"path/filepath"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -51,9 +50,7 @@ func (ah *AlbumHandler) ShareAlbumHTML(w http.ResponseWriter, r *http.Request) {
 
 	var imageURL string
 	if banners, err := ah.AlbumRepo.GetBanners(album.ID); err == nil && len(banners) > 0 {
-		bannersSubDir := filepath.Base(ah.Cfg.BannersPath)
-		filename := filepath.Base(banners[0].ImagePath)
-		imageURL = absolute("/api/" + bannersSubDir + "/" + filename)
+		imageURL = absolute("/api/" + banners[0].ImagePath)
 	}
 
 	title := album.Name

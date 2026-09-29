@@ -5,8 +5,6 @@ import (
 	"errors"
 	"log"
 	"net/http"
-	"os"
-	"path/filepath"
 
 	"github.com/camden-git/mediasysbackend/models"
 	"github.com/go-chi/chi/v5"
@@ -68,7 +66,7 @@ func (h *AdminAlbumHandler) AddAlbumBanner(w http.ResponseWriter, r *http.Reques
 		SortOrder: 0,
 	}
 	if err := h.AlbumRepo.AddBanner(banner); err != nil {
-		os.Remove(filepath.Join(h.Cfg.MediaStoragePath, filepath.FromSlash(savedRelPath)))
+		_ = h.Store.Delete(r.Context(), savedRelPath)
 		log.Printf("Error saving banner for album %d: %v", album.ID, err)
 		WriteAPIError(w, http.StatusInternalServerError, "BannerSaveError", "Failed to save banner")
 		return
@@ -118,7 +116,7 @@ func (h *AdminAlbumHandler) DeleteAlbumBanner(w http.ResponseWriter, r *http.Req
 	}
 
 	if bannerPath != "" {
-		os.Remove(filepath.Join(h.Cfg.MediaStoragePath, filepath.FromSlash(bannerPath)))
+		_ = h.Store.Delete(r.Context(), bannerPath)
 	}
 
 	w.WriteHeader(http.StatusNoContent)

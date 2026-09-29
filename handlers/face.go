@@ -6,8 +6,6 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -66,19 +64,14 @@ func (fh *FaceHandler) AddFace(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	cleanRelativePath := filepath.Clean(strings.TrimLeft(req.ImagePath, "/"))
-	if filepath.IsAbs(cleanRelativePath) || strings.HasPrefix(cleanRelativePath, "..") {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "image_path must be relative and cannot use '..'"})
-		return
-	}
-	imagePathForDB := filepath.ToSlash(cleanRelativePath)
-	fullImagePath := filepath.Join(fh.Cfg.RootDirectory, imagePathForDB)
-	if _, err := os.Stat(fullImagePath); os.IsNotExist(err) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "image_path does not exist: " + imagePathForDB})
-		return
-	} else if err != nil {
-		log.Printf("Error stating image path %s during face add: %v", fullImagePath, err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Could not verify image_path"})
+	imagePathForDB := strings.TrimLeft(req.ImagePath, "/")
+	if _, err := fh.ImageRepo.GetByPath(imagePathForDB); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "image_path does not exist: " + imagePathForDB})
+		} else {
+			log.Printf("Error checking image %s during face add: %v", imagePathForDB, err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Could not verify image_path"})
+		}
 		return
 	}
 
@@ -117,12 +110,7 @@ func (fh *FaceHandler) ListFacesByImage(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid URL encoding for path parameter"})
 		return
 	}
-	cleanRelativePath := filepath.Clean(strings.TrimLeft(imagePath, "/"))
-	if filepath.IsAbs(cleanRelativePath) || strings.HasPrefix(cleanRelativePath, "..") {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "image_path must be relative and cannot use '..'"})
-		return
-	}
-	imagePathForDB := filepath.ToSlash(cleanRelativePath)
+	imagePathForDB := strings.TrimLeft(imagePath, "/")
 	faces, err := fh.FaceRepo.ListByImagePath(imagePathForDB)
 	if err != nil {
 		log.Printf("Error listing faces for image %s: %v", imagePathForDB, err)

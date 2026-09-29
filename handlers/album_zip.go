@@ -3,14 +3,8 @@ package handlers
 import (
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
-	"os"
-	"path/filepath"
-	"strconv"
-	"strings"
-	"time"
 
 	"github.com/camden-git/mediasysbackend/database"
 	"github.com/camden-git/mediasysbackend/workers"
@@ -45,16 +39,11 @@ func (ah *AlbumHandler) RequestAlbumZipGeneration(w http.ResponseWriter, r *http
 	}
 
 	zipJob := workers.ImageJob{
-		AlbumID:     int64(album.ID),
-		TaskType:    workers.TaskAlbumZip,
-		ModTimeUnix: time.Now().Unix(),
+		AlbumID:  album.ID,
+		TaskType: workers.TaskAlbumZip,
 	}
-	queued := ah.ThumbGen.QueueJob(zipJob)
-	if !queued {
-		log.Printf("Failed to queue album ZIP job for Album ID %d (queue full or already pending).", album.ID)
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Failed to queue ZIP generation: processing queue is full."})
-		return
-	}
+	// if the queue is full the dispatcher picks the pending archive up shortly
+	ah.ThumbGen.QueueJob(zipJob)
 
 	log.Printf("Album ZIP generation requested and queued for Album ID: %d", album.ID)
 	writeJSON(w, http.StatusAccepted, map[string]string{"message": "Album ZIP generation request accepted and queued."})
@@ -93,43 +82,6 @@ func (ah *AlbumHandler) serveAlbumZip(w http.ResponseWriter, r *http.Request, id
 		return
 	}
 
-	fullZipPath := filepath.Join(ah.Cfg.MediaStoragePath, *album.ZipPath)
-	fullZipPath = filepath.Clean(fullZipPath)
-
-	if !strings.HasPrefix(fullZipPath, ah.Cfg.MediaStoragePath) {
-		log.Printf("SECURITY: Attempt to download ZIP outside media storage: %s (resolved from %s)", fullZipPath, *album.ZipPath)
-		http.Error(w, "Forbidden", http.StatusForbidden)
-		return
-	}
-
-	file, err := os.Open(fullZipPath)
-	if os.IsNotExist(err) {
-		log.Printf("ZIP file %s (from DB path %s) not found on disk. Inconsistency.", fullZipPath, *album.ZipPath)
-		http.Error(w, "ZIP archive file not found on server.", http.StatusInternalServerError)
-		return
-	} else if err != nil {
-		log.Printf("Error opening ZIP file %s: %v", fullZipPath, err)
-		http.Error(w, "Failed to access ZIP archive.", http.StatusInternalServerError)
-		return
-	}
-	defer file.Close()
-
-	fileInfo, err := file.Stat()
-	if err != nil {
-		log.Printf("Error stating ZIP file %s: %v", fullZipPath, err)
-		http.Error(w, "Failed to get ZIP archive info.", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s_archive.zip\"", album.Slug))
-	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Length", strconv.FormatInt(fileInfo.Size(), 10))
-
-	if modTime := fileInfo.ModTime(); !modTime.IsZero() {
-		w.Header().Set("Last-Modified", modTime.UTC().Format(http.TimeFormat))
-	}
-
-	if _, copyErr := io.Copy(w, file); copyErr != nil {
-		log.Printf("Error streaming ZIP file %s to client: %v", fullZipPath, copyErr)
-	}
+	serveObject(w, r, ah.Store, *album.ZipPath, "private, max-age=0, must-revalidate",
+		contentDisposition("attachment", album.Slug+"_archive.zip"))
 }

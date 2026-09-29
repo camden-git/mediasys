@@ -3,10 +3,17 @@ package models
 import "gorm.io/gorm"
 
 // Image represents an image record in the database using GORM.
-// It corresponds to the 'images' table.
+// It corresponds to the 'images' table. The original file lives in object
+// storage under ObjectKey; OriginalPath is the logical "<album folder>/<file>"
+// identifier used throughout the API.
 type Image struct {
-	OriginalPath string `gorm:"primaryKey" json:"original_path"` // path relative to ROOT_DIRECTORY
+	OriginalPath string `gorm:"primaryKey" json:"original_path"`
+	AlbumID      uint   `gorm:"not null;index" json:"album_id"`
+	ObjectKey    string `gorm:"not null;uniqueIndex" json:"-"`
+	Size         int64  `gorm:"not null;default:0" json:"size"`
+	ContentType  string `gorm:"not null;default:''" json:"content_type"`
 	LastModified int64  `gorm:"not null" json:"last_modified"`
+	CreatedAt    int64  `gorm:"not null" json:"created_at"`
 
 	UploadedByUserID *uint `gorm:"index" json:"uploaded_by_user_id,omitempty"`
 
@@ -23,25 +30,23 @@ type Image struct {
 	ISO          *int     `gorm:"" json:"iso,omitempty"`           // Nullable
 	Rating       *int     `gorm:"" json:"rating,omitempty"`        // Nullable, Lightroom XMP star rating (1-5)
 
-	ThumbnailPath *string `gorm:"" json:"thumbnail_path,omitempty"` // Nullable
+	ThumbnailPath *string `gorm:"" json:"thumbnail_path,omitempty"` // object key of the thumbnail
+	PreviewPath   *string `gorm:"" json:"preview_path,omitempty"`   // object key of the preview
 
-	MetadataStatus  string `gorm:"not null;default:pending" json:"metadata_status"`
-	ThumbnailStatus string `gorm:"not null;default:pending" json:"thumbnail_status"`
-	DetectionStatus string `gorm:"not null;default:pending" json:"detection_status"`
+	MetadataStatus  string `gorm:"not null;default:'pending'" json:"metadata_status"`
+	ThumbnailStatus string `gorm:"not null;default:'pending'" json:"thumbnail_status"`
+	PreviewStatus   string `gorm:"not null;default:'pending'" json:"preview_status"`
+	DetectionStatus string `gorm:"not null;default:'pending'" json:"detection_status"`
 
-	MetadataProcessedAt  *int64 `gorm:"" json:"metadata_processed_at,omitempty"`  // Nullable, Unix timestamp
-	ThumbnailProcessedAt *int64 `gorm:"" json:"thumbnail_processed_at,omitempty"` // Nullable, Unix timestamp
-	DetectionProcessedAt *int64 `gorm:"" json:"detection_processed_at,omitempty"` // Nullable, Unix timestamp
+	MetadataProcessedAt  *int64 `gorm:"" json:"metadata_processed_at,omitempty"`
+	ThumbnailProcessedAt *int64 `gorm:"" json:"thumbnail_processed_at,omitempty"`
+	PreviewProcessedAt   *int64 `gorm:"" json:"preview_processed_at,omitempty"`
+	DetectionProcessedAt *int64 `gorm:"" json:"detection_processed_at,omitempty"`
 
-	MetadataError  *string `gorm:"" json:"metadata_error,omitempty"`  // Nullable
-	ThumbnailError *string `gorm:"" json:"thumbnail_error,omitempty"` // Nullable
-	DetectionError *string `gorm:"" json:"detection_error,omitempty"` // Nullable
-
-	PreviewPath            *string `gorm:"" json:"preview_path,omitempty"`
-	PreviewStatus          string  `gorm:"not null;default:pending" json:"preview_status"`
-	PreviewProcessedAt     *int64  `gorm:"" json:"preview_processed_at,omitempty"`
-	PreviewError           *string `gorm:"" json:"preview_error,omitempty"`
-	PreviewLastRequestedAt *int64  `gorm:"" json:"preview_last_requested_at,omitempty"`
+	MetadataError  *string `gorm:"" json:"metadata_error,omitempty"`
+	ThumbnailError *string `gorm:"" json:"thumbnail_error,omitempty"`
+	PreviewError   *string `gorm:"" json:"preview_error,omitempty"`
+	DetectionError *string `gorm:"" json:"detection_error,omitempty"`
 
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"` // For soft deletes
 

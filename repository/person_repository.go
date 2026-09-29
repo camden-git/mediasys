@@ -151,13 +151,13 @@ func (r *PersonRepository) FindPersonIDsByNameOrAlias(query string) ([]uint, err
 	var ids []uint
 	likeQuery := "%" + query + "%"
 
-	err := r.DB.Model(&models.Person{}).Where("primary_name LIKE ?", likeQuery).Pluck("id", &ids).Error
+	err := r.DB.Model(&models.Person{}).Where("primary_name ILIKE ?", likeQuery).Pluck("id", &ids).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fmt.Errorf("error searching people by primary name for '%s': %w", query, err)
 	}
 
 	var aliasPersonIDs []uint
-	err = r.DB.Model(&models.Alias{}).Where("name LIKE ?", likeQuery).Pluck("person_id", &aliasPersonIDs).Error
+	err = r.DB.Model(&models.Alias{}).Where("name ILIKE ?", likeQuery).Pluck("person_id", &aliasPersonIDs).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fmt.Errorf("error searching aliases by name for '%s': %w", query, err)
 	}
@@ -202,7 +202,7 @@ func (r *PersonRepository) SearchByNameOrAlias(query string, limit int) ([]model
 	likeQuery := "%" + query + "%"
 	err := r.DB.Preload("Aliases").
 		Joins("LEFT JOIN aliases ON aliases.person_id = people.id").
-		Where("people.primary_name LIKE ? OR aliases.name LIKE ?", likeQuery, likeQuery).
+		Where("people.primary_name ILIKE ? OR aliases.name ILIKE ?", likeQuery, likeQuery).
 		Group("people.id").
 		Order("people.primary_name ASC").
 		Limit(limit).

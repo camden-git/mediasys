@@ -15,9 +15,9 @@ type User struct {
 	Username          string   `json:"username" gorm:"uniqueIndex;not null"`
 	FirstName         string   `json:"first_name"`
 	LastName          string   `json:"last_name"`
-	PasswordHash      string   `json:"-" gorm:"not null"`                            // "-" means don't include in JSON responses
-	GlobalPermissions []string `json:"global_permissions" gorm:"serializer:json"`    // Use JSON serializer
-	Roles             []*Role  `json:"roles,omitempty" gorm:"many2many:user_roles;"` // Roles assigned to the user
+	PasswordHash      string   `json:"-" gorm:"not null"`                                   // "-" means don't include in JSON responses
+	GlobalPermissions []string `json:"global_permissions" gorm:"serializer:json;type:text"` // Use JSON serializer
+	Roles             []*Role  `json:"roles,omitempty" gorm:"many2many:user_roles;"`        // Roles assigned to the user
 	// AlbumPermissions stores permissions specific to certain albums.
 	// Key: AlbumID (as string, since GORM might handle complex map keys better as JSON or serialized string)
 	// Value: List of permission strings for that album
@@ -53,7 +53,7 @@ type UserAlbumPermission struct {
 	User    User `json:"-" gorm:"foreignKey:UserID"`
 	AlbumID uint `json:"album_id" gorm:"index:idx_user_album,unique"`
 	// Album      Album    `json:"-" gorm:"foreignKey:AlbumID"`
-	Permissions []string  `json:"permissions" gorm:"serializer:json"`
+	Permissions []string  `json:"permissions" gorm:"serializer:json;type:text"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }

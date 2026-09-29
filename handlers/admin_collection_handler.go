@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 
@@ -59,17 +58,20 @@ type AdminCollectionHandler struct {
 	CollectionRepo repository.CollectionRepositoryInterface
 	Cfg            config.Config
 	MediaProcessor *media.Processor
+	Store          *media.Store
 }
 
 func NewAdminCollectionHandler(
 	collectionRepo repository.CollectionRepositoryInterface,
 	cfg config.Config,
 	mediaProcessor *media.Processor,
+	store *media.Store,
 ) *AdminCollectionHandler {
 	return &AdminCollectionHandler{
 		CollectionRepo: collectionRepo,
 		Cfg:            cfg,
 		MediaProcessor: mediaProcessor,
+		Store:          store,
 	}
 }
 
@@ -314,7 +316,7 @@ func (h *AdminCollectionHandler) AddCollectionBanner(w http.ResponseWriter, r *h
 		SortOrder:    0,
 	}
 	if err := h.CollectionRepo.AddBanner(banner); err != nil {
-		os.Remove(savedRelPath)
+		_ = h.Store.Delete(r.Context(), savedRelPath)
 		log.Printf("Error saving banner for collection %d: %v", id, err)
 		WriteAPIError(w, http.StatusInternalServerError, "BannerSaveError", "Failed to save banner")
 		return
@@ -363,7 +365,7 @@ func (h *AdminCollectionHandler) DeleteCollectionBanner(w http.ResponseWriter, r
 	}
 
 	if bannerPath != "" {
-		os.Remove(bannerPath)
+		_ = h.Store.Delete(r.Context(), bannerPath)
 	}
 
 	w.WriteHeader(http.StatusNoContent)

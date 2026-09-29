@@ -4,15 +4,8 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 	"strconv"
-)
-
-const (
-	DefaultThumbnailsSubDir = "thumbnails"
-	DefaultBannersSubDir    = "album_banners"
-	DefaultArchivesSubDir   = "album_archives"
-	DefaultPreviewsSubDir   = "previews"
+	"strings"
 )
 
 const (
@@ -24,18 +17,24 @@ const (
 )
 
 type Config struct {
-	// source directory (where original user files are scanned)
-	RootDirectory string
+	// postgres connection string, e.g. postgres://user:pass@host:5432/db?sslmode=disable
+	DatabaseURL string
+	// log every SQL statement when true
+	DatabaseDebug bool
 
-	// database path
-	DatabasePath string
+	// S3-compatible object storage
+	S3Endpoint  string
+	S3AccessKey string
+	S3SecretKey string
+	S3Bucket    string
+	S3Region    string
+	S3UseSSL    bool
 
-	// media storage configuration
-	MediaStoragePath string // primary root for generated assets (thumbs, banners, zips)
-	ThumbnailsPath   string // full-calculated path for thumbnails
-	BannersPath      string // full-calculated path for banners
-	ArchivesPath     string // full-calculated path for archives
-	PreviewsPath     string // full-calculated path for previews
+	// maximum size in bytes of a single uploaded original
+	MaxUploadSize int64
+
+	// origins allowed to make credentialed requests to auth/admin routes
+	CORSAllowedOrigins []string
 
 	// thumbnail generation settings
 	ThumbnailMaxSize int
@@ -114,32 +113,25 @@ func getEnvBoolOrDefault(envVar string, defaultVal bool) bool {
 	return val
 }
 
+func splitList(v string) []string {
+	var out []string
+	for _, p := range strings.Split(v, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 func LoadConfig() (Config, error) {
-	root := getEnvOrDefault("ROOT_DIRECTORY", ".")
-	absRoot, err := filepath.Abs(root)
-	if err != nil {
-		return Config{}, fmt.Errorf("failed to get absolute path for root directory '%s': %w", root, err)
+	dbURL := getEnvOrDefault("DATABASE_URL", "postgres://mediasys:mediasys@localhost:5432/mediasys?sslmode=disable")
+
+	s3Endpoint := getEnvOrDefault("S3_ENDPOINT", "localhost:9000")
+	s3AccessKey := getEnvOrDefault("S3_ACCESS_KEY", "")
+	s3SecretKey := getEnvOrDefault("S3_SECRET_KEY", "")
+	if s3AccessKey == "" || s3SecretKey == "" {
+		return Config{}, fmt.Errorf("S3_ACCESS_KEY and S3_SECRET_KEY must be set")
 	}
-
-	dbPath := getEnvOrDefault("DATABASE_PATH", "images.db")
-
-	mediaStorage := getEnvOrDefault("MEDIA_STORAGE_PATH", filepath.Join(".", "media_storage"))
-	absMediaStorage, err := filepath.Abs(mediaStorage)
-	if err != nil {
-		return Config{}, fmt.Errorf("failed to get absolute path for media storage '%s': %w", mediaStorage, err)
-	}
-
-	thumbSubDir := getEnvOrDefault("THUMBNAILS_SUBDIR", DefaultThumbnailsSubDir)
-	absThumbnailsPath := filepath.Join(absMediaStorage, thumbSubDir)
-
-	bannerSubDir := getEnvOrDefault("BANNERS_SUBDIR", DefaultBannersSubDir)
-	absBannersPath := filepath.Join(absMediaStorage, bannerSubDir)
-
-	archiveSubDir := getEnvOrDefault("ARCHIVES_SUBDIR", DefaultArchivesSubDir)
-	absArchivesPath := filepath.Join(absMediaStorage, archiveSubDir)
-
-	previewSubDir := getEnvOrDefault("PREVIEWS_SUBDIR", DefaultPreviewsSubDir)
-	absPreviewsPath := filepath.Join(absMediaStorage, previewSubDir)
 
 	thumbMaxSize := getEnvIntOrDefault("THUMBNAIL_MAX_SIZE", defaultThumbnailMaxSize)
 
@@ -168,13 +160,16 @@ func LoadConfig() (Config, error) {
 	turnstileSecretKey := getEnvOrDefault("TURNSTILE_SECRET_KEY", "")
 
 	cfg := Config{
-		RootDirectory:             absRoot,
-		DatabasePath:              dbPath,
-		MediaStoragePath:          absMediaStorage,
-		ThumbnailsPath:            absThumbnailsPath,
-		BannersPath:               absBannersPath,
-		ArchivesPath:              absArchivesPath,
-		PreviewsPath:              absPreviewsPath,
+		DatabaseURL:               dbURL,
+		DatabaseDebug:             getEnvBoolOrDefault("DATABASE_DEBUG", false),
+		S3Endpoint:                s3Endpoint,
+		S3AccessKey:               s3AccessKey,
+		S3SecretKey:               s3SecretKey,
+		S3Bucket:                  getEnvOrDefault("S3_BUCKET", "mediasys"),
+		S3Region:                  getEnvOrDefault("S3_REGION", "us-east-1"),
+		S3UseSSL:                  getEnvBoolOrDefault("S3_USE_SSL", false),
+		MaxUploadSize:             int64(getEnvIntOrDefault("MAX_UPLOAD_SIZE_MB", 200)) << 20,
+		CORSAllowedOrigins:        splitList(getEnvOrDefault("CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173,http://127.0.0.1:4173")),
 		ThumbnailMaxSize:          thumbMaxSize,
 		ThumbnailQueueSize:        queueSize,
 		NumThumbnailWorkers:       numWorkers,

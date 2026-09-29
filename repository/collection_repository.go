@@ -2,7 +2,6 @@ package repository
 
 import (
 	"fmt"
-	"path"
 	"time"
 
 	"github.com/camden-git/mediasysbackend/models"
@@ -118,31 +117,22 @@ func (r *GormCollectionRepository) SetInheritBanners(collectionID uint, inherit 
 	}).Error
 }
 
-// GetInheritedBannerPaths returns banner image paths from all albums whose folder_path
-// matches the directories of images in this collection.
+// GetInheritedBannerPaths returns banner image paths from all albums that
+// contain images in this collection.
 func (r *GormCollectionRepository) GetInheritedBannerPaths(collectionID uint) ([]string, error) {
 	paths, err := r.GetImagePathsMatchingFilters(collectionID)
 	if err != nil {
 		return nil, err
 	}
-
-	folderSet := make(map[string]struct{})
-	for _, p := range paths {
-		folderSet[path.Dir(p)] = struct{}{}
-	}
-	if len(folderSet) == 0 {
+	if len(paths) == 0 {
 		return []string{}, nil
-	}
-
-	folderPaths := make([]string, 0, len(folderSet))
-	for f := range folderSet {
-		folderPaths = append(folderPaths, f)
 	}
 
 	var result []string
 	err = r.db.Table("album_banners").
 		Joins("JOIN albums ON album_banners.album_id = albums.id").
-		Where("albums.folder_path IN ? AND albums.deleted_at IS NULL", folderPaths).
+		Where("albums.deleted_at IS NULL AND albums.id IN (?)",
+			r.db.Model(&models.Image{}).Distinct("album_id").Where("original_path IN ?", paths)).
 		Order("albums.id, album_banners.sort_order").
 		Pluck("album_banners.image_path", &result).Error
 	if err != nil {

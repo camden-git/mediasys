@@ -4,11 +4,9 @@ import (
 	"errors"
 	"log"
 	"net/http"
-	"path/filepath"
 	"strconv"
 
 	"github.com/camden-git/mediasysbackend/config"
-	"github.com/camden-git/mediasysbackend/database"
 	"github.com/camden-git/mediasysbackend/models"
 	"github.com/camden-git/mediasysbackend/repository"
 	"github.com/go-chi/chi/v5"
@@ -156,59 +154,7 @@ func (h *CollectionHandler) GetCollectionPhotos(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	allFiles := make([]FileInfo, 0, len(images))
-	for _, img := range images {
-		fi := FileInfo{
-			Name:            filepath.Base(img.OriginalPath),
-			Path:            "/" + img.OriginalPath,
-			IsDir:           false,
-			ModTime:         img.LastModified,
-			Width:           img.Width,
-			Height:          img.Height,
-			Aperture:        img.Aperture,
-			ShutterSpeed:    img.ShutterSpeed,
-			ISO:             img.ISO,
-			FocalLength:     img.FocalLength,
-			LensMake:        img.LensMake,
-			LensModel:       img.LensModel,
-			CameraMake:      img.CameraMake,
-			CameraModel:     img.CameraModel,
-			TakenAt:         img.TakenAt,
-			Rating:          img.Rating,
-			ThumbnailStatus: img.ThumbnailStatus,
-			MetadataStatus:  img.MetadataStatus,
-			DetectionStatus: img.DetectionStatus,
-		}
-		if img.ThumbnailPath != nil && img.ThumbnailStatus == database.StatusDone {
-			thumbFilename := filepath.Base(*img.ThumbnailPath)
-			fullThumbURL := "/api" + thumbnailApiPrefix + thumbFilename
-			fi.ThumbnailPath = &fullThumbURL
-		}
-		allFiles = append(allFiles, fi)
-	}
-
-	sortCollectionFiles(allFiles, c.SortOrder)
-
-	total := len(allFiles)
-	end := offset + limit
-	if end > total {
-		end = total
-	}
-	var page []FileInfo
-	if offset < total {
-		page = allFiles[offset:end]
-	} else {
-		page = []FileInfo{}
-	}
-
-	listing := DirectoryListing{
-		Path:    "/collections/" + slug + "/photos",
-		Files:   page,
-		Total:   total,
-		Offset:  offset,
-		Limit:   limit,
-		HasMore: end < total,
-	}
+	listing := paginate("/collections/"+slug+"/photos", imagesToSortedFileInfos(images, c.SortOrder), offset, limit)
 	setCacheHeaders(w, 300)
 	WriteAPIResponse(w, http.StatusOK, listing)
 }

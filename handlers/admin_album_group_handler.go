@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 
@@ -22,6 +21,7 @@ type AdminAlbumGroupHandler struct {
 	GroupRepo      repository.AlbumGroupRepositoryInterface
 	Cfg            config.Config
 	MediaProcessor *media.Processor
+	Store          *media.Store
 }
 
 // NewAdminAlbumGroupHandler creates a new AdminAlbumGroupHandler.
@@ -29,11 +29,13 @@ func NewAdminAlbumGroupHandler(
 	groupRepo repository.AlbumGroupRepositoryInterface,
 	cfg config.Config,
 	mediaProcessor *media.Processor,
+	store *media.Store,
 ) *AdminAlbumGroupHandler {
 	return &AdminAlbumGroupHandler{
 		GroupRepo:      groupRepo,
 		Cfg:            cfg,
 		MediaProcessor: mediaProcessor,
+		Store:          store,
 	}
 }
 
@@ -259,22 +261,20 @@ func (h *AdminAlbumGroupHandler) UploadGroupBanner(w http.ResponseWriter, r *htt
 		return
 	}
 
-	// Remove old banner if different
-	if group.BannerImagePath != nil && *group.BannerImagePath != savedRelPath {
-		mediaStore, storeErr := media.NewLocalStorage(h.Cfg.MediaStoragePath, map[media.AssetType]string{})
-		if storeErr == nil {
-			if oldPath, pathErr := mediaStore.GetFullPath(*group.BannerImagePath); pathErr == nil {
-				if removeErr := os.Remove(oldPath); removeErr != nil && !os.IsNotExist(removeErr) {
-					log.Printf("Warning: failed to remove old group banner %s: %v", oldPath, removeErr)
-				}
-			}
-		}
-	}
-
 	if dbErr := h.GroupRepo.SetBannerPath(uint(id), &savedRelPath); dbErr != nil {
 		log.Printf("Error saving banner path for group %d: %v", id, dbErr)
 		WriteAPIError(w, http.StatusInternalServerError, "BannerSaveError", "Failed to save banner information")
 		return
+	}
+
+	// remove the banner this one replaced
+	if group.BannerImagePath != nil && *group.BannerImagePath != savedRelPath {
+		_ = h.Store.Delete(r.Context(), *group.BannerImagePath)
+	}
+
+	// remove the banner this one replaced
+	if group.BannerImagePath != nil && *group.BannerImagePath != savedRelPath {
+		_ = h.Store.Delete(r.Context(), *group.BannerImagePath)
 	}
 
 	updated, err := h.GroupRepo.GetByID(uint(id))

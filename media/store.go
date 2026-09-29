@@ -1,202 +1,205 @@
 package media
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"os"
-	"path/filepath"
+	"path"
 	"strings"
+	"time"
+
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
-// Store defines the interface for saving, retrieving, and deleting media assets
-type Store interface {
-	// Save stores data from reader to a specific relative path within a subdirectory
-	// returns the final relative path used (might include generated filename) and error
-	Save(assetType AssetType, relativeDirHint string, filenameHint string, data io.Reader) (string, error)
-	// Get retrieves a reader for an asset
-	Get(relativePath string) (io.ReadCloser, os.FileInfo, error)
-	// Delete removes an asset
-	Delete(relativePath string) error
-	// GetFullPath returns the absolute filesystem path for a relative asset path
-	GetFullPath(relativePath string) (string, error)
-	// EnsureDir makes sure a specific asset type directory exists
-	EnsureDir(assetType AssetType) (string, error)
+// key prefixes for every kind of object kept in the bucket
+const (
+	PrefixOriginals  = "originals/"
+	PrefixThumbnails = "thumbnails/"
+	PrefixPreviews   = "previews/"
+	PrefixBanners    = "album_banners/"
+	PrefixArchives   = "album_archives/"
+)
+
+// ErrNotFound is returned when an object does not exist.
+var ErrNotFound = errors.New("object not found")
+
+// StoreConfig holds the connection settings for an S3-compatible endpoint.
+type StoreConfig struct {
+	Endpoint  string
+	AccessKey string
+	SecretKey string
+	Bucket    string
+	Region    string
+	UseSSL    bool
 }
 
-// LocalStorage implements the Store interface using the local filesystem
-type LocalStorage struct {
-	basePath        string               // absolute path to the MEDIA_STORAGE_PATH
-	subDirMap       map[AssetType]string // maps AssetType to subdirectory name (e.g., "thumbnails")
-	resolvedPathMap map[AssetType]string // maps AssetType to full absolute path
+// Store saves and serves every media asset (originals, thumbnails, previews,
+// banners, archives) from a single S3 bucket.
+type Store struct {
+	client *minio.Client
+	bucket string
 }
 
-// NewLocalStorage creates a new local filesystem store
-func NewLocalStorage(basePath string, subDirs map[AssetType]string) (*LocalStorage, error) {
-	absBasePath, err := filepath.Abs(basePath)
+// NewStore connects to the object store and makes sure the bucket exists.
+func NewStore(ctx context.Context, cfg StoreConfig) (*Store, error) {
+	client, err := minio.New(cfg.Endpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
+		Secure: cfg.UseSSL,
+		Region: cfg.Region,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("invalid base storage path '%s': %w", basePath, err)
+		return nil, fmt.Errorf("failed to create s3 client: %w", err)
 	}
 
-	if err := os.MkdirAll(absBasePath, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create base storage directory '%s': %w", absBasePath, err)
-	}
+	s := &Store{client: client, bucket: cfg.Bucket}
 
-	resolvedPaths := make(map[AssetType]string)
-	for assetType, subDir := range subDirs {
-		fullPath := filepath.Join(absBasePath, subDir)
-		if !strings.HasPrefix(filepath.Clean(fullPath), absBasePath) {
-			return nil, fmt.Errorf("invalid subdirectory configuration: '%s' resolves outside base path '%s'", subDir, absBasePath)
+	var lastErr error
+	for attempt := 1; attempt <= 30; attempt++ {
+		if lastErr = s.ensureBucket(ctx, cfg.Region); lastErr == nil {
+			log.Printf("media.store: using bucket %q at %s", cfg.Bucket, cfg.Endpoint)
+			return s, nil
 		}
-		resolvedPaths[assetType] = fullPath
-	}
-
-	log.Printf("media.store: Initialized LocalStorage at %s", absBasePath)
-	return &LocalStorage{
-		basePath:        absBasePath,
-		subDirMap:       subDirs,
-		resolvedPathMap: resolvedPaths,
-	}, nil
-}
-
-// getAssetTypeDir resolves the absolute path for a given asset type
-func (ls *LocalStorage) getAssetTypeDir(assetType AssetType) (string, error) {
-	dirPath, ok := ls.resolvedPathMap[assetType]
-	if !ok {
-		log.Printf("media.store: Warning - Asset type '%s' not explicitly configured, using as subdirectory name", assetType)
-		dirPath = filepath.Join(ls.basePath, string(assetType))
-
-		if !strings.HasPrefix(filepath.Clean(dirPath), ls.basePath) {
-			return "", fmt.Errorf("asset type '%s' resolves outside base path", assetType)
-		}
-		ls.resolvedPathMap[assetType] = dirPath
-	}
-	return dirPath, nil
-}
-
-// EnsureDir creates the directory for the asset type if it doesn't exist
-func (ls *LocalStorage) EnsureDir(assetType AssetType) (string, error) {
-	dirPath, err := ls.getAssetTypeDir(assetType)
-	if err != nil {
-		return "", err
-	}
-	if err := os.MkdirAll(dirPath, 0755); err != nil {
-		return "", fmt.Errorf("failed to ensure directory '%s': %w", dirPath, err)
-	}
-	return dirPath, nil
-}
-
-// Save data to the store. filenameHint can be empty to generate one (e.g., UUID)
-// relativeDirHint allows for further structure within the asset type's main dir (e.g., album ID)
-func (ls *LocalStorage) Save(assetType AssetType, relativeDirHint string, filenameHint string, data io.Reader) (string, error) {
-	baseAssetDir, err := ls.EnsureDir(assetType)
-	if err != nil {
-		return "", err
-	}
-
-	targetDir := baseAssetDir
-	if relativeDirHint != "" {
-		targetDir = filepath.Join(baseAssetDir, relativeDirHint)
-
-		if !strings.HasPrefix(filepath.Clean(targetDir), baseAssetDir) {
-			return "", fmt.Errorf("invalid relative directory hint '%s'", relativeDirHint)
-		}
-
-		if err := os.MkdirAll(targetDir, 0755); err != nil {
-			return "", fmt.Errorf("failed to create sub-directory '%s': %w", targetDir, err)
+		log.Printf("media.store: bucket check attempt %d failed: %v", attempt, lastErr)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(2 * time.Second):
 		}
 	}
-
-	if filenameHint == "" {
-		// Implement UUID generation here if needed for certain types
-		return "", fmt.Errorf("filename hint cannot be empty for LocalStorage.Save")
-	}
-	finalFilename := filenameHint
-
-	fullSavePath := filepath.Join(targetDir, finalFilename)
-
-	outFile, err := os.Create(fullSavePath)
-	if err != nil {
-		return "", fmt.Errorf("failed to create destination file '%s': %w", fullSavePath, err)
-	}
-	defer outFile.Close()
-
-	_, err = io.Copy(outFile, data)
-	if err != nil {
-		outFile.Close()
-		os.Remove(fullSavePath)
-		return "", fmt.Errorf("failed to write data to '%s': %w", fullSavePath, err)
-	}
-
-	relativePath, err := filepath.Rel(ls.basePath, fullSavePath)
-	if err != nil {
-		log.Printf("media.store: Error calculating relative path for '%s' from '%s': %v", fullSavePath, ls.basePath, err)
-		return "", fmt.Errorf("internal error calculating relative path: %w", err)
-	}
-
-	log.Printf("media.store: Saved asset to %s", fullSavePath)
-	return filepath.ToSlash(relativePath), nil
+	return nil, fmt.Errorf("object store not reachable: %w", lastErr)
 }
 
-func (ls *LocalStorage) Get(relativePath string) (io.ReadCloser, os.FileInfo, error) {
-	fullPath, err := ls.GetFullPath(relativePath)
+func (s *Store) ensureBucket(ctx context.Context, region string) error {
+	exists, err := s.client.BucketExists(ctx, s.bucket)
 	if err != nil {
-		return nil, nil, err
-	}
-
-	file, err := os.Open(fullPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil, fmt.Errorf("asset not found at '%s': %w", relativePath, err)
-		}
-		return nil, nil, fmt.Errorf("failed to open asset '%s': %w", relativePath, err)
-	}
-
-	info, err := file.Stat()
-	if err != nil {
-		file.Close()
-		return nil, nil, fmt.Errorf("failed to stat asset '%s': %w", relativePath, err)
-	}
-
-	return file, info, nil
-}
-
-// Delete removes an asset file
-func (ls *LocalStorage) Delete(relativePath string) error {
-	fullPath, err := ls.GetFullPath(relativePath)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil // If GetFullPath determines it doesn't exist, treat as success
-		}
 		return err
 	}
-
-	err = os.Remove(fullPath)
-	if err != nil && !os.IsNotExist(err) { // Ignore "not exist" errors
-		return fmt.Errorf("failed to delete asset '%s': %w", relativePath, err)
+	if exists {
+		return nil
 	}
-	if err == nil {
-		log.Printf("media.store: Deleted asset %s", fullPath)
+	return s.client.MakeBucket(ctx, s.bucket, minio.MakeBucketOptions{Region: region})
+}
+
+// Put uploads data under key. size may be -1 when unknown. Returns the stored size.
+func (s *Store) Put(ctx context.Context, key string, data io.Reader, size int64, contentType string) (int64, error) {
+	info, err := s.client.PutObject(ctx, s.bucket, key, data, size, minio.PutObjectOptions{ContentType: contentType})
+	if err != nil {
+		return 0, fmt.Errorf("failed to put object %s: %w", key, err)
+	}
+	return info.Size, nil
+}
+
+// Get opens an object for reading. The returned object supports Seek/ReadAt so it
+// can be handed straight to http.ServeContent.
+func (s *Store) Get(ctx context.Context, key string) (*minio.Object, minio.ObjectInfo, error) {
+	obj, err := s.client.GetObject(ctx, s.bucket, key, minio.GetObjectOptions{})
+	if err != nil {
+		return nil, minio.ObjectInfo{}, s.wrapErr(key, err)
+	}
+	info, err := obj.Stat()
+	if err != nil {
+		obj.Close()
+		return nil, minio.ObjectInfo{}, s.wrapErr(key, err)
+	}
+	return obj, info, nil
+}
+
+// Stat returns object metadata.
+func (s *Store) Stat(ctx context.Context, key string) (minio.ObjectInfo, error) {
+	info, err := s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
+	if err != nil {
+		return minio.ObjectInfo{}, s.wrapErr(key, err)
+	}
+	return info, nil
+}
+
+// Download copies an object to a temporary file and returns its path along with
+// a cleanup func. Used by code that needs a real file (OpenCV, EXIF parsing).
+func (s *Store) Download(ctx context.Context, key string) (string, func(), error) {
+	obj, _, err := s.Get(ctx, key)
+	if err != nil {
+		return "", func() {}, err
+	}
+	defer obj.Close()
+
+	tmp, err := os.CreateTemp("", "mediasys-*"+path.Ext(key))
+	if err != nil {
+		return "", func() {}, fmt.Errorf("failed to create temp file: %w", err)
+	}
+	cleanup := func() { os.Remove(tmp.Name()) }
+	if _, err := io.Copy(tmp, obj); err != nil {
+		tmp.Close()
+		cleanup()
+		return "", func() {}, fmt.Errorf("failed to download %s: %w", key, err)
+	}
+	if err := tmp.Close(); err != nil {
+		cleanup()
+		return "", func() {}, err
+	}
+	return tmp.Name(), cleanup, nil
+}
+
+// Delete removes a single object. Missing objects are not an error.
+func (s *Store) Delete(ctx context.Context, key string) error {
+	if key == "" {
+		return nil
+	}
+	err := s.client.RemoveObject(ctx, s.bucket, key, minio.RemoveObjectOptions{})
+	if err != nil && !errors.Is(s.wrapErr(key, err), ErrNotFound) {
+		return fmt.Errorf("failed to delete object %s: %w", key, err)
 	}
 	return nil
 }
 
-// GetFullPath calculates the absolute path and performs security check
-func (ls *LocalStorage) GetFullPath(relativePath string) (string, error) {
-	// clean the relative path first to prevent simple traversal tricks
-	cleanRelativePath := filepath.Clean(relativePath)
-
-	fullPath := filepath.Join(ls.basePath, cleanRelativePath)
-
-	absFullPath, err := filepath.Abs(fullPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to get absolute path for '%s': %w", relativePath, err)
+// DeleteKeys removes many objects, logging (not returning) individual failures.
+func (s *Store) DeleteKeys(ctx context.Context, keys []string) {
+	if len(keys) == 0 {
+		return
 	}
-
-	if !strings.HasPrefix(absFullPath, ls.basePath) {
-		return "", fmt.Errorf("invalid path: access denied for '%s'", relativePath)
+	ch := make(chan minio.ObjectInfo)
+	go func() {
+		defer close(ch)
+		for _, k := range keys {
+			if k != "" {
+				ch <- minio.ObjectInfo{Key: k}
+			}
+		}
+	}()
+	for res := range s.client.RemoveObjects(ctx, s.bucket, ch, minio.RemoveObjectsOptions{}) {
+		log.Printf("media.store: failed to delete %s: %v", res.ObjectName, res.Err)
 	}
+}
 
-	return absFullPath, nil
+// DeletePrefix removes every object whose key starts with prefix.
+func (s *Store) DeletePrefix(ctx context.Context, prefix string) {
+	if prefix == "" || !strings.HasSuffix(prefix, "/") {
+		log.Printf("media.store: refusing to delete unsafe prefix %q", prefix)
+		return
+	}
+	objects := s.client.ListObjects(ctx, s.bucket, minio.ListObjectsOptions{Prefix: prefix, Recursive: true})
+	for res := range s.client.RemoveObjects(ctx, s.bucket, objects, minio.RemoveObjectsOptions{}) {
+		log.Printf("media.store: failed to delete %s: %v", res.ObjectName, res.Err)
+	}
+}
+
+// Ping checks that the bucket is reachable.
+func (s *Store) Ping(ctx context.Context) error {
+	_, err := s.client.BucketExists(ctx, s.bucket)
+	return err
+}
+
+func (s *Store) wrapErr(key string, err error) error {
+	if minio.ToErrorResponse(err).Code == "NoSuchKey" {
+		return fmt.Errorf("%w: %s", ErrNotFound, key)
+	}
+	return err
+}
+
+// OriginalKey returns the object key for an image's original file.
+func OriginalKey(imagePath string) string {
+	return PrefixOriginals + strings.TrimPrefix(imagePath, "/")
 }

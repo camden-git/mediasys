@@ -7,10 +7,10 @@ import "time"
 // or manually added via the admin UI (source="manual").
 type ImageTag struct {
 	ID        uint      `gorm:"primaryKey;autoIncrement" json:"id"`
-	ImagePath string    `gorm:"not null;index" json:"image_path"`
-	TagKey    string    `gorm:"not null" json:"tag_key"`
-	TagValue  string    `gorm:"not null" json:"tag_value"`
-	Source    string    `gorm:"not null" json:"source"` // "xmp" | "album_default" | "manual"
+	ImagePath string    `gorm:"not null;index;uniqueIndex:idx_image_tags_unique" json:"image_path"`
+	TagKey    string    `gorm:"not null;uniqueIndex:idx_image_tags_unique;index:idx_image_tags_key_value" json:"tag_key"`
+	TagValue  string    `gorm:"not null;uniqueIndex:idx_image_tags_unique;index:idx_image_tags_key_value" json:"tag_value"`
+	Source    string    `gorm:"not null;uniqueIndex:idx_image_tags_unique" json:"source"` // "xmp" | "album_default" | "manual"
 	CreatedAt time.Time `gorm:"not null" json:"created_at"`
 }
 

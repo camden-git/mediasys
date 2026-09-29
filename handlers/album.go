@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -29,6 +27,7 @@ type AlbumHandler struct {
 	Cfg            config.Config
 	ThumbGen       *workers.ImageProcessor
 	MediaProcessor *media.Processor
+	Store          *media.Store
 }
 
 func (ah *AlbumHandler) getAlbumByIdentifier(identifier string) (*models.Album, error) {
@@ -70,8 +69,8 @@ func (ah *AlbumHandler) CreateAlbum(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Name == "" || req.FolderPath == "" || req.Slug == "" {
-		WriteAPIError(w, http.StatusBadRequest, "InvalidRequest", "Missing required fields: name, slug, and folder_path")
+	if req.Name == "" || req.Slug == "" {
+		WriteAPIError(w, http.StatusBadRequest, "InvalidRequest", "Missing required fields: name and slug")
 		return
 	}
 
@@ -80,29 +79,9 @@ func (ah *AlbumHandler) CreateAlbum(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cleanRelativePath := filepath.Clean(req.FolderPath)
-	if filepath.IsAbs(cleanRelativePath) || strings.HasPrefix(cleanRelativePath, "..") {
-		WriteAPIError(w, http.StatusBadRequest, "InvalidRequest", "folder_path must be relative and cannot use '..'")
-		return
-	}
-	folderPathForDB := filepath.ToSlash(cleanRelativePath)
-	fullPath := filepath.Join(ah.Cfg.RootDirectory, folderPathForDB)
-	stat, err := os.Stat(fullPath)
-	if os.IsNotExist(err) {
-		// create the directory if it doesn't exist
-		err = os.MkdirAll(fullPath, 0755)
-		if err != nil {
-			log.Printf("Error creating folder path %s during album creation: %v", fullPath, err)
-			WriteAPIError(w, http.StatusInternalServerError, "InternalError", "Could not create folder_path")
-			return
-		}
-		log.Printf("Created folder path: %s", fullPath)
-	} else if err != nil {
-		log.Printf("Error stating folder path %s during album creation: %v", fullPath, err)
-		WriteAPIError(w, http.StatusInternalServerError, "InternalError", "Could not verify folder_path")
-		return
-	} else if !stat.IsDir() {
-		WriteAPIError(w, http.StatusBadRequest, "InvalidRequest", "folder_path is not a directory: "+folderPathForDB)
+	folderPathForDB, ok := normalizeFolderPath(req.FolderPath, req.Slug)
+	if !ok {
+		WriteAPIError(w, http.StatusBadRequest, "InvalidRequest", "folder_path is invalid")
 		return
 	}
 
@@ -119,7 +98,7 @@ func (ah *AlbumHandler) CreateAlbum(w http.ResponseWriter, r *http.Request) {
 		newAlbumGorm.Location = req.Location
 	}
 
-	err = ah.AlbumRepo.Create(&newAlbumGorm)
+	err := ah.AlbumRepo.Create(&newAlbumGorm)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {
 			WriteAPIError(w, http.StatusConflict, "AlbumConflict", "Album name, slug, or folder path already exists")
@@ -164,7 +143,7 @@ func (ah *AlbumHandler) GetAlbum(w http.ResponseWriter, r *http.Request) {
 	// Build artists list from uploaders
 	var artists []map[string]interface{}
 	if ah.ImageRepo != nil && ah.UserRepo != nil {
-		if ids, err := ah.ImageRepo.GetDistinctUploaderIDsByFolderPrefix(album.FolderPath); err == nil {
+		if ids, err := ah.ImageRepo.GetDistinctUploaderIDsByAlbum(album.ID); err == nil {
 			for _, id := range ids {
 				if u, err := ah.UserRepo.GetByID(id); err == nil && u != nil {
 					artists = append(artists, map[string]interface{}{

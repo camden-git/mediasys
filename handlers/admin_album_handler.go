@@ -1,12 +1,11 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -30,6 +29,7 @@ type AdminAlbumHandler struct {
 	ImgProc        *workers.ImageProcessor
 	Hub            *realtime.Hub
 	MediaProcessor *media.Processor
+	Store          *media.Store
 }
 
 func NewAdminAlbumHandler(
@@ -152,7 +152,7 @@ func (h *AdminAlbumHandler) GetAlbum(w http.ResponseWriter, r *http.Request) {
 	banners, _ := h.AlbumRepo.GetBanners(album.ID)
 	adminAlbum := convertAlbumToAdminResponse(album, banners)
 	// populate artists with names
-	if ids, err := h.ImageRepo.GetDistinctUploaderIDsByFolderPrefix(album.FolderPath); err == nil && len(ids) > 0 {
+	if ids, err := h.ImageRepo.GetDistinctUploaderIDsByAlbum(album.ID); err == nil && len(ids) > 0 {
 		for _, id := range ids {
 			if u, err := h.UserRepo.GetByID(id); err == nil && u != nil {
 				adminAlbum.Artists = append(adminAlbum.Artists, struct {
@@ -184,8 +184,8 @@ func (h *AdminAlbumHandler) CreateAlbum(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if req.Name == "" || req.FolderPath == "" || req.Slug == "" {
-		WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Missing required fields: name, slug, and folder_path")
+	if req.Name == "" || req.Slug == "" {
+		WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Missing required fields: name and slug")
 		return
 	}
 
@@ -194,29 +194,9 @@ func (h *AdminAlbumHandler) CreateAlbum(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	cleanRelativePath := filepath.Clean(req.FolderPath)
-	if filepath.IsAbs(cleanRelativePath) || strings.HasPrefix(cleanRelativePath, "..") {
-		WriteAPIError(w, http.StatusBadRequest, "ValidationError", "folder_path must be relative and cannot use '..'")
-		return
-	}
-	folderPathForDB := filepath.ToSlash(cleanRelativePath)
-	fullPath := filepath.Join(h.Cfg.RootDirectory, folderPathForDB)
-	stat, err := os.Stat(fullPath)
-	if os.IsNotExist(err) {
-		// create the directory if it doesn't exist
-		err = os.MkdirAll(fullPath, 0755)
-		if err != nil {
-			log.Printf("Error creating folder path %s during album creation: %v", fullPath, err)
-			WriteAPIError(w, http.StatusInternalServerError, "FolderCreateError", "Could not create folder_path")
-			return
-		}
-		log.Printf("Created folder path: %s", fullPath)
-	} else if err != nil {
-		log.Printf("Error stating folder path %s during album creation: %v", fullPath, err)
-		WriteAPIError(w, http.StatusInternalServerError, "FolderError", "Could not verify folder_path")
-		return
-	} else if !stat.IsDir() {
-		WriteAPIError(w, http.StatusBadRequest, "ValidationError", "folder_path is not a directory: "+folderPathForDB)
+	folderPathForDB, ok := normalizeFolderPath(req.FolderPath, req.Slug)
+	if !ok {
+		WriteAPIError(w, http.StatusBadRequest, "ValidationError", "folder_path is invalid")
 		return
 	}
 
@@ -236,7 +216,7 @@ func (h *AdminAlbumHandler) CreateAlbum(w http.ResponseWriter, r *http.Request) 
 		newAlbum.SortOrder = *req.SortOrder
 	}
 
-	err = h.AlbumRepo.Create(&newAlbum)
+	err := h.AlbumRepo.Create(&newAlbum)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {
 			WriteAPIError(w, http.StatusConflict, "AlbumConflict", "Album name, slug, or folder path already exists")
@@ -375,70 +355,23 @@ func (h *AdminAlbumHandler) DeleteAlbum(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	folderPrefix := strings.TrimRight(album.FolderPath, "/") + "/"
-
-	// Cast to concrete type to access raw DB (same pattern as DeleteAlbumImage)
-	albumRepo, ok := h.AlbumRepo.(*repository.AlbumRepository)
-	if !ok {
-		WriteAPIError(w, http.StatusInternalServerError, "InternalError", "repository type assertion failed")
-		return
-	}
-	db := albumRepo.DB
-
-	// Gather generated asset paths before deleting DB rows
-	type assetPaths struct{ thumb, preview *string }
-	var imagePaths []assetPaths
-	var imgs []models.Image
-	db.Unscoped().Where("original_path LIKE ?", folderPrefix+"%").
-		Select("thumbnail_path, preview_path").Find(&imgs)
-	for _, img := range imgs {
-		imagePaths = append(imagePaths, assetPaths{img.ThumbnailPath, img.PreviewPath})
-	}
-
-	// Collect banner paths before deletion
 	existingBanners, _ := h.AlbumRepo.GetBanners(album.ID)
 
-	// Single transaction: embeddings → faces → images → banners → album (all hard deletes)
-	err = db.Transaction(func(tx *gorm.DB) error {
-		// 1. Collect face IDs for images in this album
-		var faceIDs []uint
-		if err := tx.Unscoped().Model(&models.Face{}).
-			Where("image_path LIKE ?", folderPrefix+"%").
-			Pluck("id", &faceIDs).Error; err != nil {
-			return err
-		}
+	imageKeys, err := h.ImageRepo.DeleteByAlbum(album.ID)
+	if err != nil {
+		log.Printf("Error deleting images of album %d: %v", album.ID, err)
+		WriteAPIError(w, http.StatusInternalServerError, "AlbumDeleteError", "Failed to delete album images")
+		return
+	}
 
-		// 2. Hard-delete face embeddings
-		if len(faceIDs) > 0 {
-			if err := tx.Unscoped().Where("face_id IN ?", faceIDs).
-				Delete(&models.FaceEmbedding{}).Error; err != nil {
+	db := h.AlbumRepo.(*repository.AlbumRepository).DB
+	err = db.Transaction(func(tx *gorm.DB) error {
+		for _, m := range []any{&models.AlbumBanner{}, &models.AlbumDefaultTag{}, &models.UserAlbumPermission{}, &models.RoleAlbumPermission{}} {
+			if err := tx.Where("album_id = ?", album.ID).Delete(m).Error; err != nil {
 				return err
 			}
 		}
-
-		// 3. Hard-delete faces (person rows are untouched)
-		if err := tx.Unscoped().Where("image_path LIKE ?", folderPrefix+"%").
-			Delete(&models.Face{}).Error; err != nil {
-			return err
-		}
-
-		// 4. Hard-delete images
-		if err := tx.Unscoped().Where("original_path LIKE ?", folderPrefix+"%").
-			Delete(&models.Image{}).Error; err != nil {
-			return err
-		}
-
-		// 5. Hard-delete album banners
-		if err := tx.Where("album_id = ?", album.ID).Delete(&models.AlbumBanner{}).Error; err != nil {
-			return err
-		}
-
-		// 6. Hard-delete the album record itself
-		if err := tx.Unscoped().Delete(&models.Album{}, album.ID).Error; err != nil {
-			return err
-		}
-
-		return nil
+		return tx.Unscoped().Delete(&models.Album{}, album.ID).Error
 	})
 	if err != nil {
 		log.Printf("Error deleting album %d: %v", album.ID, err)
@@ -446,23 +379,15 @@ func (h *AdminAlbumHandler) DeleteAlbum(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Best-effort filesystem cleanup of generated assets
-	for _, p := range imagePaths {
-		if p.thumb != nil && *p.thumb != "" {
-			os.Remove(filepath.Join(h.Cfg.MediaStoragePath, filepath.FromSlash(*p.thumb)))
-		}
-		if p.preview != nil && *p.preview != "" {
-			os.Remove(filepath.Join(h.Cfg.MediaStoragePath, filepath.FromSlash(*p.preview)))
-		}
-	}
+	// best-effort object cleanup
+	keys := imageKeys
 	for _, b := range existingBanners {
-		if b.ImagePath != "" {
-			os.Remove(filepath.Join(h.Cfg.MediaStoragePath, filepath.FromSlash(b.ImagePath)))
-		}
+		keys = append(keys, b.ImagePath)
 	}
-	if album.ZipPath != nil && *album.ZipPath != "" {
-		os.Remove(filepath.Join(h.Cfg.MediaStoragePath, filepath.FromSlash(*album.ZipPath)))
+	if album.ZipPath != nil {
+		keys = append(keys, *album.ZipPath)
 	}
+	go h.Store.DeleteKeys(context.Background(), keys)
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -487,34 +412,11 @@ func (h *AdminAlbumHandler) GetAlbumUploaders(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Query distinct uploader IDs from images table where path is under album folder
-	type row struct{ UploadedByUserID *uint }
-	var rows []row
-	likePrefix := album.FolderPath + "/%"
-	if err := h.ImageRepo.(*repository.ImageRepository).DB.Model(&models.Image{}).
-		Select("uploaded_by_user_id").
-		Where("original_path LIKE ? AND uploaded_by_user_id IS NOT NULL", likePrefix).
-		Distinct().
-		Find(&rows).Error; err != nil {
+	dedup, err := h.ImageRepo.GetDistinctUploaderIDsByAlbum(album.ID)
+	if err != nil {
 		log.Printf("Error querying uploaders for album %d: %v", album.ID, err)
 		WriteAPIError(w, http.StatusInternalServerError, "UploaderFetchError", "Failed to fetch uploaders")
 		return
-	}
-
-	uploaderIDs := make([]uint, 0, len(rows))
-	for _, rrow := range rows {
-		if rrow.UploadedByUserID != nil {
-			uploaderIDs = append(uploaderIDs, *rrow.UploadedByUserID)
-		}
-	}
-	// Deduplicate (Distinct should already, but ensure)
-	idSeen := map[uint]bool{}
-	dedup := make([]uint, 0, len(uploaderIDs))
-	for _, id := range uploaderIDs {
-		if !idSeen[id] {
-			idSeen[id] = true
-			dedup = append(dedup, id)
-		}
 	}
 
 	type UserLite struct {

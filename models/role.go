@@ -6,8 +6,8 @@ import "time"
 type Role struct {
 	ID                     uint                  `json:"id" gorm:"primaryKey"`
 	Name                   string                `json:"name" gorm:"uniqueIndex;not null"`
-	GlobalPermissions      []string              `json:"global_permissions" gorm:"serializer:json"`       // System-wide permissions
-	GlobalAlbumPermissions []string              `json:"global_album_permissions" gorm:"serializer:json"` // Album permissions that apply to ALL albums
+	GlobalPermissions      []string              `json:"global_permissions" gorm:"serializer:json;type:text"`       // System-wide permissions
+	GlobalAlbumPermissions []string              `json:"global_album_permissions" gorm:"serializer:json;type:text"` // Album permissions that apply to ALL albums
 	CreatedAt              time.Time             `json:"created_at"`
 	UpdatedAt              time.Time             `json:"updated_at"`
 	Users                  []*User               `json:"-" gorm:"many2many:user_roles;"`                       // Many-to-many relationship with User
@@ -30,7 +30,7 @@ type RoleAlbumPermission struct {
 	RoleID      uint      `json:"role_id" gorm:"index:idx_role_album,unique"`
 	Role        Role      `json:"-" gorm:"foreignKey:RoleID"`
 	AlbumID     uint      `json:"album_id" gorm:"index:idx_role_album,unique"`
-	Permissions []string  `json:"permissions" gorm:"serializer:json"`
+	Permissions []string  `json:"permissions" gorm:"serializer:json;type:text"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }

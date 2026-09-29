@@ -29,9 +29,9 @@ func (Collection) TableName() string {
 // Negate=false means the image must have this tag; Negate=true means the image must NOT have it.
 type CollectionTagFilter struct {
 	ID           uint   `gorm:"primaryKey;autoIncrement" json:"id"`
-	CollectionID uint   `gorm:"not null;index" json:"collection_id"`
-	TagKey       string `gorm:"not null" json:"tag_key"`
-	TagValue     string `gorm:"not null" json:"tag_value"`
+	CollectionID uint   `gorm:"not null;uniqueIndex:idx_collection_tag_filters_unique" json:"collection_id"`
+	TagKey       string `gorm:"not null;uniqueIndex:idx_collection_tag_filters_unique" json:"tag_key"`
+	TagValue     string `gorm:"not null;uniqueIndex:idx_collection_tag_filters_unique" json:"tag_value"`
 	Negate       bool   `gorm:"not null;default:false" json:"negate"`
 }
 

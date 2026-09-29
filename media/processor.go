@@ -1,14 +1,17 @@
 package media
 
 import (
+	"bytes"
+	"context"
 	"fmt"
-	"github.com/chai2010/webp"
-	"github.com/disintegration/imaging"
-	"github.com/google/uuid"
 	"image"
 	"io"
 	"log"
 	"math"
+
+	"github.com/chai2010/webp"
+	"github.com/disintegration/imaging"
+	"github.com/google/uuid"
 )
 
 const (
@@ -25,18 +28,31 @@ const (
 	PreviewPortraitMaxLong  = 2200
 )
 
-// Processor handles media transformations like thumbnailing and resizing. it
-// relies on a Store implementation for saving the results.
+// Processor handles media transformations like thumbnailing and resizing and
+// writes the results to the object store.
 type Processor struct {
-	store Store
+	store *Store
 }
 
-func NewProcessor(store Store) *Processor {
+func NewProcessor(store *Store) *Processor {
 	return &Processor{store: store}
 }
 
+// saveWebP encodes img as WebP and stores it under prefix with a random name.
+func (p *Processor) saveWebP(ctx context.Context, img image.Image, quality float32, prefix string) (string, error) {
+	var buf bytes.Buffer
+	if err := webp.Encode(&buf, img, &webp.Options{Quality: quality}); err != nil {
+		return "", fmt.Errorf("webp encoding failed: %w", err)
+	}
+	key := prefix + uuid.NewString() + ".webp"
+	if _, err := p.store.Put(ctx, key, &buf, int64(buf.Len()), "image/webp"); err != nil {
+		return "", err
+	}
+	return key, nil
+}
+
 // GenerateThumbnail creates a thumbnail where the longest side matches maxSize.
-// saves the result using the Store. returns relative path to saved thumb or error.
+// returns the object key of the saved thumbnail.
 func (p *Processor) GenerateThumbnail(originalImg image.Image, originalRelPath string, maxSize int) (string, error) {
 	origBounds := originalImg.Bounds()
 	origWidth := origBounds.Dx()
@@ -66,37 +82,16 @@ func (p *Processor) GenerateThumbnail(originalImg image.Image, originalRelPath s
 
 	thumb := imaging.Resize(originalImg, newWidth, newHeight, imaging.Lanczos)
 
-	reader, writer := io.Pipe()
-
-	go func() {
-		defer writer.Close()
-		err := webp.Encode(writer, thumb, &webp.Options{Quality: float32(ThumbnailQuality)})
-		if err != nil {
-			log.Printf("processor: Failed to encode thumbnail: %v", err)
-			writer.CloseWithError(fmt.Errorf("thumbnail encoding failed: %w", err))
-		}
-	}()
-
-	thumbUUID, err := uuid.NewRandom()
+	key, err := p.saveWebP(context.Background(), thumb, ThumbnailQuality, PrefixThumbnails)
 	if err != nil {
-		reader.Close()
-		return "", fmt.Errorf("failed to generate UUID for thumbnail: %w", err)
+		return "", fmt.Errorf("failed to save thumbnail: %w", err)
 	}
-	targetFilename := thumbUUID.String() + ThumbnailFileExtension
-
-	savedRelPath, err := p.store.Save(AssetTypeThumbnail, "", targetFilename, reader)
-	// reader is automatically closed by io.Copy inside Save, or by the encoding goroutine on error
-
-	if err != nil {
-		return "", fmt.Errorf("failed to save thumbnail via store: %w", err)
-	}
-
-	log.Printf("processor: Generated and saved thumbnail for %s at %s", originalRelPath, savedRelPath)
-	return savedRelPath, nil
+	log.Printf("processor: Generated thumbnail for %s at %s", originalRelPath, key)
+	return key, nil
 }
 
 // GeneratePreview creates an orientation-aware preview (landscape: ≤3400px on long side,
-// portrait: ≤2200px on long side), saves it via the Store, and returns the relative path.
+// portrait: ≤2200px on long side), stores it and returns the object key.
 func (p *Processor) GeneratePreview(src image.Image, originalRelPath string) (string, error) {
 	w, h := src.Bounds().Dx(), src.Bounds().Dy()
 	if w <= 0 || h <= 0 {
@@ -120,34 +115,15 @@ func (p *Processor) GeneratePreview(src image.Image, originalRelPath string) (st
 		}
 	}
 
-	reader, writer := io.Pipe()
-	go func() {
-		defer writer.Close()
-		err := webp.Encode(writer, resized, &webp.Options{Quality: float32(PreviewQuality)})
-		if err != nil {
-			log.Printf("processor: Failed to encode preview: %v", err)
-			writer.CloseWithError(fmt.Errorf("preview encoding failed: %w", err))
-		}
-	}()
-
-	previewUUID, err := uuid.NewRandom()
+	key, err := p.saveWebP(context.Background(), resized, PreviewQuality, PrefixPreviews)
 	if err != nil {
-		reader.Close()
-		return "", fmt.Errorf("failed to generate UUID for preview: %w", err)
+		return "", fmt.Errorf("failed to save preview: %w", err)
 	}
-	targetFilename := previewUUID.String() + PreviewFileExtension
-
-	savedRelPath, err := p.store.Save(AssetTypePreview, "", targetFilename, reader)
-	if err != nil {
-		return "", fmt.Errorf("failed to save preview via store: %w", err)
-	}
-
-	log.Printf("processor: Generated and saved preview for %s at %s", originalRelPath, savedRelPath)
-	return savedRelPath, nil
+	log.Printf("processor: Generated preview for %s at %s", originalRelPath, key)
+	return key, nil
 }
 
-// ProcessBanner resizes an uploaded banner and saves it returns the relative
-// path to saved banner or error
+// ProcessBanner resizes an uploaded banner, stores it and returns the object key.
 func (p *Processor) ProcessBanner(fileData io.Reader) (string, error) {
 	img, format, err := image.Decode(fileData)
 	if err != nil {
@@ -157,28 +133,10 @@ func (p *Processor) ProcessBanner(fileData io.Reader) (string, error) {
 
 	processedImg := imaging.Resize(img, BannerTargetWidth, 0, imaging.Lanczos)
 
-	reader, writer := io.Pipe()
-	go func() {
-		defer writer.Close()
-		err := webp.Encode(writer, processedImg, &webp.Options{Quality: float32(BannerQuality)})
-		if err != nil {
-			log.Printf("processor: Failed to encode banner: %v", err)
-			writer.CloseWithError(fmt.Errorf("banner encoding failed: %w", err))
-		}
-	}()
-
-	bannerUUID, err := uuid.NewRandom()
+	key, err := p.saveWebP(context.Background(), processedImg, BannerQuality, PrefixBanners)
 	if err != nil {
-		reader.Close()
-		return "", fmt.Errorf("failed to generate UUID for banner: %w", err)
+		return "", fmt.Errorf("failed to save banner: %w", err)
 	}
-	targetFilename := bannerUUID.String() + BannerFileExtension
-
-	savedRelPath, err := p.store.Save(AssetTypeBanner, "", targetFilename, reader)
-	if err != nil {
-		return "", fmt.Errorf("failed to save banner via store: %w", err)
-	}
-
-	log.Printf("processor: Processed and saved banner to %s", savedRelPath)
-	return savedRelPath, nil
+	log.Printf("processor: Processed and saved banner to %s", key)
+	return key, nil
 }

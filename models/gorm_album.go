@@ -11,10 +11,10 @@ type Album struct {
 	Description        *string           `gorm:"" json:"description,omitempty"` // Nullable
 	FolderPath         string            `gorm:"not null;unique" json:"folder_path"`
 	Banners            []AlbumBanner     `gorm:"foreignKey:AlbumID" json:"-"`
-	SortOrder          string            `gorm:"not null;default:'name_asc'" json:"sort_order"`
+	SortOrder          string            `gorm:"not null;default:'filename_asc'" json:"sort_order"`
 	ZipPath            *string           `gorm:"" json:"zip_path,omitempty"` // Nullable
 	ZipSize            *int64            `gorm:"" json:"zip_size,omitempty"` // Nullable
-	ZipStatus          string            `gorm:"not null;default:notRequired" json:"zip_status"`
+	ZipStatus          string            `gorm:"not null;default:'notRequired'" json:"zip_status"`
 	ZipLastGeneratedAt *int64            `gorm:"" json:"zip_last_generated_at,omitempty"` // Nullable, Unix timestamp
 	ZipLastRequestedAt *int64            `gorm:"" json:"zip_last_requested_at,omitempty"` // Nullable, Unix timestamp
 	ZipError           *string           `gorm:"" json:"zip_error,omitempty"`             // Nullable

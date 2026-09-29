@@ -29,6 +29,7 @@ type AlbumRepositoryInterface interface {
 	RequestZip(albumID uint) error
 	MarkZipProcessing(albumID uint) error
 	SetZipResult(albumID uint, zipPath *string, zipSize *int64, taskErr error) error
+	ListPendingZips() ([]models.Album, error)
 	UpdateSortOrder(albumID uint, sortOrder string) error
 	Delete(id uint) error
 	GetBanners(albumID uint) ([]models.AlbumBanner, error)
@@ -56,21 +57,22 @@ type PersonRepositoryInterface interface {
 // ImageRepositoryInterface defines the methods for image data operations
 type ImageRepositoryInterface interface {
 	GetByPath(originalPath string) (*models.Image, error)
-	EnsureExists(originalPath string, modTime int64) (bool, error)
-	EnsureExistsWithUploader(originalPath string, modTime int64, uploadedBy *uint) (bool, error)
+	Upsert(img *models.Image) (*models.Image, error)
 	MarkTaskProcessing(originalPath, taskStatusColumn string) error
-	UpdateThumbnailResult(originalPath string, thumbPath *string, modTime int64, taskErr error) error
-	UpdateMetadataResult(originalPath string, meta *media.Metadata, modTime int64, taskErr error) error
-	UpdateDetectionResult(originalPath string, detections []media.DetectionResult, modTime int64, taskErr error) error
-	UpdatePreviewResult(originalPath string, previewPath *string, modTime int64, taskErr error) error
-	TouchPreviewLastRequested(originalPath string) error
-	GetStalePreviewImages(olderThan int64) ([]models.Image, error)
-	GetStalePreviewImagesBatch(olderThan int64, offset, limit int) ([]models.Image, error)
-	Delete(originalPath string) error
-	GetImagesRequiringProcessing() ([]models.Image, error)
+	UpdateThumbnailResult(originalPath string, thumbKey *string, taskErr error) error
+	UpdatePreviewResult(originalPath string, previewKey *string, taskErr error) error
+	UpdateMetadataResult(originalPath string, meta *media.Metadata, taskErr error) error
+	UpdateDetectionResult(originalPath string, detections []media.DetectionResult, taskErr error) error
+	RequeueTask(originalPath, taskStatusColumn string) error
+	ResetInterruptedTasks() error
+	ListPendingProcessing(limit int) ([]models.Image, error)
+	ListPendingDetection(limit int) ([]models.Image, error)
+	ListByAlbum(albumID uint, minRating *int) ([]models.Image, error)
 	GetImagesByPaths(originalPaths []string) ([]models.Image, error)
-	GetDistinctUploaderIDsByFolderPrefix(prefix string) ([]uint, error)
-	GetImagesByFolderPaths(folderPaths []string, minRating *int, offset, limit int) ([]models.Image, int, error)
+	GetImagesByAlbumIDs(albumIDs []uint, minRating *int, offset, limit int) ([]models.Image, int, error)
+	GetDistinctUploaderIDsByAlbum(albumID uint) ([]uint, error)
+	DeleteImages(paths []string) ([]string, error)
+	DeleteByAlbum(albumID uint) ([]string, error)
 }
 
 // FaceRepositoryInterface defines the methods for face data operations

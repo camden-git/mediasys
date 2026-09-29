@@ -5,23 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/camden-git/mediasysbackend/database"
 	"github.com/camden-git/mediasysbackend/media"
 	"github.com/camden-git/mediasysbackend/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
-// minInt returns the minimum of two int values
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
+var _ ImageRepositoryInterface = (*ImageRepository)(nil)
 
 // ImageRepository handles database operations for Image entities
 type ImageRepository struct {
@@ -33,10 +26,16 @@ func NewImageRepository(db *gorm.DB) *ImageRepository {
 	return &ImageRepository{DB: db}
 }
 
-// GetByPath retrieves full image info by its original path
+var taskColumns = map[string]string{
+	"metadata_status":  "metadata_error",
+	"thumbnail_status": "thumbnail_error",
+	"preview_status":   "preview_error",
+	"detection_status": "detection_error",
+}
+
+// GetByPath retrieves full image info by its path
 func (r *ImageRepository) GetByPath(originalPath string) (*models.Image, error) {
 	var image models.Image
-	// GORM automatically respects soft deletes if DeletedAt is on the model
 	err := r.DB.Where("original_path = ?", originalPath).First(&image).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -47,123 +46,92 @@ func (r *ImageRepository) GetByPath(originalPath string) (*models.Image, error) 
 	return &image, nil
 }
 
-// EnsureExists creates a basic image record if it doesn't exist, setting tasks to pending
-// returns true if a new record was created, false otherwise
-func (r *ImageRepository) EnsureExists(originalPath string, modTime int64) (bool, error) {
-	cleanPath := filepath.ToSlash(originalPath)
-	image := models.Image{
-		OriginalPath:    cleanPath,
-		LastModified:    modTime,
-		MetadataStatus:  database.StatusPending,
-		ThumbnailStatus: database.StatusPending,
-		DetectionStatus: database.StatusPending,
+// Upsert inserts a freshly uploaded image, or resets an existing row with the
+// same path so it gets reprocessed. The previous row (if any) is returned so the
+// caller can clean up its generated assets.
+func (r *ImageRepository) Upsert(img *models.Image) (*models.Image, error) {
+	var previous *models.Image
+	err := r.DB.Transaction(func(tx *gorm.DB) error {
+		var existing models.Image
+		err := tx.Unscoped().Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("original_path = ?", img.OriginalPath).First(&existing).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		if err == nil {
+			previous = &existing
+			if err := deleteImageRelations(tx, []string{img.OriginalPath}, false); err != nil {
+				return err
+			}
+			if err := tx.Unscoped().Where("original_path = ?", img.OriginalPath).Delete(&models.Image{}).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Create(img).Error
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to upsert image %s: %w", img.OriginalPath, err)
 	}
-
-	result := r.DB.Where(models.Image{OriginalPath: cleanPath}).FirstOrCreate(&image)
-
-	if result.Error != nil {
-		return false, fmt.Errorf("failed to ensure image record for %s: %w", cleanPath, result.Error)
-	}
-
-	return result.RowsAffected > 0, nil
-}
-
-// EnsureExistsWithUploader creates a basic image record if it doesn't exist and sets the uploader
-func (r *ImageRepository) EnsureExistsWithUploader(originalPath string, modTime int64, uploadedBy *uint) (bool, error) {
-	cleanPath := filepath.ToSlash(originalPath)
-	image := models.Image{
-		OriginalPath:     cleanPath,
-		LastModified:     modTime,
-		MetadataStatus:   database.StatusPending,
-		ThumbnailStatus:  database.StatusPending,
-		DetectionStatus:  database.StatusPending,
-		UploadedByUserID: uploadedBy,
-	}
-	result := r.DB.Where(models.Image{OriginalPath: cleanPath}).FirstOrCreate(&image)
-	if result.Error != nil {
-		return false, fmt.Errorf("failed to ensure image record for %s: %w", cleanPath, result.Error)
-	}
-	return result.RowsAffected > 0, nil
+	return previous, nil
 }
 
 // MarkTaskProcessing updates a specific task's status to 'processing' and clears its error
 func (r *ImageRepository) MarkTaskProcessing(originalPath, taskStatusColumn string) error {
-	cleanPath := filepath.ToSlash(originalPath)
-	validStatusColumns := map[string]string{
-		"metadata_status":  "metadata_error",
-		"thumbnail_status": "thumbnail_error",
-		"detection_status": "detection_error",
-		"preview_status":   "preview_error",
-	}
-
-	errorColumn, isValid := validStatusColumns[taskStatusColumn]
-	if !isValid {
+	errorColumn, ok := taskColumns[taskStatusColumn]
+	if !ok {
 		return fmt.Errorf("invalid task status column name: %s", taskStatusColumn)
 	}
-
-	updates := map[string]interface{}{
+	result := r.DB.Model(&models.Image{}).Where("original_path = ?", originalPath).Updates(map[string]interface{}{
 		taskStatusColumn: database.StatusProcessing,
-		errorColumn:      gorm.Expr("NULL"),
-	}
-
-	result := r.DB.Model(&models.Image{}).Where("original_path = ?", cleanPath).Updates(updates)
+		errorColumn:      nil,
+	})
 	if result.Error != nil {
-		return fmt.Errorf("failed to mark task %s processing for %s: %w", taskStatusColumn, cleanPath, result.Error)
+		return fmt.Errorf("failed to mark task %s processing for %s: %w", taskStatusColumn, originalPath, result.Error)
 	}
 	if result.RowsAffected == 0 {
-		// this could mean the record doesn't exist
+		return gorm.ErrRecordNotFound
 	}
 	return nil
 }
 
-// UpdateThumbnailResult updates the image record with thumbnail generation results
-func (r *ImageRepository) UpdateThumbnailResult(originalPath string, thumbPath *string, modTime int64, taskErr error) error {
-	cleanPath := filepath.ToSlash(originalPath)
-	now := time.Now().Unix()
-	status := database.StatusDone
-	var errStr *string
-
+func taskResult(taskErr error) (string, *string) {
 	if taskErr != nil {
-		status = database.StatusError
 		s := taskErr.Error()
-		errStr = &s
+		return database.StatusError, &s
 	}
-
-	updates := models.Image{
-		ThumbnailPath:        thumbPath,
-		LastModified:         modTime,
-		ThumbnailStatus:      status,
-		ThumbnailProcessedAt: &now,
-		ThumbnailError:       errStr,
-	}
-
-	result := r.DB.Model(&models.Image{}).Where("original_path = ?", cleanPath).Updates(updates)
-	if result.Error != nil {
-		return fmt.Errorf("failed to update thumbnail result for %s: %w", cleanPath, result.Error)
-	}
-	return nil
+	return database.StatusDone, nil
 }
 
-// UpdateMetadataResult updates the image record with metadata extraction results
-func (r *ImageRepository) UpdateMetadataResult(originalPath string, meta *media.Metadata, modTime int64, taskErr error) error {
-	cleanPath := filepath.ToSlash(originalPath)
-	now := time.Now().Unix()
-	status := database.StatusDone
-	var errStr *string
+// UpdateThumbnailResult records the outcome of thumbnail generation
+func (r *ImageRepository) UpdateThumbnailResult(originalPath string, thumbKey *string, taskErr error) error {
+	status, errStr := taskResult(taskErr)
+	return r.DB.Model(&models.Image{}).Where("original_path = ?", originalPath).Updates(map[string]interface{}{
+		"thumbnail_path":         thumbKey,
+		"thumbnail_status":       status,
+		"thumbnail_processed_at": time.Now().Unix(),
+		"thumbnail_error":        errStr,
+	}).Error
+}
 
-	if taskErr != nil {
-		status = database.StatusError
-		s := taskErr.Error()
-		errStr = &s
-	}
+// UpdatePreviewResult records the outcome of preview generation
+func (r *ImageRepository) UpdatePreviewResult(originalPath string, previewKey *string, taskErr error) error {
+	status, errStr := taskResult(taskErr)
+	return r.DB.Model(&models.Image{}).Where("original_path = ?", originalPath).Updates(map[string]interface{}{
+		"preview_path":         previewKey,
+		"preview_status":       status,
+		"preview_processed_at": time.Now().Unix(),
+		"preview_error":        errStr,
+	}).Error
+}
 
+// UpdateMetadataResult records extracted metadata
+func (r *ImageRepository) UpdateMetadataResult(originalPath string, meta *media.Metadata, taskErr error) error {
+	status, errStr := taskResult(taskErr)
 	updateData := map[string]interface{}{
-		"last_modified":         modTime,
 		"metadata_status":       status,
-		"metadata_processed_at": &now,
+		"metadata_processed_at": time.Now().Unix(),
 		"metadata_error":        errStr,
 	}
-
 	if meta != nil {
 		updateData["width"] = meta.Width
 		updateData["height"] = meta.Height
@@ -178,50 +146,44 @@ func (r *ImageRepository) UpdateMetadataResult(originalPath string, meta *media.
 		updateData["taken_at"] = meta.TakenAt
 		updateData["rating"] = meta.Rating
 	}
-
-	result := r.DB.Model(&models.Image{}).Where("original_path = ?", cleanPath).Updates(updateData)
-	if result.Error != nil {
-		return fmt.Errorf("failed to update metadata result for %s: %w", cleanPath, result.Error)
-	}
-	return nil
+	return r.DB.Model(&models.Image{}).Where("original_path = ?", originalPath).Updates(updateData).Error
 }
 
-// UpdateDetectionResult updates the image record with face detection results
-func (r *ImageRepository) UpdateDetectionResult(originalPath string, detections []media.DetectionResult, modTime int64, taskErr error) error {
-	cleanPath := filepath.ToSlash(originalPath)
-	now := time.Now().Unix()
-	status := database.StatusDone
-	var errStr *string
-
+// UpdateDetectionResult replaces untagged faces with fresh detections
+func (r *ImageRepository) UpdateDetectionResult(originalPath string, detections []media.DetectionResult, taskErr error) error {
+	status, errStr := taskResult(taskErr)
 	if taskErr != nil {
-		status = database.StatusError
-		s := taskErr.Error()
-		errStr = &s
-		detections = nil // do not process detections if there was an error
+		detections = nil
 	}
 
 	return r.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("image_path = ? AND person_id IS NULL", cleanPath).Delete(&models.Face{}).Error; err != nil {
-			return fmt.Errorf("failed to delete old untagged faces for %s: %w", cleanPath, err)
+		var oldFaceIDs []uint
+		if err := tx.Unscoped().Model(&models.Face{}).
+			Where("image_path = ? AND person_id IS NULL", originalPath).Pluck("id", &oldFaceIDs).Error; err != nil {
+			return err
+		}
+		if len(oldFaceIDs) > 0 {
+			if err := tx.Unscoped().Where("face_id IN ?", oldFaceIDs).Delete(&models.FaceEmbedding{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Unscoped().Where("id IN ?", oldFaceIDs).Delete(&models.Face{}).Error; err != nil {
+				return err
+			}
 		}
 
-		if taskErr == nil && len(detections) > 0 {
+		if len(detections) > 0 {
+			now := time.Now().Unix()
 			newFaces := make([]models.Face, len(detections))
-			faceCreatedAt := time.Now().Unix() // all faces in this batch get the same timestamp
 			for i, det := range detections {
-				// Convert landmarks to JSON string if available
 				var landmarksStr *string
 				if len(det.Landmarks) > 0 {
-					landmarksJSON, err := json.Marshal(det.Landmarks)
-					if err == nil {
-						landmarksStr = new(string)
-						*landmarksStr = string(landmarksJSON)
+					if b, err := json.Marshal(det.Landmarks); err == nil {
+						s := string(b)
+						landmarksStr = &s
 					}
 				}
-
 				newFaces[i] = models.Face{
-					// PersonID is nil for untagged faces
-					ImagePath:           cleanPath,
+					ImagePath:           originalPath,
 					X1:                  det.X,
 					Y1:                  det.Y,
 					X2:                  det.X + det.W,
@@ -232,58 +194,46 @@ func (r *ImageRepository) UpdateDetectionResult(originalPath string, detections 
 					PoseYaw:             det.PoseYaw,
 					PosePitch:           det.PosePitch,
 					PoseRoll:            det.PoseRoll,
-					CreatedAt:           faceCreatedAt,
-					UpdatedAt:           faceCreatedAt,
+					CreatedAt:           now,
+					UpdatedAt:           now,
 				}
 			}
 			if err := tx.Create(&newFaces).Error; err != nil {
-				return fmt.Errorf("failed to add new detected faces for %s: %w", cleanPath, err)
+				return fmt.Errorf("failed to add detected faces for %s: %w", originalPath, err)
 			}
-
-			// Create embeddings for faces that have them
 			for i, det := range detections {
-				if len(det.Embedding) > 0 {
-					log.Printf("repository: Creating embedding for face %d with %d values, first 5: %v", newFaces[i].ID, len(det.Embedding), det.Embedding[:minInt(5, len(det.Embedding))])
-
-					embedding := &models.FaceEmbedding{
-						FaceID:         newFaces[i].ID,
-						EmbeddingModel: det.ModelName,
-					}
-					embedding.SetEmbedding(det.Embedding)
-
-					// Debug: check the binary data
-					log.Printf("repository: Embedding binary data length: %d, first 20 bytes: %v", len(embedding.EmbeddingData), embedding.EmbeddingData[:minInt(20, len(embedding.EmbeddingData))])
-
-					if err := tx.Create(embedding).Error; err != nil {
-						return fmt.Errorf("failed to create face embedding for face ID %d: %w", newFaces[i].ID, err)
-					}
-					log.Printf("repository: Successfully created embedding record with ID %d", embedding.ID)
-				} else {
-					log.Printf("repository: No embedding data for face %d", newFaces[i].ID)
+				if len(det.Embedding) == 0 {
+					continue
+				}
+				embedding := &models.FaceEmbedding{FaceID: newFaces[i].ID, EmbeddingModel: det.ModelName}
+				embedding.SetEmbedding(det.Embedding)
+				if err := tx.Create(embedding).Error; err != nil {
+					return fmt.Errorf("failed to create face embedding for face %d: %w", newFaces[i].ID, err)
 				}
 			}
+			log.Printf("repository: stored %d face(s) for %s", len(newFaces), originalPath)
 		}
 
-		imageUpdates := map[string]interface{}{
-			"last_modified":          modTime,
+		return tx.Model(&models.Image{}).Where("original_path = ?", originalPath).Updates(map[string]interface{}{
 			"detection_status":       status,
-			"detection_processed_at": &now,
+			"detection_processed_at": time.Now().Unix(),
 			"detection_error":        errStr,
-		}
-		if err := tx.Model(&models.Image{}).Where("original_path = ?", cleanPath).Updates(imageUpdates).Error; err != nil {
-			return fmt.Errorf("failed to update image detection result for %s: %w", cleanPath, err)
-		}
-
-		return nil
+		}).Error
 	})
 }
 
-// Delete removes an image record by its original path
-func (r *ImageRepository) Delete(originalPath string) error {
-	cleanPath := filepath.ToSlash(originalPath)
-	result := r.DB.Where("original_path = ?", cleanPath).Delete(&models.Image{})
+// RequeueTask sets a task back to 'pending' so the dispatcher runs it again.
+func (r *ImageRepository) RequeueTask(originalPath, taskStatusColumn string) error {
+	errorColumn, ok := taskColumns[taskStatusColumn]
+	if !ok {
+		return fmt.Errorf("invalid task status column name: %s", taskStatusColumn)
+	}
+	result := r.DB.Model(&models.Image{}).Where("original_path = ?", originalPath).Updates(map[string]interface{}{
+		taskStatusColumn: database.StatusPending,
+		errorColumn:      nil,
+	})
 	if result.Error != nil {
-		return fmt.Errorf("failed to delete image record for %s: %w", cleanPath, result.Error)
+		return result.Error
 	}
 	if result.RowsAffected == 0 {
 		return gorm.ErrRecordNotFound
@@ -291,130 +241,65 @@ func (r *ImageRepository) Delete(originalPath string) error {
 	return nil
 }
 
-// GetImagesRequiringProcessing retrieves images that have one or more tasks in 'pending' status
-func (r *ImageRepository) GetImagesRequiringProcessing() ([]models.Image, error) {
+// ResetInterruptedTasks puts any task left in 'processing' (e.g. after a crash) back to 'pending'.
+func (r *ImageRepository) ResetInterruptedTasks() error {
+	for col := range taskColumns {
+		if err := r.DB.Model(&models.Image{}).Where(col+" = ?", database.StatusProcessing).
+			Update(col, database.StatusPending).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ListPendingProcessing returns images that still need metadata, thumbnail or preview work.
+func (r *ImageRepository) ListPendingProcessing(limit int) ([]models.Image, error) {
 	var images []models.Image
-	err := r.DB.Where("metadata_status = ? OR thumbnail_status = ? OR detection_status = ?",
+	err := r.DB.Where("metadata_status = ? OR thumbnail_status = ? OR preview_status = ?",
 		database.StatusPending, database.StatusPending, database.StatusPending).
-		Find(&images).Error
-	if err != nil {
-		return nil, fmt.Errorf("failed to get images requiring processing: %w", err)
+		Order("created_at ASC").Limit(limit).Find(&images).Error
+	return images, err
+}
+
+// ListPendingDetection returns images that still need face detection.
+func (r *ImageRepository) ListPendingDetection(limit int) ([]models.Image, error) {
+	var images []models.Image
+	err := r.DB.Where("detection_status = ?", database.StatusPending).
+		Order("created_at ASC").Limit(limit).Find(&images).Error
+	return images, err
+}
+
+// ListByAlbum returns every image in an album, optionally filtered by minimum rating.
+func (r *ImageRepository) ListByAlbum(albumID uint, minRating *int) ([]models.Image, error) {
+	q := r.DB.Where("album_id = ?", albumID)
+	if minRating != nil {
+		q = q.Where("rating >= ?", *minRating)
+	}
+	var images []models.Image
+	if err := q.Order("original_path ASC").Find(&images).Error; err != nil {
+		return nil, fmt.Errorf("failed to list images for album %d: %w", albumID, err)
 	}
 	return images, nil
 }
 
-// GetImagesByPaths retrieves multiple image records by their original paths
+// GetImagesByPaths retrieves multiple image records by their paths
 func (r *ImageRepository) GetImagesByPaths(originalPaths []string) ([]models.Image, error) {
 	if len(originalPaths) == 0 {
 		return []models.Image{}, nil
 	}
-
-	cleanPaths := make([]string, len(originalPaths))
-	for i, p := range originalPaths {
-		cleanPaths[i] = filepath.ToSlash(p)
-	}
-
 	var images []models.Image
-	err := r.DB.Where("original_path IN ?", cleanPaths).Find(&images).Error
-	if err != nil {
+	if err := r.DB.Where("original_path IN ?", originalPaths).Find(&images).Error; err != nil {
 		return nil, fmt.Errorf("failed to get images by paths: %w", err)
 	}
 	return images, nil
 }
 
-// UpdatePreviewResult updates the image record with preview generation results
-func (r *ImageRepository) UpdatePreviewResult(originalPath string, previewPath *string, modTime int64, taskErr error) error {
-	cleanPath := filepath.ToSlash(originalPath)
-	now := time.Now().Unix()
-	status := database.StatusDone
-	var errStr *string
-
-	if taskErr != nil {
-		status = database.StatusError
-		s := taskErr.Error()
-		errStr = &s
-	}
-
-	updates := map[string]interface{}{
-		"preview_path":         previewPath,
-		"last_modified":        modTime,
-		"preview_status":       status,
-		"preview_processed_at": &now,
-		"preview_error":        errStr,
-	}
-
-	result := r.DB.Model(&models.Image{}).Where("original_path = ?", cleanPath).Updates(updates)
-	if result.Error != nil {
-		return fmt.Errorf("failed to update preview result for %s: %w", cleanPath, result.Error)
-	}
-	return nil
-}
-
-// TouchPreviewLastRequested updates the preview_last_requested_at timestamp for the given image
-func (r *ImageRepository) TouchPreviewLastRequested(originalPath string) error {
-	cleanPath := filepath.ToSlash(originalPath)
-	now := time.Now().Unix()
-	result := r.DB.Model(&models.Image{}).Where("original_path = ?", cleanPath).
-		Update("preview_last_requested_at", now)
-	if result.Error != nil {
-		return fmt.Errorf("failed to touch preview last requested for %s: %w", cleanPath, result.Error)
-	}
-	return nil
-}
-
-// GetStalePreviewImages returns images whose preview has not been accessed since olderThan (Unix timestamp)
-func (r *ImageRepository) GetStalePreviewImages(olderThan int64) ([]models.Image, error) {
-	var images []models.Image
-	err := r.DB.Where(
-		"preview_status = ? AND (preview_last_requested_at < ? OR (preview_last_requested_at IS NULL AND preview_processed_at < ?))",
-		database.StatusDone, olderThan, olderThan,
-	).Find(&images).Error
-	if err != nil {
-		return nil, fmt.Errorf("failed to get stale preview images: %w", err)
-	}
-	return images, nil
-}
-
-// GetStalePreviewImagesBatch returns up to limit images whose preview has not been accessed since olderThan,
-// starting at the given offset
-func (r *ImageRepository) GetStalePreviewImagesBatch(olderThan int64, offset, limit int) ([]models.Image, error) {
-	var images []models.Image
-	err := r.DB.Where(
-		"preview_status = ? AND (preview_last_requested_at < ? OR (preview_last_requested_at IS NULL AND preview_processed_at < ?))",
-		database.StatusDone, olderThan, olderThan,
-	).Offset(offset).Limit(limit).Find(&images).Error
-	if err != nil {
-		return nil, fmt.Errorf("failed to get stale preview images batch: %w", err)
-	}
-	return images, nil
-}
-
-// GetImagesByFolderPaths returns paginated images whose original_path starts with any of the given folder paths,
-// optionally filtered to those with rating >= minRating.
-func (r *ImageRepository) GetImagesByFolderPaths(folderPaths []string, minRating *int, offset, limit int) ([]models.Image, int, error) {
-	if len(folderPaths) == 0 {
+// GetImagesByAlbumIDs returns paginated images from the given albums, newest first.
+func (r *ImageRepository) GetImagesByAlbumIDs(albumIDs []uint, minRating *int, offset, limit int) ([]models.Image, int, error) {
+	if len(albumIDs) == 0 {
 		return nil, 0, nil
 	}
-
-	// Build OR condition for each folder prefix
-	db := r.DB.Model(&models.Image{})
-
-	// Construct LIKE conditions for each folder path
-	likes := make([]string, len(folderPaths))
-	args := make([]interface{}, len(folderPaths))
-	for i, p := range folderPaths {
-		p = filepath.ToSlash(p)
-		if !strings.HasSuffix(p, "/") {
-			p += "/"
-		}
-		likes[i] = "original_path LIKE ?"
-		args[i] = p + "%"
-	}
-
-	// Build the OR clause
-	whereCond := strings.Join(likes, " OR ")
-	db = db.Where(whereCond, args...)
-
+	db := r.DB.Model(&models.Image{}).Where("album_id IN ?", albumIDs)
 	if minRating != nil {
 		db = db.Where("rating >= ?", *minRating)
 	}
@@ -425,38 +310,96 @@ func (r *ImageRepository) GetImagesByFolderPaths(folderPaths []string, minRating
 	}
 
 	var images []models.Image
-	err := db.Order("taken_at DESC, last_modified DESC").
-		Offset(offset).Limit(limit).
-		Find(&images).Error
+	err := db.Order("taken_at DESC NULLS LAST, created_at DESC, original_path ASC").
+		Offset(offset).Limit(limit).Find(&images).Error
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to query group photos: %w", err)
 	}
-
 	return images, int(total), nil
 }
 
-// GetDistinctUploaderIDsByFolderPrefix returns distinct uploader user IDs for images under a given path prefix
-func (r *ImageRepository) GetDistinctUploaderIDsByFolderPrefix(prefix string) ([]uint, error) {
-	type row struct{ UploadedByUserID *uint }
-	var rows []row
-	like := filepath.ToSlash(prefix)
-	if !strings.HasSuffix(like, "/") {
-		like += "/"
-	}
-	like += "%"
+// GetDistinctUploaderIDsByAlbum returns distinct uploader user IDs for an album
+func (r *ImageRepository) GetDistinctUploaderIDsByAlbum(albumID uint) ([]uint, error) {
+	var ids []uint
 	err := r.DB.Model(&models.Image{}).
-		Select("uploaded_by_user_id").
-		Where("original_path LIKE ? AND uploaded_by_user_id IS NOT NULL", like).
-		Distinct().
-		Find(&rows).Error
+		Where("album_id = ? AND uploaded_by_user_id IS NOT NULL", albumID).
+		Distinct().Pluck("uploaded_by_user_id", &ids).Error
 	if err != nil {
-		return nil, fmt.Errorf("failed to query distinct uploaders for prefix %s: %w", prefix, err)
-	}
-	ids := make([]uint, 0, len(rows))
-	for _, r := range rows {
-		if r.UploadedByUserID != nil {
-			ids = append(ids, *r.UploadedByUserID)
-		}
+		return nil, fmt.Errorf("failed to query uploaders for album %d: %w", albumID, err)
 	}
 	return ids, nil
+}
+
+// DeleteImages hard-deletes images plus their faces, embeddings and tags. It
+// returns every object key that belonged to them so the caller can remove the
+// objects from storage.
+func (r *ImageRepository) DeleteImages(paths []string) ([]string, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	var imgs []models.Image
+	if err := r.DB.Unscoped().Where("original_path IN ?", paths).Find(&imgs).Error; err != nil {
+		return nil, err
+	}
+	err := r.DB.Transaction(func(tx *gorm.DB) error {
+		if err := deleteImageRelations(tx, paths, true); err != nil {
+			return err
+		}
+		return tx.Unscoped().Where("original_path IN ?", paths).Delete(&models.Image{}).Error
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to delete images: %w", err)
+	}
+	return ImageObjectKeys(imgs), nil
+}
+
+// DeleteByAlbum hard-deletes every image in an album. See DeleteImages.
+func (r *ImageRepository) DeleteByAlbum(albumID uint) ([]string, error) {
+	var paths []string
+	if err := r.DB.Unscoped().Model(&models.Image{}).Where("album_id = ?", albumID).Pluck("original_path", &paths).Error; err != nil {
+		return nil, err
+	}
+	return r.DeleteImages(paths)
+}
+
+// ImageObjectKeys lists the original and generated object keys of the given images.
+func ImageObjectKeys(imgs []models.Image) []string {
+	keys := make([]string, 0, len(imgs)*3)
+	for _, img := range imgs {
+		keys = append(keys, img.ObjectKey)
+		if img.ThumbnailPath != nil {
+			keys = append(keys, *img.ThumbnailPath)
+		}
+		if img.PreviewPath != nil {
+			keys = append(keys, *img.PreviewPath)
+		}
+	}
+	return keys
+}
+
+// deleteImageRelations removes faces, embeddings and tags for the given images.
+// When includeTagged is false, faces already assigned to a person are kept and
+// only non-manual tags are removed (used when an image is re-uploaded).
+func deleteImageRelations(tx *gorm.DB, paths []string, includeTagged bool) error {
+	faceQuery := tx.Unscoped().Model(&models.Face{}).Where("image_path IN ?", paths)
+	if !includeTagged {
+		faceQuery = faceQuery.Where("person_id IS NULL")
+	}
+	var faceIDs []uint
+	if err := faceQuery.Pluck("id", &faceIDs).Error; err != nil {
+		return err
+	}
+	if len(faceIDs) > 0 {
+		if err := tx.Unscoped().Where("face_id IN ?", faceIDs).Delete(&models.FaceEmbedding{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Unscoped().Where("id IN ?", faceIDs).Delete(&models.Face{}).Error; err != nil {
+			return err
+		}
+	}
+	tagQuery := tx.Where("image_path IN ?", paths)
+	if !includeTagged {
+		tagQuery = tagQuery.Where("source <> ?", "manual")
+	}
+	return tagQuery.Delete(&models.ImageTag{}).Error
 }

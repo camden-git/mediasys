@@ -1,18 +1,16 @@
 package handlers
 
 import (
-	"fmt"
-	"log"
 	"net/http"
-	"path/filepath"
-	"time"
 
 	"github.com/camden-git/mediasysbackend/config"
+	"github.com/camden-git/mediasysbackend/media"
 	"github.com/camden-git/mediasysbackend/realtime"
 	"github.com/camden-git/mediasysbackend/repository"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/rs/cors"
+	"gorm.io/gorm"
 )
 
 // AppDependencies holds all handlers, repositories, and configuration needed for route registration.
@@ -20,6 +18,8 @@ type AppDependencies struct {
 	Cfg      config.Config
 	Hub      *realtime.Hub
 	UserRepo repository.UserRepository
+	Store    *media.Store
+	DB       *gorm.DB
 
 	AlbumHandler           *AlbumHandler
 	PersonHandler          *PersonHandler
@@ -50,12 +50,11 @@ func RegisterRoutes(r chi.Router, deps AppDependencies) {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Compress(5))
-	r.Use(middleware.Timeout(60 * time.Second))
 
 	// CORS is scoped to only auth and admin routes to avoid Vary: Origin on public
 	// cacheable endpoints (albums, groups, collections).
 	credentialedCORS := cors.New(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:5173", "http://localhost:4173", "http://127.0.0.1:5173", "http://127.0.0.1:4173", "http://10.247.36.80:5173", "http://10.247.36.80:4173", "https://media.camdenrush.com"},
+		AllowedOrigins:   cfg.CORSAllowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "Content-Length"},
 		ExposedHeaders:   []string{"Link"},
@@ -453,19 +452,23 @@ func RegisterRoutes(r chi.Router, deps AppDependencies) {
 			r.Get("/", deps.FaceHandler.SearchFacesByPerson)
 		})
 
-		thumbnailSubDir := filepath.Base(cfg.ThumbnailsPath)
-		r.Get(fmt.Sprintf("/%s/*", thumbnailSubDir), AssetServer(cfg.MediaStoragePath, thumbnailSubDir))
-		log.Printf("Registered thumbnail server at /%s/*", thumbnailSubDir)
-
-		bannerSubDir := filepath.Base(cfg.BannersPath)
-		r.Get(fmt.Sprintf("/%s/*", bannerSubDir), AssetServer(cfg.MediaStoragePath, bannerSubDir))
-		log.Printf("Registered banner server at /%s/*", bannerSubDir)
-
-		archiveSubDir := filepath.Base(cfg.ArchivesPath)
-		r.Get(fmt.Sprintf("/%s/*", archiveSubDir), AssetServer(cfg.MediaStoragePath, archiveSubDir))
-		log.Printf("Registered archive server at /%s/*", archiveSubDir)
-
+		// media served from object storage
+		r.Get("/thumbnails/*", ObjectServer(deps.Store, media.PrefixThumbnails))
+		r.Get("/album_banners/*", ObjectServer(deps.Store, media.PrefixBanners))
+		r.Get("/originals/*", deps.ImagePreviewHandler.ServeOriginal)
 		r.Get("/preview/*", deps.ImagePreviewHandler.ServeScaledPreview)
+
+		r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
+			if err := deps.Store.Ping(r.Context()); err != nil {
+				http.Error(w, "object store unavailable", http.StatusServiceUnavailable)
+				return
+			}
+			if sqlDB, err := deps.DB.DB(); err != nil || sqlDB.PingContext(r.Context()) != nil {
+				http.Error(w, "database unavailable", http.StatusServiceUnavailable)
+				return
+			}
+			_, _ = w.Write([]byte("ok"))
+		})
 
 		r.Route("/debug", func(r chi.Router) {
 			r.Get("/image_with_faces", deps.ImagePreviewHandler.ServeImageWithFaces)
@@ -473,8 +476,6 @@ func RegisterRoutes(r chi.Router, deps AppDependencies) {
 			r.Get("/detection_status", deps.DebugHandler.GetDetectionStatus)
 			r.Get("/faces", deps.FaceHandler.DebugFaces)
 		})
-
-		r.Get("/*", DirectoryHandler(cfg, deps.AlbumHandler.ImageRepo, deps.AlbumHandler.ThumbGen))
 	})
 
 	// websocket endpoint for realtime updates (authenticated)

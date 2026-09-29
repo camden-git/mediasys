@@ -7,9 +7,9 @@ import "time"
 // with source="album_default".
 type AlbumDefaultTag struct {
 	ID        uint      `gorm:"primaryKey;autoIncrement" json:"id"`
-	AlbumID   uint      `gorm:"not null;index" json:"album_id"`
-	TagKey    string    `gorm:"not null" json:"tag_key"`
-	TagValue  string    `gorm:"not null" json:"tag_value"`
+	AlbumID   uint      `gorm:"not null;uniqueIndex:idx_album_default_tags_unique" json:"album_id"`
+	TagKey    string    `gorm:"not null;uniqueIndex:idx_album_default_tags_unique" json:"tag_key"`
+	TagValue  string    `gorm:"not null;uniqueIndex:idx_album_default_tags_unique" json:"tag_value"`
 	CreatedAt time.Time `gorm:"not null" json:"created_at"`
 }
 

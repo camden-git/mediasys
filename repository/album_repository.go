@@ -279,3 +279,11 @@ func (r *AlbumRepository) Delete(id uint) error {
 	}
 	return nil
 }
+
+// ListPendingZips returns albums whose archive was requested but never finished
+// (e.g. interrupted by a restart).
+func (r *AlbumRepository) ListPendingZips() ([]models.Album, error) {
+	var albums []models.Album
+	err := r.DB.Where("zip_status IN ?", []string{database.StatusPending, database.StatusProcessing}).Find(&albums).Error
+	return albums, err
+}

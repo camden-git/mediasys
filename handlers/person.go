@@ -6,11 +6,11 @@ import (
 	"image"
 	"log"
 	"net/http"
-	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/camden-git/mediasysbackend/config"
+	"github.com/camden-git/mediasysbackend/media"
 	"github.com/camden-git/mediasysbackend/models"
 	"github.com/camden-git/mediasysbackend/repository"
 	"github.com/disintegration/imaging"
@@ -21,6 +21,8 @@ import (
 type PersonHandler struct {
 	PersonRepo repository.PersonRepositoryInterface
 	FaceRepo   repository.FaceRepositoryInterface
+	ImageRepo  repository.ImageRepositoryInterface
+	Store      *media.Store
 	Cfg        config.Config
 }
 
@@ -401,10 +403,21 @@ func (ph *PersonHandler) ServeKeyPhoto(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fullPath := filepath.Join(ph.Cfg.RootDirectory, face.ImagePath)
-	src, err := imaging.Open(fullPath, imaging.AutoOrientation(true))
+	img, err := ph.ImageRepo.GetByPath(face.ImagePath)
 	if err != nil {
-		log.Printf("ServeKeyPhoto: failed to open image %s: %v", fullPath, err)
+		WriteAPIError(w, http.StatusNotFound, "ImageNotFound", "key photo image not found")
+		return
+	}
+	obj, _, err := ph.Store.Get(r.Context(), img.ObjectKey)
+	if err != nil {
+		log.Printf("ServeKeyPhoto: failed to open image %s: %v", img.ObjectKey, err)
+		WriteAPIError(w, http.StatusInternalServerError, "ImageOpenError", "could not open image")
+		return
+	}
+	defer obj.Close()
+	src, err := imaging.Decode(obj, imaging.AutoOrientation(true))
+	if err != nil {
+		log.Printf("ServeKeyPhoto: failed to decode image %s: %v", img.ObjectKey, err)
 		WriteAPIError(w, http.StatusInternalServerError, "ImageOpenError", "could not open image")
 		return
 	}

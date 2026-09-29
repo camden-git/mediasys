@@ -4,10 +4,8 @@ import (
 	"errors"
 	"log"
 	"net/http"
-	"path/filepath"
 	"strconv"
 
-	"github.com/camden-git/mediasysbackend/database"
 	"github.com/camden-git/mediasysbackend/repository"
 	"github.com/go-chi/chi/v5"
 	"gorm.io/gorm"
@@ -90,15 +88,15 @@ func (h *AlbumGroupHandler) GetGroupPhotos(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	// Collect folder paths from non-hidden albums in this group
-	var folderPaths []string
+	// Collect non-hidden albums in this group
+	var albumIDs []uint
 	for _, album := range group.Albums {
 		if !album.IsHidden {
-			folderPaths = append(folderPaths, album.FolderPath)
+			albumIDs = append(albumIDs, album.ID)
 		}
 	}
 
-	if len(folderPaths) == 0 {
+	if len(albumIDs) == 0 {
 		WriteAPIResponse(w, http.StatusOK, DirectoryListing{
 			Path:    "/groups/" + slug + "/photos",
 			Files:   []FileInfo{},
@@ -110,7 +108,7 @@ func (h *AlbumGroupHandler) GetGroupPhotos(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	images, total, err := h.ImageRepo.GetImagesByFolderPaths(folderPaths, minRating, offset, limit)
+	images, total, err := h.ImageRepo.GetImagesByAlbumIDs(albumIDs, minRating, offset, limit)
 	if err != nil {
 		log.Printf("Error querying group photos for '%s': %v", slug, err)
 		WriteAPIError(w, http.StatusInternalServerError, "GroupPhotosError", "Failed to retrieve group photos")
@@ -118,34 +116,8 @@ func (h *AlbumGroupHandler) GetGroupPhotos(w http.ResponseWriter, r *http.Reques
 	}
 
 	files := make([]FileInfo, 0, len(images))
-	for _, img := range images {
-		fi := FileInfo{
-			Name:            filepath.Base(img.OriginalPath),
-			Path:            "/" + img.OriginalPath,
-			IsDir:           false,
-			ModTime:         img.LastModified,
-			Width:           img.Width,
-			Height:          img.Height,
-			Aperture:        img.Aperture,
-			ShutterSpeed:    img.ShutterSpeed,
-			ISO:             img.ISO,
-			FocalLength:     img.FocalLength,
-			LensMake:        img.LensMake,
-			LensModel:       img.LensModel,
-			CameraMake:      img.CameraMake,
-			CameraModel:     img.CameraModel,
-			TakenAt:         img.TakenAt,
-			Rating:          img.Rating,
-			ThumbnailStatus: img.ThumbnailStatus,
-			MetadataStatus:  img.MetadataStatus,
-			DetectionStatus: img.DetectionStatus,
-		}
-		if img.ThumbnailPath != nil && img.ThumbnailStatus == database.StatusDone {
-			thumbFilename := filepath.Base(*img.ThumbnailPath)
-			fullThumbURL := "/api" + thumbnailApiPrefix + thumbFilename
-			fi.ThumbnailPath = &fullThumbURL
-		}
-		files = append(files, fi)
+	for i := range images {
+		files = append(files, imageToFileInfo(&images[i]))
 	}
 
 	listing := DirectoryListing{

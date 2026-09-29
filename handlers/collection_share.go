@@ -4,7 +4,6 @@ import (
 	"errors"
 	"log"
 	"net/http"
-	"path/filepath"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -61,9 +60,7 @@ func (h *CollectionHandler) ShareCollectionHTML(w http.ResponseWriter, r *http.R
 		}
 	}
 	if firstBannerPath != "" {
-		bannersSubDir := filepath.Base(h.Cfg.BannersPath)
-		filename := filepath.Base(firstBannerPath)
-		imageURL = absolute("/api/" + bannersSubDir + "/" + filename)
+		imageURL = absolute("/api/" + firstBannerPath)
 	}
 
 	title := collection.Name
