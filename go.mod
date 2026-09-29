@@ -5,7 +5,6 @@ go 1.25.0
 require (
 	github.com/chai2010/webp v1.4.0
 	github.com/disintegration/imaging v1.6.2
-	github.com/facette/natsort v0.0.0-20181210072756-2cd4dd1e2dcb
 	github.com/go-chi/chi/v5 v5.2.1
 	github.com/golang-jwt/jwt/v5 v5.2.2
 	github.com/google/uuid v1.6.0

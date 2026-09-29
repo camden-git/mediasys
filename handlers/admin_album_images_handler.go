@@ -248,14 +248,24 @@ func (h *AdminAlbumHandler) ListAlbumImages(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	images, err := h.ImageRepo.ListByAlbum(album.ID, nil)
+	sortOrder := album.SortOrder
+	if !database.IsValidSortOrder(sortOrder) {
+		sortOrder = database.DefaultSortOrder
+	}
+
+	// the admin view is not paginated: a negative limit returns every image
+	images, total, err := h.ImageRepo.ListByAlbumPaged(album.ID, nil, sortOrder, 0, -1)
 	if err != nil {
 		log.Printf("Error listing images for album %d: %v", album.ID, err)
 		WriteAPIError(w, http.StatusInternalServerError, "ImageListError", "Failed to list album contents")
 		return
 	}
 
-	WriteAPIResponse(w, http.StatusOK, paginate("/"+album.FolderPath, imagesToSortedFileInfos(images, album.SortOrder), 0, 0))
+	files := make([]FileInfo, 0, len(images))
+	for i := range images {
+		files = append(files, imageToFileInfo(&images[i]))
+	}
+	WriteAPIResponse(w, http.StatusOK, DirectoryListing{Path: "/" + album.FolderPath, Files: files, Total: total})
 }
 
 // DeleteAlbumImage deletes a single image, its related records and all of its stored objects
