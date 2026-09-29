@@ -123,13 +123,19 @@ func (r *GormRoleRepository) FindUsersByRoleID(roleID uint) ([]models.User, erro
 	return users, nil
 }
 
+// AddUserToRole assigns the role to the user, returning gorm.ErrRecordNotFound if the user does not exist.
 func (r *GormRoleRepository) AddUserToRole(userID, roleID uint) error {
 	userRole := models.UserRole{
 		UserID: userID,
 		RoleID: roleID,
 	}
 
-	return r.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&userRole).Error
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Select("id").First(&models.User{}, userID).Error; err != nil {
+			return err
+		}
+		return tx.Omit(clause.Associations).Clauses(clause.OnConflict{DoNothing: true}).Create(&userRole).Error
+	})
 }
 
 func (r *GormRoleRepository) RemoveUserFromRole(userID, roleID uint) error {

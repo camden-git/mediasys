@@ -103,9 +103,20 @@ func (h *AdminRoleHandler) AddUserToRole(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// TODO: check if user exists before adding
+	caller, ok := requestUser(w, r)
+	if !ok {
+		return
+	}
+	if msg := roleGrantDenial(caller, role); msg != "" {
+		WriteAPIError(w, http.StatusForbidden, "ForbiddenRoleAssignment", msg)
+		return
+	}
 
 	if err := h.RoleRepo.AddUserToRole(payload.UserID, uint(roleID)); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			WriteAPIError(w, http.StatusNotFound, "UserNotFound", "User not found")
+			return
+		}
 		WriteAPIError(w, http.StatusInternalServerError, "RoleAssignmentError", "Failed to add user to role: "+err.Error())
 		return
 	}
@@ -152,6 +163,15 @@ func (h *AdminRoleHandler) RemoveUserFromRole(w http.ResponseWriter, r *http.Req
 	}
 	if role.Name == models.SuperAdminRoleName {
 		WriteAPIError(w, http.StatusForbidden, "ForbiddenRoleAssignment", "Users cannot be removed from the Super Administrator role.")
+		return
+	}
+
+	caller, ok := requestUser(w, r)
+	if !ok {
+		return
+	}
+	if msg := roleGrantDenial(caller, role); msg != "" {
+		WriteAPIError(w, http.StatusForbidden, "ForbiddenRoleAssignment", msg)
 		return
 	}
 

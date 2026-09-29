@@ -163,6 +163,7 @@ func (h *AdminRoleHandler) GetRole(w http.ResponseWriter, r *http.Request) {
 // @Param role body RoleCreatePayload true "Role creation payload"
 // @Success 201 {object} RoleResponseDTO
 // @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string "Caller lacks a permission being granted"
 // @Failure 500 {object} map[string]string
 // @Router /api/admin/roles [post]
 // @Security BearerAuth
@@ -203,6 +204,25 @@ func (h *AdminRoleHandler) CreateRole(w http.ResponseWriter, r *http.Request) {
 		}
 		if permDef.Scope != permissions.ScopeAlbum {
 			WriteAPIError(w, http.StatusBadRequest, "ValidationError", fmt.Sprintf("Permission '%s' is not an album-scoped permission", pKey))
+			return
+		}
+	}
+
+	caller, ok := requestUser(w, r)
+	if !ok {
+		return
+	}
+	if msg := globalGrantDenial(caller, payload.GlobalPermissions, nil); msg != "" {
+		WriteAPIError(w, http.StatusForbidden, "ForbiddenPermissionGrant", msg)
+		return
+	}
+	if msg := albumForAllGrantDenial(caller, payload.GlobalAlbumPermissions, nil); msg != "" {
+		WriteAPIError(w, http.StatusForbidden, "ForbiddenPermissionGrant", msg)
+		return
+	}
+	for _, apPayload := range payload.AlbumPermissions {
+		if msg := albumGrantDenial(caller, apPayload.AlbumID, apPayload.Permissions, nil); msg != "" {
+			WriteAPIError(w, http.StatusForbidden, "ForbiddenPermissionGrant", msg)
 			return
 		}
 	}
@@ -301,6 +321,11 @@ func (h *AdminRoleHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	caller, ok := requestUser(w, r)
+	if !ok {
+		return
+	}
+
 	if payload.Name != nil {
 		if *payload.Name == models.SuperAdminRoleName && role.Name != models.SuperAdminRoleName {
 			WriteAPIError(w, http.StatusBadRequest, "ValidationError", fmt.Sprintf("Role name '%s' is reserved.", models.SuperAdminRoleName))
@@ -321,6 +346,10 @@ func (h *AdminRoleHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+		if msg := globalGrantDenial(caller, *payload.GlobalPermissions, role.GlobalPermissions); msg != "" {
+			WriteAPIError(w, http.StatusForbidden, "ForbiddenPermissionGrant", msg)
+			return
+		}
 		role.GlobalPermissions = *payload.GlobalPermissions
 	}
 
@@ -336,6 +365,10 @@ func (h *AdminRoleHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+		if msg := albumForAllGrantDenial(caller, *payload.GlobalAlbumPermissions, role.GlobalAlbumPermissions); msg != "" {
+			WriteAPIError(w, http.StatusForbidden, "ForbiddenPermissionGrant", msg)
+			return
+		}
 		role.GlobalAlbumPermissions = *payload.GlobalAlbumPermissions
 	}
 
@@ -344,6 +377,16 @@ func (h *AdminRoleHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			WriteAPIError(w, http.StatusInternalServerError, "RoleAlbumPermissionError", "Failed to retrieve existing album permissions for update: "+err.Error())
 			return
+		}
+		existingByAlbum := make(map[uint][]string, len(existingRaps))
+		for _, existingRap := range existingRaps {
+			existingByAlbum[existingRap.AlbumID] = existingRap.Permissions
+		}
+		for _, apInput := range *payload.AlbumPermissions {
+			if msg := albumGrantDenial(caller, apInput.AlbumID, apInput.Permissions, existingByAlbum[apInput.AlbumID]); msg != "" {
+				WriteAPIError(w, http.StatusForbidden, "ForbiddenPermissionGrant", msg)
+				return
+			}
 		}
 		for _, existingRap := range existingRaps {
 			if err := h.RoleRepo.DeleteRoleAlbumPermission(role.ID, existingRap.AlbumID); err != nil {
