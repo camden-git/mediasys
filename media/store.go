@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
@@ -199,7 +200,11 @@ func (s *Store) wrapErr(key string, err error) error {
 	return err
 }
 
-// OriginalKey returns the object key for an image's original file.
+// OriginalKey returns a fresh object key for an image's original file. It is
+// unique per call so re-uploading a path never overwrites the existing original
+// until the database row pointing at the new one has been written.
 func OriginalKey(imagePath string) string {
-	return PrefixOriginals + strings.TrimPrefix(imagePath, "/")
+	imagePath = strings.TrimPrefix(imagePath, "/")
+	ext := path.Ext(imagePath)
+	return PrefixOriginals + strings.TrimSuffix(imagePath, ext) + "." + uuid.NewString()[:8] + ext
 }

@@ -152,3 +152,22 @@ func TestUploadCannotOverwriteOtherAlbum(t *testing.T) {
 		t.Fatalf("B's original was modified: status %d", orig.StatusCode)
 	}
 }
+
+func TestReuploadReplacesOriginal(t *testing.T) {
+	env := requireShared(t)
+	s := randomSuffix()
+	a := createAlbum(t, env.adminToken, "Reup "+s, "reup-"+s, "")
+
+	first := generateJPEG(t, 32, 32)
+	second := generateJPEG(t, 48, 24)
+	for _, data := range [][]byte{first, second} {
+		if res := uploadWithPath(t, a.ID, "top/p.jpg", data); res.Uploaded != 1 {
+			t.Fatalf("upload failed: %+v", res)
+		}
+	}
+
+	orig := doRequest(t, http.MethodGet, "/api/originals/"+a.FolderPath+"/p.jpg", "", nil, "")
+	if orig.StatusCode != http.StatusOK || !bytes.Equal(orig.Body, second) {
+		t.Fatalf("expected the re-uploaded original to be served, status %d", orig.StatusCode)
+	}
+}
