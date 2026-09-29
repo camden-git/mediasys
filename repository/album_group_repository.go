@@ -47,10 +47,10 @@ func (r *AlbumGroupRepository) GetByID(id uint) (*models.AlbumGroup, error) {
 	return &group, nil
 }
 
-// GetBySlug retrieves an album group by its slug
+// GetBySlug retrieves an album group by its slug with its non-hidden albums
 func (r *AlbumGroupRepository) GetBySlug(slug string) (*models.AlbumGroup, error) {
 	var group models.AlbumGroup
-	err := r.DB.Where("slug = ?", slug).Preload("Albums").First(&group).Error
+	err := r.DB.Where("slug = ?", slug).Preload("Albums", "is_hidden = ?", false).First(&group).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
