@@ -220,25 +220,7 @@ func (h *AdminRoleHandler) CreateRole(w http.ResponseWriter, r *http.Request) {
 		WriteAPIError(w, http.StatusForbidden, "ForbiddenPermissionGrant", msg)
 		return
 	}
-	for _, apPayload := range payload.AlbumPermissions {
-		if msg := albumGrantDenial(caller, apPayload.AlbumID, apPayload.Permissions, nil); msg != "" {
-			WriteAPIError(w, http.StatusForbidden, "ForbiddenPermissionGrant", msg)
-			return
-		}
-	}
-
-	role := &models.Role{
-		Name:                   payload.Name,
-		GlobalPermissions:      payload.GlobalPermissions,
-		GlobalAlbumPermissions: payload.GlobalAlbumPermissions,
-	}
-
-	if err := h.RoleRepo.Create(role); err != nil {
-		WriteAPIError(w, http.StatusInternalServerError, "RoleCreateError", "Failed to create role: "+err.Error())
-		return
-	}
-
-	var createdAlbumPermissions []models.RoleAlbumPermission
+	albumPerms := make([]models.RoleAlbumPermission, 0, len(payload.AlbumPermissions))
 	for _, apPayload := range payload.AlbumPermissions {
 		for _, pKey := range apPayload.Permissions {
 			permDef, ok := permissions.GetPermissionDefinition(pKey)
@@ -251,21 +233,23 @@ func (h *AdminRoleHandler) CreateRole(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-
-		rap := &models.RoleAlbumPermission{
-			RoleID:      role.ID,
-			AlbumID:     apPayload.AlbumID,
-			Permissions: apPayload.Permissions,
-		}
-		if err := h.RoleRepo.CreateRoleAlbumPermission(rap); err != nil {
-			// attempt to clean up the created role if subsequent album perm creation fails
-			_ = h.RoleRepo.Delete(role.ID)
-			WriteAPIError(w, http.StatusInternalServerError, "RoleAlbumPermissionError", fmt.Sprintf("Failed to create album permission for album %d: %s", apPayload.AlbumID, err.Error()))
+		if msg := albumGrantDenial(caller, apPayload.AlbumID, apPayload.Permissions, nil); msg != "" {
+			WriteAPIError(w, http.StatusForbidden, "ForbiddenPermissionGrant", msg)
 			return
 		}
-		createdAlbumPermissions = append(createdAlbumPermissions, *rap)
+		albumPerms = append(albumPerms, models.RoleAlbumPermission{AlbumID: apPayload.AlbumID, Permissions: apPayload.Permissions})
 	}
-	role.AlbumPermissions = createdAlbumPermissions
+
+	role := &models.Role{
+		Name:                   payload.Name,
+		GlobalPermissions:      payload.GlobalPermissions,
+		GlobalAlbumPermissions: payload.GlobalAlbumPermissions,
+	}
+
+	if err := h.RoleRepo.CreateWithAlbumPermissions(role, albumPerms); err != nil {
+		WriteAPIError(w, http.StatusInternalServerError, "RoleCreateError", "Failed to create role: "+err.Error())
+		return
+	}
 
 	reloadedRole, err := h.RoleRepo.GetByID(role.ID)
 	if err != nil {
@@ -372,6 +356,7 @@ func (h *AdminRoleHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 		role.GlobalAlbumPermissions = *payload.GlobalAlbumPermissions
 	}
 
+	var newAlbumPerms *[]models.RoleAlbumPermission
 	if payload.AlbumPermissions != nil {
 		existingRaps, err := h.RoleRepo.GetRoleAlbumPermissions(role.ID)
 		if err != nil {
@@ -382,20 +367,8 @@ func (h *AdminRoleHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 		for _, existingRap := range existingRaps {
 			existingByAlbum[existingRap.AlbumID] = existingRap.Permissions
 		}
-		for _, apInput := range *payload.AlbumPermissions {
-			if msg := albumGrantDenial(caller, apInput.AlbumID, apInput.Permissions, existingByAlbum[apInput.AlbumID]); msg != "" {
-				WriteAPIError(w, http.StatusForbidden, "ForbiddenPermissionGrant", msg)
-				return
-			}
-		}
-		for _, existingRap := range existingRaps {
-			if err := h.RoleRepo.DeleteRoleAlbumPermission(role.ID, existingRap.AlbumID); err != nil {
-				WriteAPIError(w, http.StatusInternalServerError, "RoleAlbumPermissionError", fmt.Sprintf("Failed to delete existing album permission for album %d: %s", existingRap.AlbumID, err.Error()))
-				return
-			}
-		}
 
-		var newAlbumPermissions []models.RoleAlbumPermission
+		albumPerms := make([]models.RoleAlbumPermission, 0, len(*payload.AlbumPermissions))
 		for _, apInput := range *payload.AlbumPermissions {
 			for _, pKey := range apInput.Permissions {
 				permDef, ok := permissions.GetPermissionDefinition(pKey)
@@ -408,25 +381,16 @@ func (h *AdminRoleHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			}
-			rap := &models.RoleAlbumPermission{
-				RoleID:      role.ID,
-				AlbumID:     apInput.AlbumID,
-				Permissions: apInput.Permissions,
-			}
-
-			if err := h.RoleRepo.CreateRoleAlbumPermission(rap); err != nil {
-				WriteAPIError(w, http.StatusInternalServerError, "RoleAlbumPermissionError", fmt.Sprintf("Failed to create/update album permission for album %d: %s", apInput.AlbumID, err.Error()))
+			if msg := albumGrantDenial(caller, apInput.AlbumID, apInput.Permissions, existingByAlbum[apInput.AlbumID]); msg != "" {
+				WriteAPIError(w, http.StatusForbidden, "ForbiddenPermissionGrant", msg)
 				return
 			}
-			createdRap, _ := h.RoleRepo.GetRoleAlbumPermission(role.ID, apInput.AlbumID)
-			if createdRap != nil {
-				newAlbumPermissions = append(newAlbumPermissions, *createdRap)
-			}
+			albumPerms = append(albumPerms, models.RoleAlbumPermission{AlbumID: apInput.AlbumID, Permissions: apInput.Permissions})
 		}
-		role.AlbumPermissions = newAlbumPermissions
+		newAlbumPerms = &albumPerms
 	}
 
-	if err := h.RoleRepo.Update(role); err != nil {
+	if err := h.RoleRepo.UpdateWithAlbumPermissions(role, newAlbumPerms); err != nil {
 		WriteAPIError(w, http.StatusInternalServerError, "RoleUpdateError", "Failed to update role: "+err.Error())
 		return
 	}

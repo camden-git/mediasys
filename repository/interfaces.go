@@ -153,10 +153,12 @@ type UserRepository interface {
 // RoleRepository defines the methods for role data operations
 type RoleRepository interface {
 	Create(role *models.Role) error
+	CreateWithAlbumPermissions(role *models.Role, albumPerms []models.RoleAlbumPermission) error // atomic
 	GetByID(id uint) (*models.Role, error)
 	GetByName(name string) (*models.Role, error)
 	ListAll() ([]models.Role, error)
-	Update(role *models.Role) error // General update
+	Update(role *models.Role) error                                                               // General update
+	UpdateWithAlbumPermissions(role *models.Role, albumPerms *[]models.RoleAlbumPermission) error // atomic; nil albumPerms leaves them unchanged
 	Delete(id uint) error
 
 	// global permission management for a role

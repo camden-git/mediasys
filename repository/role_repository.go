@@ -21,6 +21,16 @@ func (r *GormRoleRepository) Create(role *models.Role) error {
 	return r.db.Create(role).Error
 }
 
+// CreateWithAlbumPermissions creates the role and its album permissions in one transaction.
+func (r *GormRoleRepository) CreateWithAlbumPermissions(role *models.Role, albumPerms []models.RoleAlbumPermission) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Omit(clause.Associations).Create(role).Error; err != nil {
+			return err
+		}
+		return replaceRoleAlbumPermissions(tx, role.ID, albumPerms)
+	})
+}
+
 func (r *GormRoleRepository) GetByID(id uint) (*models.Role, error) {
 	var role models.Role
 
@@ -43,6 +53,39 @@ func (r *GormRoleRepository) ListAll() ([]models.Role, error) {
 
 func (r *GormRoleRepository) Update(role *models.Role) error {
 	return r.db.Session(&gorm.Session{FullSaveAssociations: true}).Save(role).Error
+}
+
+// UpdateWithAlbumPermissions saves the role's own columns and, when albumPerms is non-nil,
+// fully replaces its album permissions, all in one transaction.
+func (r *GormRoleRepository) UpdateWithAlbumPermissions(role *models.Role, albumPerms *[]models.RoleAlbumPermission) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Omit(clause.Associations).Save(role).Error; err != nil {
+			return err
+		}
+		if albumPerms == nil {
+			return nil
+		}
+		return replaceRoleAlbumPermissions(tx, role.ID, *albumPerms)
+	})
+}
+
+func replaceRoleAlbumPermissions(tx *gorm.DB, roleID uint, albumPerms []models.RoleAlbumPermission) error {
+	if err := tx.Where("role_id = ?", roleID).Delete(&models.RoleAlbumPermission{}).Error; err != nil {
+		return err
+	}
+	for i := range albumPerms {
+		rap := albumPerms[i]
+		rap.ID = 0
+		rap.RoleID = roleID
+		err := tx.Omit(clause.Associations).Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "role_id"}, {Name: "album_id"}},
+			DoUpdates: clause.AssignmentColumns([]string{"permissions"}),
+		}).Create(&rap).Error
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *GormRoleRepository) Delete(id uint) error {
