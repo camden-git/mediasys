@@ -222,6 +222,38 @@ var DefinedPermissionGroups = []PermissionGroupDefinition{
 				Description: "Allows accessing and viewing system logs.",
 				Scope:       ScopeGlobal,
 			},
+			{
+				Key:         "system.debug.access",
+				Name:        "Access Debug Endpoints",
+				Description: "Allows access to internal debugging endpoints (face detection queue, detection status, raw detection data).",
+				Scope:       ScopeGlobal,
+			},
+		},
+	},
+	{
+		Key:         "people",
+		Name:        "People Management",
+		Description: "Permissions related to managing recognized people and their aliases.",
+		Permissions: []PermissionDefinition{
+			{
+				Key:         "people.manage",
+				Name:        "Manage People",
+				Description: "Allows creating, editing, and deleting people, and managing their aliases and key photos.",
+				Scope:       ScopeGlobal,
+			},
+		},
+	},
+	{
+		Key:         "face",
+		Name:        "Face Management",
+		Description: "Permissions related to managing detected faces and their tags.",
+		Permissions: []PermissionDefinition{
+			{
+				Key:         "face.manage",
+				Name:        "Manage Faces",
+				Description: "Allows adding faces, editing/deleting face records, and tagging faces to people.",
+				Scope:       ScopeGlobal,
+			},
 		},
 	},
 	{

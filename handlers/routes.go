@@ -9,6 +9,7 @@ import (
 	"github.com/camden-git/mediasysbackend/repository"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/gorilla/websocket"
 	"github.com/rs/cors"
 	"gorm.io/gorm"
 )
@@ -412,26 +413,35 @@ func RegisterRoutes(r chi.Router, deps AppDependencies) {
 			})
 		})
 
+		// helper to require login + the "people.manage" global permission for mutating people/alias routes
+		requirePeopleManage := func(next http.Handler) http.Handler {
+			return AuthMiddleware(deps.UserRepo, RequireGlobalPermission("people.manage", next))
+		}
+		// helper to require login + the "face.manage" global permission for mutating face routes
+		requireFaceManage := func(next http.Handler) http.Handler {
+			return AuthMiddleware(deps.UserRepo, RequireGlobalPermission("face.manage", next))
+		}
+
 		r.Route("/people", func(r chi.Router) {
-			r.Post("/", deps.PersonHandler.CreatePerson)
+			r.With(credentialedCORS, requirePeopleManage).Post("/", deps.PersonHandler.CreatePerson)
 			r.Get("/", deps.PersonHandler.ListPeople)
 			r.Get("/search", deps.PersonHandler.SearchPeople)
 			r.Route("/{person_id}", func(r chi.Router) {
 				r.Get("/", deps.PersonHandler.GetPerson)
-				r.Put("/", deps.PersonHandler.UpdatePerson)
-				r.Delete("/", deps.PersonHandler.DeletePerson)
-				r.Put("/key-photo", deps.PersonHandler.SetKeyPhoto)
+				r.With(credentialedCORS, requirePeopleManage).Put("/", deps.PersonHandler.UpdatePerson)
+				r.With(credentialedCORS, requirePeopleManage).Delete("/", deps.PersonHandler.DeletePerson)
+				r.With(credentialedCORS, requirePeopleManage).Put("/key-photo", deps.PersonHandler.SetKeyPhoto)
 				r.Get("/key-photo.jpg", deps.PersonHandler.ServeKeyPhoto)
 				r.Route("/aliases", func(r chi.Router) {
 					r.Get("/", deps.PersonHandler.ListAliases)
-					r.Post("/", deps.PersonHandler.AddAlias)
-					r.Delete("/{alias_id}", deps.PersonHandler.DeleteAlias)
+					r.With(credentialedCORS, requirePeopleManage).Post("/", deps.PersonHandler.AddAlias)
+					r.With(credentialedCORS, requirePeopleManage).Delete("/{alias_id}", deps.PersonHandler.DeleteAlias)
 				})
 			})
 		})
 
 		r.Route("/images/faces", func(r chi.Router) {
-			r.Post("/", deps.FaceHandler.AddFace)
+			r.With(credentialedCORS, requireFaceManage).Post("/", deps.FaceHandler.AddFace)
 			r.Get("/", deps.FaceHandler.ListFacesByImage)
 		})
 
@@ -439,12 +449,12 @@ func RegisterRoutes(r chi.Router, deps AppDependencies) {
 			r.Get("/untagged", deps.FaceHandler.GetUntaggedFaces)
 			r.Route("/{face_id}", func(r chi.Router) {
 				r.Get("/", deps.FaceHandler.GetFace)
-				r.Put("/", deps.FaceHandler.UpdateFace)
-				r.Delete("/", deps.FaceHandler.DeleteFace)
+				r.With(credentialedCORS, requireFaceManage).Put("/", deps.FaceHandler.UpdateFace)
+				r.With(credentialedCORS, requireFaceManage).Delete("/", deps.FaceHandler.DeleteFace)
 				r.Get("/similar", deps.FaceHandler.GetSimilarFaces)
 				r.Get("/suggest", deps.FaceHandler.SuggestFace)
-				r.Post("/tag", deps.FaceHandler.TagFace)
-				r.Post("/auto-tag", deps.FaceHandler.AutoTagFace)
+				r.With(credentialedCORS, requireFaceManage).Post("/tag", deps.FaceHandler.TagFace)
+				r.With(credentialedCORS, requireFaceManage).Post("/auto-tag", deps.FaceHandler.AutoTagFace)
 			})
 		})
 
@@ -471,6 +481,14 @@ func RegisterRoutes(r chi.Router, deps AppDependencies) {
 		})
 
 		r.Route("/debug", func(r chi.Router) {
+			r.Use(credentialedCORS)
+			r.Use(func(next http.Handler) http.Handler {
+				return AuthMiddleware(deps.UserRepo, next)
+			})
+			r.Use(func(next http.Handler) http.Handler {
+				return RequireGlobalPermission("system.debug.access", next)
+			})
+
 			r.Get("/image_with_faces", deps.ImagePreviewHandler.ServeImageWithFaces)
 			r.Post("/queue_detection", deps.DebugHandler.QueueFaceDetection)
 			r.Get("/detection_status", deps.DebugHandler.GetDetectionStatus)
@@ -478,10 +496,13 @@ func RegisterRoutes(r chi.Router, deps AppDependencies) {
 		})
 	})
 
-	// websocket endpoint for realtime updates (authenticated)
+	// websocket endpoint for realtime updates (authenticated).
+	// The token is carried via the Sec-WebSocket-Protocol header (as "bearer, <token>")
+	// rather than a query parameter so it never gets written to access logs by
+	// middleware.Logger, which logs the full request URI.
 	r.Get("/api/ws", func(w http.ResponseWriter, req *http.Request) {
-		if token := req.URL.Query().Get("token"); token != "" {
-			req.Header.Set("Authorization", "Bearer "+token)
+		if protos := websocket.Subprotocols(req); len(protos) > 1 && protos[0] == "bearer" {
+			req.Header.Set("Authorization", "Bearer "+protos[1])
 		}
 		AuthMiddleware(deps.UserRepo, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			deps.Hub.ServeWS(w, r)
