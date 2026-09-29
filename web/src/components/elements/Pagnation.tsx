@@ -11,18 +11,21 @@ export function Pagination({
 }
 
 export function PaginationPrevious({
-    to = null,
+    to,
     onClick,
+    disabled = false,
     children = 'Previous',
 }: {
-    to?: string | null;
+    to?: string;
     onClick?: (e: React.MouseEvent) => void;
+    disabled?: boolean;
     children?: React.ReactNode;
 }) {
     return (
         <span className='grow basis-0'>
             <Button
-                {...(to === null ? { disabled: true } : { to })}
+                {...(to ? { to } : {})}
+                disabled={disabled}
                 {...(onClick ? { onClick } : {})}
                 plain
                 aria-label='Previous page'
@@ -42,18 +45,21 @@ export function PaginationPrevious({
 }
 
 export function PaginationNext({
-    to = null,
+    to,
     onClick,
+    disabled = false,
     children = 'Next',
 }: {
-    to?: string | null;
+    to?: string;
     onClick?: (e: React.MouseEvent) => void;
+    disabled?: boolean;
     children?: React.ReactNode;
 }) {
     return (
         <span className='flex grow basis-0 justify-end'>
             <Button
-                {...(to === null ? { disabled: true } : { to })}
+                {...(to ? { to } : {})}
+                disabled={disabled}
                 {...(onClick ? { onClick } : {})}
                 plain
                 aria-label='Next page'

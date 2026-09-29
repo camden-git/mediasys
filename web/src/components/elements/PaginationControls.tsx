@@ -93,8 +93,8 @@ export const PaginationControls: React.FC<PaginationControlsProps> = ({
     return (
         <Pagination className={className}>
             <PaginationPrevious
-                to={null}
-                onClick={currentPage > 1 ? (e: React.MouseEvent) => handlePageClick(e, currentPage - 1) : undefined}
+                disabled={currentPage <= 1}
+                onClick={(e: React.MouseEvent) => handlePageClick(e, currentPage - 1)}
             />
             <PaginationList>
                 {pageNumbers.map((pageNum, index) => {
@@ -116,10 +116,8 @@ export const PaginationControls: React.FC<PaginationControlsProps> = ({
                 })}
             </PaginationList>
             <PaginationNext
-                to={null}
-                onClick={
-                    currentPage < totalPages ? (e: React.MouseEvent) => handlePageClick(e, currentPage + 1) : undefined
-                }
+                disabled={currentPage >= totalPages}
+                onClick={(e: React.MouseEvent) => handlePageClick(e, currentPage + 1)}
             />
         </Pagination>
     );
