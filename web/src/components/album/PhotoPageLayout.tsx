@@ -2,7 +2,7 @@ import React, { RefObject, useEffect, useState } from 'react';
 import { FileInfo } from '../../types.ts';
 import { Heading } from '../elements/Heading.tsx';
 import LoadingSpinner from '../elements/LoadingSpinner.tsx';
-import ErrorMessage from '../elements/ErrorMessage.tsx';
+import PageErrorMessage from '../elements/PageErrorMessage.tsx';
 import AdvancedImageGrid from './AdvancedImageGrid.tsx';
 import ImageLightbox from './ImageLightbox.tsx';
 
@@ -109,7 +109,7 @@ const PhotoPageLayout: React.FC<PhotoPageLayoutProps> = ({
                     </div>
 
                     <div className='mx-2 mt-4'>
-                        <ErrorMessage message={error ?? null} />
+                        <PageErrorMessage message={error ?? null} />
 
                         {isLoading && images.length === 0 && <LoadingSpinner />}
 

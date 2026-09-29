@@ -6,7 +6,7 @@ import {
     PaginationNext,
     PaginationPage,
     PaginationPrevious,
-} from './Pagnation';
+} from './Pagination';
 import { PaginationDataSet } from '../../api/standard';
 
 interface PaginationControlsProps {
