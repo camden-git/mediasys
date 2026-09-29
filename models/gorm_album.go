@@ -6,10 +6,10 @@ import "gorm.io/gorm"
 // It corresponds to the 'albums' table.
 type Album struct {
 	ID                 uint              `gorm:"primaryKey;autoIncrement" json:"id"`
-	Name               string            `gorm:"not null;unique" json:"name"`
-	Slug               string            `gorm:"not null;unique" json:"slug"`
+	Name               string            `gorm:"not null;uniqueIndex:idx_albums_name,where:deleted_at IS NULL" json:"name"`
+	Slug               string            `gorm:"not null;uniqueIndex:idx_albums_slug,where:deleted_at IS NULL" json:"slug"`
 	Description        *string           `gorm:"" json:"description,omitempty"` // Nullable
-	FolderPath         string            `gorm:"not null;unique" json:"folder_path"`
+	FolderPath         string            `gorm:"not null;uniqueIndex:idx_albums_folder_path,where:deleted_at IS NULL" json:"folder_path"`
 	Banners            []AlbumBanner     `gorm:"foreignKey:AlbumID" json:"-"`
 	SortOrder          string            `gorm:"not null;default:'filename_asc'" json:"sort_order"`
 	ZipPath            *string           `gorm:"" json:"zip_path,omitempty"` // Nullable

@@ -6,8 +6,8 @@ import "gorm.io/gorm"
 // Collections query images across all albums matching configured tag criteria.
 type Collection struct {
 	ID                       uint                  `gorm:"primaryKey;autoIncrement" json:"id"`
-	Name                     string                `gorm:"not null;unique" json:"name"`
-	Slug                     string                `gorm:"not null;unique" json:"slug"`
+	Name                     string                `gorm:"not null;uniqueIndex:idx_collections_name,where:deleted_at IS NULL" json:"name"`
+	Slug                     string                `gorm:"not null;uniqueIndex:idx_collections_slug,where:deleted_at IS NULL" json:"slug"`
 	Description              *string               `gorm:"" json:"description,omitempty"`
 	InheritBannersFromAlbums bool                  `gorm:"not null;default:false" json:"inherit_banners_from_albums"`
 	Banners                  []CollectionBanner    `gorm:"foreignKey:CollectionID" json:"-"`
