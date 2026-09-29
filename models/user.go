@@ -235,6 +235,24 @@ func (u *User) GetAlbumPermissions(albumID uint) []string {
 	return toSortedSlice(permSet)
 }
 
+// HasAnyAlbumPermission returns true if the user has at least one album-scoped permission,
+// either granted for all albums or for a specific album (directly or via a role).
+func (u *User) HasAnyAlbumPermission() bool {
+	u.ensureEffectivePermissions()
+	if u.EffectivePermissions == nil {
+		return false
+	}
+	if len(u.EffectivePermissions.Album.ForAll) > 0 {
+		return true
+	}
+	for _, perms := range u.EffectivePermissions.Album.ByAlbum {
+		if len(perms) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // HasAlbumPermission checks if the user has a specific permission for a given album, considering both direct user permissions and permissions from roles
 func (u *User) HasAlbumPermission(albumID uint, permission string) bool {
 	u.ensureEffectivePermissions()

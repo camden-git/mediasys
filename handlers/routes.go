@@ -186,9 +186,9 @@ func RegisterRoutes(r chi.Router, deps AppDependencies) {
 
 			// album management routes
 			r.Route("/albums", func(r chi.Router) {
-				r.With(func(next http.Handler) http.Handler {
-					return RequireAnyGlobalPermission([]string{"album.list", "album.view", "album.create", "album.edit.general", "album.delete"}, next)
-				}).Get("/", deps.AdminAlbumHandler.ListAlbums)
+				r.With(
+					RequireAnyGlobalPermissionOrAlbumAccess([]string{"album.list", "album.view", "album.create", "album.edit.general", "album.delete"}),
+				).Get("/", deps.AdminAlbumHandler.ListAlbums)
 
 				r.With(func(next http.Handler) http.Handler {
 					return RequireGlobalPermission("album.create", next)
@@ -196,7 +196,7 @@ func RegisterRoutes(r chi.Router, deps AppDependencies) {
 
 				r.Route("/{id}", func(r chi.Router) {
 					r.With(func(next http.Handler) http.Handler {
-						return RequireGlobalPermission("album.list", next)
+						return RequireAlbumPermission("album.list", "album.view.content", next)
 					}).Get("/", deps.AdminAlbumHandler.GetAlbum)
 
 					r.With(func(next http.Handler) http.Handler {
@@ -208,64 +208,64 @@ func RegisterRoutes(r chi.Router, deps AppDependencies) {
 					}).Delete("/", deps.AdminAlbumHandler.DeleteAlbum)
 
 					r.With(func(next http.Handler) http.Handler {
-						return RequireGlobalPermission("album.edit.general", next)
+						return RequireAlbumPermission("album.edit.general", "album.photo.editmeta", next)
 					}).Post("/banners", deps.AdminAlbumHandler.AddAlbumBanner)
 
 					r.Route("/banners/{bannerId}", func(r chi.Router) {
 						r.With(func(next http.Handler) http.Handler {
-							return RequireGlobalPermission("album.edit.general", next)
+							return RequireAlbumPermission("album.edit.general", "album.photo.editmeta", next)
 						}).Delete("/", deps.AdminAlbumHandler.DeleteAlbumBanner)
 					})
 
 					r.With(func(next http.Handler) http.Handler {
-						return RequireGlobalPermission("album.edit.general", next)
+						return RequireAlbumPermission("album.edit.general", "album.photo.editmeta", next)
 					}).Put("/banners/order", deps.AdminAlbumHandler.ReorderAlbumBanners)
 
 					r.With(func(next http.Handler) http.Handler {
-						return RequireGlobalPermission("album.edit.general", next)
+						return RequireAlbumPermission("album.edit.general", "album.photo.upload", next)
 					}).Post("/upload", deps.AdminAlbumHandler.UploadImages)
 
 					r.With(func(next http.Handler) http.Handler {
-						return RequireGlobalPermission("album.list", next)
+						return RequireAlbumPermission("album.list", "album.view.content", next)
 					}).Get("/images", deps.AdminAlbumHandler.ListAlbumImages)
 
 					r.With(func(next http.Handler) http.Handler {
-						return RequireGlobalPermission("album.edit.general", next)
+						return RequireAlbumPermission("album.edit.general", "album.photo.delete", next)
 					}).Delete("/images", deps.AdminAlbumHandler.DeleteAlbumImage)
 
 					r.With(func(next http.Handler) http.Handler {
-						return RequireGlobalPermission("album.edit.general", next)
+						return RequireAlbumPermission("album.edit.general", "album.view.content", next)
 					}).Post("/zip", deps.AlbumHandler.RequestAlbumZipGeneration)
 
 					r.With(func(next http.Handler) http.Handler {
-						return RequireGlobalPermission("album.list", next)
+						return RequireAlbumPermission("album.list", "album.view.content", next)
 					}).Get("/zip", deps.AlbumHandler.DownloadAlbumZipByID)
 
 					r.With(func(next http.Handler) http.Handler {
-						return RequireGlobalPermission("album.list", next)
+						return RequireAlbumPermission("album.list", "album.view.content", next)
 					}).Get("/uploaders", deps.AdminAlbumHandler.GetAlbumUploaders)
 
 					// album user management routes
 					r.Route("/users", func(r chi.Router) {
 						r.With(func(next http.Handler) http.Handler {
-							return RequireGlobalPermission("album.manage.members.global", next)
+							return RequireAlbumPermission("album.manage.members.global", "album.manage.members", next)
 						}).Get("/", deps.AdminAlbumUserHandler.GetAlbumUsers)
 
 						r.With(func(next http.Handler) http.Handler {
-							return RequireGlobalPermission("album.manage.members.global", next)
+							return RequireAlbumPermission("album.manage.members.global", "album.manage.members", next)
 						}).Get("/available", deps.AdminAlbumUserHandler.GetAvailableUsers)
 
 						r.With(func(next http.Handler) http.Handler {
-							return RequireGlobalPermission("album.manage.members.global", next)
+							return RequireAlbumPermission("album.manage.members.global", "album.manage.members", next)
 						}).Post("/", deps.AdminAlbumUserHandler.AddUserToAlbum)
 
 						r.Route("/{userID}", func(r chi.Router) {
 							r.With(func(next http.Handler) http.Handler {
-								return RequireGlobalPermission("album.manage.members.global", next)
+								return RequireAlbumPermission("album.manage.members.global", "album.manage.members", next)
 							}).Put("/", deps.AdminAlbumUserHandler.UpdateUserAlbumPermissions)
 
 							r.With(func(next http.Handler) http.Handler {
-								return RequireGlobalPermission("album.manage.members.global", next)
+								return RequireAlbumPermission("album.manage.members.global", "album.manage.members", next)
 							}).Delete("/", deps.AdminAlbumUserHandler.RemoveUserFromAlbum)
 						})
 					})
@@ -277,11 +277,11 @@ func RegisterRoutes(r chi.Router, deps AppDependencies) {
 
 					// album default tags
 					r.With(func(next http.Handler) http.Handler {
-						return RequireGlobalPermission("album.edit.general", next)
+						return RequireAlbumPermission("album.edit.general", "album.photo.editmeta", next)
 					}).Get("/default-tags", deps.AdminImageTagHandler.GetAlbumDefaultTags)
 
 					r.With(func(next http.Handler) http.Handler {
-						return RequireGlobalPermission("album.edit.general", next)
+						return RequireAlbumPermission("album.edit.general", "album.photo.editmeta", next)
 					}).Put("/default-tags", deps.AdminImageTagHandler.SetAlbumDefaultTags)
 				})
 			})

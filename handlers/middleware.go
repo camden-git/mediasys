@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/camden-git/mediasysbackend/models" // Added import
 	"github.com/camden-git/mediasysbackend/repository"
+	"github.com/go-chi/chi/v5"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -126,4 +128,66 @@ func RequireAnyGlobalPermission(permissions []string, next http.Handler) http.Ha
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// RequireAlbumPermission is a middleware that grants access if the authenticated user has
+// the given global permission, OR the given album-scoped permission for the album identified
+// by the "id" URL parameter. It should be used after AuthMiddleware, on routes nested under
+// a chi route that captures the album ID as "id".
+func RequireAlbumPermission(globalPermission, albumPermission string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, ok := r.Context().Value(UserContextKey).(*models.User)
+		if !ok || user == nil {
+			http.Error(w, "User not found in context", http.StatusInternalServerError)
+			return
+		}
+
+		if globalPermission != "" && user.HasGlobalPermission(globalPermission) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		if albumPermission != "" {
+			if albumIDStr := chi.URLParam(r, "id"); albumIDStr != "" {
+				if albumID, err := strconv.ParseUint(albumIDStr, 10, 64); err == nil {
+					if user.HasAlbumPermission(uint(albumID), albumPermission) {
+						next.ServeHTTP(w, r)
+						return
+					}
+				}
+			}
+		}
+
+		http.Error(w, fmt.Sprintf("Forbidden: requires global permission '%s' or album permission '%s'", globalPermission, albumPermission), http.StatusForbidden)
+	})
+}
+
+// RequireAnyGlobalPermissionOrAlbumAccess is a middleware that grants access if the authenticated
+// user has at least one of the given global permissions, OR has at least one album-scoped
+// permission for any album (directly or via a role). Handlers guarded by this middleware are
+// expected to filter their results to the albums the user actually has access to.
+func RequireAnyGlobalPermissionOrAlbumAccess(globalPermissions []string) func(next http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			user, ok := r.Context().Value(UserContextKey).(*models.User)
+			if !ok || user == nil {
+				http.Error(w, "User not found in context", http.StatusInternalServerError)
+				return
+			}
+
+			for _, p := range globalPermissions {
+				if user.HasGlobalPermission(p) {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+
+			if user.HasAnyAlbumPermission() {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			http.Error(w, fmt.Sprintf("Forbidden: requires at least one of the following global permissions: %s", strings.Join(globalPermissions, ", ")), http.StatusForbidden)
+		})
+	}
 }

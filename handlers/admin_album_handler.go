@@ -116,6 +116,28 @@ func (h *AdminAlbumHandler) ListAlbums(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// users who don't hold any of the global album permissions (but were allowed through the
+	// route middleware via a per-album permission) should only see the albums they actually
+	// have album-scoped access to.
+	if user, ok := r.Context().Value(UserContextKey).(*models.User); ok && user != nil {
+		hasGlobalAccess := false
+		for _, p := range []string{"album.list", "album.view", "album.create", "album.edit.general", "album.delete"} {
+			if user.HasGlobalPermission(p) {
+				hasGlobalAccess = true
+				break
+			}
+		}
+		if !hasGlobalAccess {
+			filtered := albums[:0]
+			for _, album := range albums {
+				if len(user.GetAlbumPermissions(album.ID)) > 0 {
+					filtered = append(filtered, album)
+				}
+			}
+			albums = filtered
+		}
+	}
+
 	adminAlbums := make([]*AdminAlbumResponse, len(albums))
 	for i, album := range albums {
 		adminAlbums[i] = convertAlbumToAdminResponse(&album, nil)
