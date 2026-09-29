@@ -76,7 +76,35 @@ func TestMigrationsMatchGORMSchema(t *testing.T) {
 
 	// database created by the legacy GORM AutoMigrate path, driven directly off the
 	// models package structs (mirrors the old database.AutoMigrateModels).
-	autoGormDB, err := gorm.Open(postgres.Open(autoDSN), &gorm.Config{
+	autoSQLDB := legacyAutoMigrate(t, autoDSN)
+	defer autoSQLDB.Close()
+
+	migratedTables := fetchTables(t, migratedSQLDB)
+	autoTables := fetchTables(t, autoSQLDB)
+	if diff := diffStringSlices(migratedTables, autoTables); diff != "" {
+		t.Errorf("table sets differ between migrations and AutoMigrate:\n%s", diff)
+	}
+
+	migratedColumns := fetchColumns(t, migratedSQLDB)
+	autoColumns := fetchColumns(t, autoSQLDB)
+	if diff := diffStringSlices(migratedColumns, autoColumns); diff != "" {
+		t.Errorf("columns differ between migrations and AutoMigrate:\n%s", diff)
+	}
+
+	migratedIndexes := fetchIndexes(t, migratedSQLDB)
+	autoIndexes := fetchIndexes(t, autoSQLDB)
+	if diff := diffStringSlices(migratedIndexes, autoIndexes); diff != "" {
+		t.Errorf("indexes differ between migrations and AutoMigrate:\n%s", diff)
+	}
+}
+
+// legacyAutoMigrate builds the schema in the (empty) database at dsn the way the app
+// did before goose: GORM AutoMigrate over the models package structs plus the
+// extension, collation and HNSW index it created by hand. The returned handle must
+// be closed by the caller.
+func legacyAutoMigrate(t *testing.T, dsn string) *sql.DB {
+	t.Helper()
+	autoGormDB, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
 		Logger:                                   gormlogger.Default.LogMode(gormlogger.Silent),
 		DisableForeignKeyConstraintWhenMigrating: true,
 	})
@@ -124,25 +152,7 @@ func TestMigrationsMatchGORMSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get underlying sql.DB: %v", err)
 	}
-	defer autoSQLDB.Close()
-
-	migratedTables := fetchTables(t, migratedSQLDB)
-	autoTables := fetchTables(t, autoSQLDB)
-	if diff := diffStringSlices(migratedTables, autoTables); diff != "" {
-		t.Errorf("table sets differ between migrations and AutoMigrate:\n%s", diff)
-	}
-
-	migratedColumns := fetchColumns(t, migratedSQLDB)
-	autoColumns := fetchColumns(t, autoSQLDB)
-	if diff := diffStringSlices(migratedColumns, autoColumns); diff != "" {
-		t.Errorf("columns differ between migrations and AutoMigrate:\n%s", diff)
-	}
-
-	migratedIndexes := fetchIndexes(t, migratedSQLDB)
-	autoIndexes := fetchIndexes(t, autoSQLDB)
-	if diff := diffStringSlices(migratedIndexes, autoIndexes); diff != "" {
-		t.Errorf("indexes differ between migrations and AutoMigrate:\n%s", diff)
-	}
+	return autoSQLDB
 }
 
 func createDatabase(t *testing.T, adminDB *sql.DB, name string) {
