@@ -64,9 +64,10 @@ const OverviewContainer: React.FC = () => {
         try {
             const base = apiUrl && apiUrl.startsWith('http') ? new URL(apiUrl) : new URL(window.location.href);
             const wsProtocol = base.protocol === 'https:' ? 'wss:' : 'ws:';
-            const tokenQuery = authToken ? `?token=${encodeURIComponent(authToken)}` : '';
-            const wsUrl = `${wsProtocol}//${base.host}/api/ws${tokenQuery}`;
-            const ws = new WebSocket(wsUrl);
+            const wsUrl = `${wsProtocol}//${base.host}/api/ws`;
+            // Send the auth token as a WebSocket subprotocol rather than a query
+            // parameter so it never ends up in server access logs.
+            const ws = authToken ? new WebSocket(wsUrl, ['bearer', authToken]) : new WebSocket(wsUrl);
             ws.onmessage = (e) => {
                 try {
                     const data = JSON.parse(e.data);

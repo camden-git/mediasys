@@ -91,7 +91,16 @@ var upgrader = websocket.Upgrader{
 
 // ServeWS upgrades the connection and registers a client
 func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
+	// echo back the negotiated subprotocol (if any) so the handshake completes
+	// cleanly; the auth token itself is carried as a subprotocol value rather
+	// than a query parameter so it never ends up in access logs (see AuthMiddleware
+	// call site in routes.go, which reads it off Sec-WebSocket-Protocol).
+	var respHeader http.Header
+	if protos := websocket.Subprotocols(r); len(protos) > 0 {
+		respHeader = http.Header{"Sec-WebSocket-Protocol": {protos[0]}}
+	}
+
+	conn, err := upgrader.Upgrade(w, r, respHeader)
 	if err != nil {
 		log.Printf("realtime: websocket upgrade error: %v", err)
 		return
