@@ -234,6 +234,15 @@ func (fh *FaceHandler) UpdateFace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// an explicit null person_id un-tags the face (Update ignores a nil person)
+	if personIDProvided && personIDUpdate == nil {
+		if err := fh.FaceRepo.UntagFace(uint(faceID)); err != nil {
+			log.Printf("Error untagging face %d: %v", faceID, err)
+			WriteAPIError(w, http.StatusInternalServerError, "FaceUpdateError", "Failed to update face tag")
+			return
+		}
+	}
+
 	updatedFace, err := fh.FaceRepo.GetByID(uint(faceID))
 	if err != nil {
 		log.Printf("Error fetching updated face %d: %v", faceID, err)

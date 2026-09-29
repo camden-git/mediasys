@@ -402,6 +402,11 @@ func (ph *PersonHandler) ServeKeyPhoto(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if face.PersonID == nil || *face.PersonID != person.ID {
+		WriteAPIError(w, http.StatusNotFound, "NoKeyPhoto", "person has no key photo set")
+		return
+	}
+
 	img, err := ph.ImageRepo.GetByPath(face.ImagePath)
 	if err != nil {
 		WriteAPIError(w, http.StatusNotFound, "ImageNotFound", "key photo image not found")

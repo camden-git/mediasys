@@ -20,6 +20,22 @@ func NewFaceRepository(db *gorm.DB) *FaceRepository {
 	return &FaceRepository{DB: db}
 }
 
+// clearStaleKeyPhotos clears people.key_photo_face_id where it points at faceID and the
+// person is not keepPersonID (pass nil to clear regardless of owner).
+func clearStaleKeyPhotos(tx *gorm.DB, faceID uint, keepPersonID *uint) error {
+	q := tx.Model(&models.Person{}).Where("key_photo_face_id = ?", faceID)
+	if keepPersonID != nil {
+		q = q.Where("id <> ?", *keepPersonID)
+	}
+	if err := q.Updates(map[string]interface{}{
+		"key_photo_face_id": gorm.Expr("NULL"),
+		"updated_at":        time.Now().Unix(),
+	}).Error; err != nil {
+		return fmt.Errorf("failed to clear key photo for face ID %d: %w", faceID, err)
+	}
+	return nil
+}
+
 // Create creates a new face record in the database
 func (r *FaceRepository) Create(face *models.Face) error {
 	now := time.Now().Unix()
@@ -100,26 +116,35 @@ func (r *FaceRepository) Update(faceID uint, personID *uint, x1, y1, x2, y2 *int
 
 	updates["updated_at"] = time.Now().Unix()
 
-	result := r.DB.Model(&models.Face{}).Where("id = ?", faceID).Updates(updates)
-	if result.Error != nil {
-		return fmt.Errorf("failed to update face ID %d: %w", faceID, result.Error)
-	}
-	if result.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
-	}
-	return nil
+	return r.DB.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&models.Face{}).Where("id = ?", faceID).Updates(updates)
+		if result.Error != nil {
+			return fmt.Errorf("failed to update face ID %d: %w", faceID, result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		if personID != nil {
+			// retagged: another person's key photo must not point at this face
+			keep := *personID
+			return clearStaleKeyPhotos(tx, faceID, &keep)
+		}
+		return nil
+	})
 }
 
 // Delete removes a face by its ID
 func (r *FaceRepository) Delete(id uint) error {
-	result := r.DB.Delete(&models.Face{}, id)
-	if result.Error != nil {
-		return fmt.Errorf("failed to delete face ID %d: %w", id, result.Error)
-	}
-	if result.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
-	}
-	return nil
+	return r.DB.Transaction(func(tx *gorm.DB) error {
+		result := tx.Delete(&models.Face{}, id)
+		if result.Error != nil {
+			return fmt.Errorf("failed to delete face ID %d: %w", id, result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return clearStaleKeyPhotos(tx, id, nil)
+	})
 }
 
 // DeleteUntaggedByImagePath deletes all faces for a given image path that do not have a PersonID
@@ -140,14 +165,16 @@ func (r *FaceRepository) TagFace(faceID uint, personID uint, confirmed bool) err
 		"confirmed":  confirmed,
 		"updated_at": time.Now().Unix(),
 	}
-	result := r.DB.Model(&models.Face{}).Where("id = ?", faceID).Updates(updates)
-	if result.Error != nil {
-		return fmt.Errorf("failed to tag face ID %d with person ID %d: %w", faceID, personID, result.Error)
-	}
-	if result.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
-	}
-	return nil
+	return r.DB.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&models.Face{}).Where("id = ?", faceID).Updates(updates)
+		if result.Error != nil {
+			return fmt.Errorf("failed to tag face ID %d with person ID %d: %w", faceID, personID, result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return clearStaleKeyPhotos(tx, faceID, &personID)
+	})
 }
 
 // UntagFace sets the PersonID of an existing face to NULL and clears confirmed.
@@ -157,12 +184,14 @@ func (r *FaceRepository) UntagFace(faceID uint) error {
 		"confirmed":  false,
 		"updated_at": time.Now().Unix(),
 	}
-	result := r.DB.Model(&models.Face{}).Where("id = ?", faceID).Updates(updates)
-	if result.Error != nil {
-		return fmt.Errorf("failed to untag face ID %d: %w", faceID, result.Error)
-	}
-	if result.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
-	}
-	return nil
+	return r.DB.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&models.Face{}).Where("id = ?", faceID).Updates(updates)
+		if result.Error != nil {
+			return fmt.Errorf("failed to untag face ID %d: %w", faceID, result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return clearStaleKeyPhotos(tx, faceID, nil)
+	})
 }
