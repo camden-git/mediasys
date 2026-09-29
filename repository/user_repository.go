@@ -198,35 +198,6 @@ func (r *GormUserRepository) CreateFirstAdmin(user *models.User, roleName string
 	})
 }
 
-func (r *GormUserRepository) AddRoleToUser(userID uint, roleID uint) error {
-	userRole := models.UserRole{UserID: userID, RoleID: roleID}
-	// avoid error if association already exists
-	return r.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&userRole).Error
-}
-
-func (r *GormUserRepository) RemoveRoleFromUser(userID uint, roleID uint) error {
-	return r.db.Where("user_id = ? AND role_id = ?", userID, roleID).Delete(&models.UserRole{}).Error
-}
-
-func (r *GormUserRepository) GetUserRoles(userID uint) ([]models.Role, error) {
-	var user models.User
-	if err := r.withRolePreloads(r.db).First(&user, userID).Error; err != nil {
-		return nil, err
-	}
-
-	var roles []models.Role
-	for _, rPtr := range user.Roles {
-		if rPtr != nil {
-			roles = append(roles, *rPtr)
-		}
-	}
-	return roles, nil
-}
-
-func (r *GormUserRepository) SetUserGlobalPermissions(userID uint, permissions []string) error {
-	return r.db.Model(&models.User{}).Where("id = ?", userID).Update("global_permissions", permissions).Error
-}
-
 func (r *GormUserRepository) CreateUserAlbumPermission(uap *models.UserAlbumPermission) error {
 	return r.db.Create(uap).Error
 }

@@ -277,13 +277,3 @@ func (r *PersonRepository) SearchByNameOrAlias(query string, limit int) ([]model
 	}
 	return people, nil
 }
-
-// GetPersonWithAliases retrieves a person and their aliases
-func (r *PersonRepository) GetPersonWithAliases(personID uint) (*models.Person, error) {
-	var person models.Person
-	err := r.DB.Preload("Aliases").First(&person, personID).Error
-	if err != nil {
-		return nil, err
-	}
-	return &person, nil
-}

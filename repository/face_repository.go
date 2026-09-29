@@ -147,17 +147,6 @@ func (r *FaceRepository) Delete(id uint) error {
 	})
 }
 
-// DeleteUntaggedByImagePath deletes all faces for a given image path that do not have a PersonID
-// Returns the number of faces deleted
-func (r *FaceRepository) DeleteUntaggedByImagePath(imagePath string) (int64, error) {
-	cleanPath := filepath.ToSlash(imagePath)
-	result := r.DB.Where("image_path = ? AND person_id IS NULL", cleanPath).Delete(&models.Face{})
-	if result.Error != nil {
-		return 0, fmt.Errorf("failed to delete untagged faces for image %s: %w", cleanPath, result.Error)
-	}
-	return result.RowsAffected, nil
-}
-
 // TagFace assigns a PersonID to an existing face. Set confirmed=true when a human explicitly approves the assignment.
 func (r *FaceRepository) TagFace(faceID uint, personID uint, confirmed bool) error {
 	updates := map[string]interface{}{

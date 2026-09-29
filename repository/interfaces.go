@@ -33,7 +33,6 @@ type AlbumRepositoryInterface interface {
 	SetZipResult(albumID uint, zipPath *string, zipSize *int64, taskErr error) error
 	ListPendingZips() ([]models.Album, error)
 	UpdateSortOrder(albumID uint, sortOrder string) error
-	Delete(id uint) error
 	DeleteCascade(albumID uint) error
 	GetBanners(albumID uint) ([]models.AlbumBanner, error)
 	AddBanner(banner *models.AlbumBanner) error
@@ -89,7 +88,6 @@ type FaceRepositoryInterface interface {
 	ListByImagePath(imagePath string) ([]models.Face, error)
 	Update(faceID uint, personID *uint, x1, y1, x2, y2 *int) error
 	Delete(id uint) error
-	DeleteUntaggedByImagePath(imagePath string) (int64, error)
 	TagFace(faceID uint, personID uint, confirmed bool) error
 	UntagFace(faceID uint) error
 }
@@ -105,16 +103,9 @@ type UntaggedFaceFilter struct {
 
 // FaceEmbeddingRepositoryInterface defines the methods for face embedding data operations
 type FaceEmbeddingRepositoryInterface interface {
-	Create(embedding *models.FaceEmbedding) error
 	GetByFaceID(faceID uint) (*models.FaceEmbedding, error)
-	GetByID(id uint) (*models.FaceEmbedding, error)
-	Update(embedding *models.FaceEmbedding) error
-	Delete(id uint) error
 	DeleteByFaceID(faceID uint) error
-	GetEmbeddingsByPersonID(personID uint) ([]models.FaceEmbedding, error)
-	GetUntaggedEmbeddings() ([]models.FaceEmbedding, error)
 	GetUntaggedEmbeddingsFiltered(filter UntaggedFaceFilter) ([]models.FaceEmbedding, error)
-	GetEmbeddingsByImagePath(imagePath string) ([]models.FaceEmbedding, error)
 	FindSimilarFaces(targetEmbedding []float32, threshold float32, limit int) ([]models.FaceEmbedding, error)
 }
 
@@ -132,14 +123,6 @@ type UserRepository interface {
 	// CreateFirstAdmin atomically creates the initial admin user and assigns
 	// them the named role, failing if any user already exists.
 	CreateFirstAdmin(user *models.User, roleName string) error
-
-	// role management for a user
-	AddRoleToUser(userID uint, roleID uint) error
-	RemoveRoleFromUser(userID uint, roleID uint) error
-	GetUserRoles(userID uint) ([]models.Role, error)
-
-	// direct global permission management for a user
-	SetUserGlobalPermissions(userID uint, permissions []string) error
 
 	// direct album-specific permission management for a user
 	CreateUserAlbumPermission(uap *models.UserAlbumPermission) error
@@ -164,14 +147,7 @@ type RoleRepository interface {
 	UpdateWithAlbumPermissions(role *models.Role, albumPerms *[]models.RoleAlbumPermission) error // atomic; nil albumPerms leaves them unchanged
 	Delete(id uint) error
 
-	// global permission management for a role
-	SetRoleGlobalPermissions(roleID uint, permissions []string) error
-
-	// album-specific permission management for a role
-	CreateRoleAlbumPermission(rap *models.RoleAlbumPermission) error
-	GetRoleAlbumPermission(roleID, albumID uint) (*models.RoleAlbumPermission, error)
-	UpdateRoleAlbumPermission(rap *models.RoleAlbumPermission) error
-	DeleteRoleAlbumPermission(roleID uint, albumID uint) error
+	// album-specific permissions for a role
 	GetRoleAlbumPermissions(roleID uint) ([]models.RoleAlbumPermission, error)
 
 	// user-Role Management
@@ -205,12 +181,6 @@ type CollectionRepositoryInterface interface {
 	Delete(id uint) error
 	// SetFilters replaces all tag filters for a collection in a transaction.
 	SetFilters(collectionID uint, filters []models.CollectionTagFilter) error
-	// GetImagePathsMatchingFilters returns all image paths that match the collection's tag filters.
-	// Behaviour is controlled by Collection.FilterMatch ("all" = AND across inclusion groups, "any" = OR).
-	// Filters with Negate=true exclude images that have the given tag.
-	// Prefer ListImages for listings: it sorts and pages in SQL instead of returning
-	// every matching path.
-	GetImagePathsMatchingFilters(collectionID uint) ([]string, error)
 	// ListImages returns a sorted, paginated page of images matching the collection's
 	// tag filters (sorting and paging performed in SQL via a subquery/join), plus the
 	// total number of matching images.

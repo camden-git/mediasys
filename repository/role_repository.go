@@ -1,9 +1,6 @@
 package repository
 
 import (
-	"errors"
-	"fmt"
-
 	"github.com/camden-git/mediasysbackend/models"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -101,46 +98,6 @@ func (r *GormRoleRepository) Delete(id uint) error {
 		// delete the role itself
 		return tx.Delete(&models.Role{}, id).Error
 	})
-}
-
-func (r *GormRoleRepository) SetRoleGlobalPermissions(roleID uint, permissions []string) error {
-	return r.db.Model(&models.Role{}).Where("id = ?", roleID).Update("global_permissions", permissions).Error
-}
-
-func (r *GormRoleRepository) CreateRoleAlbumPermission(rap *models.RoleAlbumPermission) error {
-	return r.db.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "role_id"}, {Name: "album_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"permissions"}),
-	}).Create(rap).Error
-}
-
-func (r *GormRoleRepository) GetRoleAlbumPermission(roleID, albumID uint) (*models.RoleAlbumPermission, error) {
-	var rap models.RoleAlbumPermission
-	err := r.db.Where("role_id = ? AND album_id = ?", roleID, albumID).First(&rap).Error
-	if err != nil {
-		return nil, err
-	}
-	return &rap, nil
-}
-
-func (r *GormRoleRepository) UpdateRoleAlbumPermission(rap *models.RoleAlbumPermission) error {
-	if rap.ID == 0 {
-		var existingRap models.RoleAlbumPermission
-		err := r.db.Where("role_id = ? AND album_id = ?", rap.RoleID, rap.AlbumID).First(&existingRap).Error
-		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				// If not found, it means we should create it instead of updating
-				return r.CreateRoleAlbumPermission(rap)
-			}
-			return fmt.Errorf("cannot find existing RoleAlbumPermission to update for role %d, album %d: %w", rap.RoleID, rap.AlbumID, err)
-		}
-		rap.ID = existingRap.ID
-	}
-	return r.db.Save(rap).Error
-}
-
-func (r *GormRoleRepository) DeleteRoleAlbumPermission(roleID, albumID uint) error {
-	return r.db.Where("role_id = ? AND album_id = ?", roleID, albumID).Delete(&models.RoleAlbumPermission{}).Error
 }
 
 func (r *GormRoleRepository) GetRoleAlbumPermissions(roleID uint) ([]models.RoleAlbumPermission, error) {

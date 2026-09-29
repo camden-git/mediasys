@@ -312,19 +312,6 @@ func (r *AlbumRepository) UpdateSortOrder(albumID uint, sortOrder string) error 
 	return nil
 }
 
-// Delete removes an album by its ID
-// this will perform a soft delete because models.Album has gorm.DeletedAt
-func (r *AlbumRepository) Delete(id uint) error {
-	result := r.DB.Delete(&models.Album{}, id)
-	if result.Error != nil {
-		return fmt.Errorf("failed to delete album ID %d: %w", id, result.Error)
-	}
-	if result.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
-	}
-	return nil
-}
-
 // DeleteCascade removes an album and its related banners, default tags, and
 // user/role album permissions in a single transaction, then hard-deletes the
 // album itself.

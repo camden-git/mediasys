@@ -304,18 +304,10 @@ func init() {
 	allPermissionKeysMap = make(map[string]PermissionDefinition)
 	for _, group := range DefinedPermissionGroups {
 		for _, perm := range group.Permissions {
-			if _, exists := allPermissionKeysMap[perm.Key]; exists {
-				// indicates a duplicate permission key definition, which should be avoided
-			}
 			allPermissionKeysMap[perm.Key] = perm
 			allPermissionKeys = append(allPermissionKeys, perm.Key)
 		}
 	}
-}
-
-// GetAllPermissionDefinitions returns a map of all defined permissions, keyed by their unique string key
-func GetAllPermissionDefinitions() map[string]PermissionDefinition {
-	return allPermissionKeysMap
 }
 
 // GetAllPermissionKeys returns a slice of all unique permission string keys

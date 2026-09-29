@@ -265,30 +265,6 @@ func (r *GormCollectionRepository) buildFilterSubquery(collectionID uint) (strin
 	return baseSQL, baseArgs, nil
 }
 
-// GetImagePathsMatchingFilters returns all image paths matching the collection's tag filters.
-// Prefer ListImages for user-facing listings: it sorts and pages in SQL instead of
-// materializing every matching path into Go and passing them back through IN (...).
-func (r *GormCollectionRepository) GetImagePathsMatchingFilters(collectionID uint) ([]string, error) {
-	subSQL, args, err := r.buildFilterSubquery(collectionID)
-	if err != nil {
-		return nil, err
-	}
-	if subSQL == "" {
-		return []string{}, nil
-	}
-
-	var rows []struct{ ImagePath string }
-	if err := r.db.Raw(subSQL, args...).Scan(&rows).Error; err != nil {
-		return nil, err
-	}
-
-	paths := make([]string, 0, len(rows))
-	for _, row := range rows {
-		paths = append(paths, row.ImagePath)
-	}
-	return paths, nil
-}
-
 // ListImages returns a sorted, paginated page of images matching the collection's tag
 // filters, plus the total number of matching images. The filter is applied as a
 // subquery join (images.original_path IN (SELECT ... FROM image_tags ...)) so the
