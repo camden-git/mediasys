@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/camden-git/mediasysbackend/config"
 	"github.com/camden-git/mediasysbackend/media"
 	"github.com/camden-git/mediasysbackend/models"
 	"github.com/camden-git/mediasysbackend/repository"
@@ -17,14 +16,11 @@ import (
 )
 
 type AlbumHandler struct {
-	AlbumRepo      repository.AlbumRepositoryInterface
-	ImageRepo      repository.ImageRepositoryInterface
-	UserRepo       repository.UserRepository
-	TagRepo        repository.ImageTagRepositoryInterface
-	Cfg            config.Config
-	ThumbGen       *workers.ImageProcessor
-	MediaProcessor *media.Processor
-	Store          *media.Store
+	AlbumRepo repository.AlbumRepositoryInterface
+	ImageRepo repository.ImageRepositoryInterface
+	UserRepo  repository.UserRepository
+	ThumbGen  *workers.ImageProcessor
+	Store     *media.Store
 }
 
 func (ah *AlbumHandler) getAlbumByIdentifier(identifier string) (*models.Album, error) {

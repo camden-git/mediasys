@@ -23,7 +23,6 @@ type AdminAlbumHandler struct {
 	AlbumRepo      repository.AlbumRepositoryInterface
 	ImageRepo      repository.ImageRepositoryInterface
 	UserRepo       repository.UserRepository
-	RoleRepo       repository.RoleRepository
 	TagRepo        repository.ImageTagRepositoryInterface
 	Cfg            config.Config
 	ImgProc        *workers.ImageProcessor
@@ -36,7 +35,6 @@ func NewAdminAlbumHandler(
 	albumRepo repository.AlbumRepositoryInterface,
 	imageRepo repository.ImageRepositoryInterface,
 	userRepo repository.UserRepository,
-	roleRepo repository.RoleRepository,
 	tagRepo repository.ImageTagRepositoryInterface,
 	cfg config.Config,
 	imgProc *workers.ImageProcessor,
@@ -46,7 +44,6 @@ func NewAdminAlbumHandler(
 		AlbumRepo: albumRepo,
 		ImageRepo: imageRepo,
 		UserRepo:  userRepo,
-		RoleRepo:  roleRepo,
 		TagRepo:   tagRepo,
 		Cfg:       cfg,
 		ImgProc:   imgProc,

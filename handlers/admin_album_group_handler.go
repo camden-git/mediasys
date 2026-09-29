@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/camden-git/mediasysbackend/config"
 	"github.com/camden-git/mediasysbackend/media"
 	"github.com/camden-git/mediasysbackend/models"
 	"github.com/camden-git/mediasysbackend/repository"
@@ -19,7 +18,6 @@ import (
 // AdminAlbumGroupHandler handles admin CRUD for album groups.
 type AdminAlbumGroupHandler struct {
 	GroupRepo      repository.AlbumGroupRepositoryInterface
-	Cfg            config.Config
 	MediaProcessor *media.Processor
 	Store          *media.Store
 }
@@ -27,13 +25,11 @@ type AdminAlbumGroupHandler struct {
 // NewAdminAlbumGroupHandler creates a new AdminAlbumGroupHandler.
 func NewAdminAlbumGroupHandler(
 	groupRepo repository.AlbumGroupRepositoryInterface,
-	cfg config.Config,
 	mediaProcessor *media.Processor,
 	store *media.Store,
 ) *AdminAlbumGroupHandler {
 	return &AdminAlbumGroupHandler{
 		GroupRepo:      groupRepo,
-		Cfg:            cfg,
 		MediaProcessor: mediaProcessor,
 		Store:          store,
 	}

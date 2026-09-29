@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/camden-git/mediasysbackend/config"
 	"github.com/camden-git/mediasysbackend/database"
 	"github.com/camden-git/mediasysbackend/media"
 	"github.com/camden-git/mediasysbackend/models"
@@ -56,20 +55,17 @@ func buildCollectionAdminResponse(c *models.Collection, banners []models.Collect
 // AdminCollectionHandler handles admin CRUD for collections.
 type AdminCollectionHandler struct {
 	CollectionRepo repository.CollectionRepositoryInterface
-	Cfg            config.Config
 	MediaProcessor *media.Processor
 	Store          *media.Store
 }
 
 func NewAdminCollectionHandler(
 	collectionRepo repository.CollectionRepositoryInterface,
-	cfg config.Config,
 	mediaProcessor *media.Processor,
 	store *media.Store,
 ) *AdminCollectionHandler {
 	return &AdminCollectionHandler{
 		CollectionRepo: collectionRepo,
-		Cfg:            cfg,
 		MediaProcessor: mediaProcessor,
 		Store:          store,
 	}

@@ -7,9 +7,8 @@ import (
 	"github.com/camden-git/mediasysbackend/permissions"
 )
 
-type PermissionsHandler struct {
-	// No dependencies needed for now, as it serves static data
-}
+// PermissionsHandler serves the static permission definitions.
+type PermissionsHandler struct{}
 
 func NewPermissionsHandler() *PermissionsHandler {
 	return &PermissionsHandler{}

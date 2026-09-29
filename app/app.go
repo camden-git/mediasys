@@ -111,7 +111,7 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		Store:     mediaStore,
 		DB:        gormDB,
 
-		AlbumHandler:        &handlers.AlbumHandler{AlbumRepo: albumRepo, ImageRepo: imageRepo, UserRepo: userRepo, TagRepo: imageTagRepo, Cfg: cfg, ThumbGen: imageProcessor, MediaProcessor: mediaProcessor, Store: mediaStore},
+		AlbumHandler:        &handlers.AlbumHandler{AlbumRepo: albumRepo, ImageRepo: imageRepo, UserRepo: userRepo, ThumbGen: imageProcessor, Store: mediaStore},
 		PersonHandler:       &handlers.PersonHandler{PersonRepo: personRepo, FaceRepo: faceRepo, ImageRepo: imageRepo, Store: mediaStore, Cfg: cfg},
 		FaceHandler:         &handlers.FaceHandler{FaceRepo: faceRepo, EmbeddingRepo: faceEmbeddingRepo, PersonRepo: personRepo, ImageRepo: imageRepo, Cfg: cfg, FaceRecognitionService: faceRecognitionService},
 		ImagePreviewHandler: &handlers.ImagePreviewHandler{FaceRepo: faceRepo, ImageRepo: imageRepo, Store: mediaStore, Cfg: cfg},
@@ -123,17 +123,17 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		AdminRoleHandler:       handlers.NewAdminRoleHandler(roleRepo),
 		AdminInviteCodeHandler: handlers.NewAdminInviteCodeHandler(inviteCodeRepo),
 		AdminAlbumHandler: func() *handlers.AdminAlbumHandler {
-			h := handlers.NewAdminAlbumHandler(albumRepo, imageRepo, userRepo, roleRepo, imageTagRepo, cfg, imageProcessor, hub)
+			h := handlers.NewAdminAlbumHandler(albumRepo, imageRepo, userRepo, imageTagRepo, cfg, imageProcessor, hub)
 			h.MediaProcessor = mediaProcessor
 			h.Store = mediaStore
 			return h
 		}(),
 		AdminAlbumUserHandler:  handlers.NewAdminAlbumUserHandler(userRepo, albumRepo),
-		AdminAlbumGroupHandler: handlers.NewAdminAlbumGroupHandler(albumGroupRepo, cfg, mediaProcessor, mediaStore),
+		AdminAlbumGroupHandler: handlers.NewAdminAlbumGroupHandler(albumGroupRepo, mediaProcessor, mediaStore),
 		AlbumGroupHandler:      &handlers.AlbumGroupHandler{GroupRepo: albumGroupRepo, ImageRepo: imageRepo},
 		AdminImageTagHandler:   &handlers.AdminImageTagHandler{TagRepo: imageTagRepo, AlbumRepo: albumRepo, ImageRepo: imageRepo},
-		AdminCollectionHandler: handlers.NewAdminCollectionHandler(collectionRepo, cfg, mediaProcessor, mediaStore),
-		CollectionHandler:      &handlers.CollectionHandler{CollectionRepo: collectionRepo, ImageRepo: imageRepo, Cfg: &cfg},
+		AdminCollectionHandler: handlers.NewAdminCollectionHandler(collectionRepo, mediaProcessor, mediaStore),
+		CollectionHandler:      &handlers.CollectionHandler{CollectionRepo: collectionRepo},
 		SetupHandler:           handlers.NewSetupHandler(userRepo, roleRepo),
 	}
 

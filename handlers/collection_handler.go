@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/camden-git/mediasysbackend/config"
 	"github.com/camden-git/mediasysbackend/database"
 	"github.com/camden-git/mediasysbackend/models"
 	"github.com/camden-git/mediasysbackend/repository"
@@ -17,8 +16,6 @@ import (
 // CollectionHandler serves public collection endpoints.
 type CollectionHandler struct {
 	CollectionRepo repository.CollectionRepositoryInterface
-	ImageRepo      repository.ImageRepositoryInterface
-	Cfg            *config.Config
 }
 
 // collectionPublicResponse is the public view of a collection with banners as paths.
