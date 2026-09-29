@@ -222,6 +222,17 @@ func (h *AdminAlbumHandler) CreateAlbum(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	conflict, err := h.AlbumRepo.FolderPathConflicts(folderPathForDB)
+	if err != nil {
+		log.Printf("Error checking folder path '%s' for new album: %v", folderPathForDB, err)
+		WriteAPIError(w, http.StatusInternalServerError, "AlbumCreateError", "Failed to create album")
+		return
+	}
+	if conflict {
+		WriteAPIError(w, http.StatusConflict, "AlbumConflict", "folder_path overlaps another album's folder")
+		return
+	}
+
 	newAlbum := models.Album{
 		Name:        req.Name,
 		Slug:        req.Slug,
@@ -238,7 +249,7 @@ func (h *AdminAlbumHandler) CreateAlbum(w http.ResponseWriter, r *http.Request) 
 		newAlbum.SortOrder = *req.SortOrder
 	}
 
-	err := h.AlbumRepo.Create(&newAlbum)
+	err = h.AlbumRepo.Create(&newAlbum)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {
 			WriteAPIError(w, http.StatusConflict, "AlbumConflict", "Album name, slug, or folder path already exists")

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/camden-git/mediasysbackend/database"
@@ -92,6 +93,21 @@ func (r *AlbumRepository) GetBySlug(slug string) (*models.Album, error) {
 		return nil, fmt.Errorf("failed to get album by slug %s: %w", slug, err)
 	}
 	return &album, nil
+}
+
+// FolderPathConflicts reports whether another album's folder equals, contains
+// or is nested inside the given folder. Image paths are "<folder>/<file>", so
+// overlapping folders would let two albums claim the same image path.
+func (r *AlbumRepository) FolderPathConflicts(folder string) (bool, error) {
+	folder = strings.Trim(filepath.ToSlash(folder), "/")
+	var count int64
+	err := r.DB.Model(&models.Album{}).
+		Where("folder_path = ? OR starts_with(folder_path, ?) OR starts_with(?, folder_path || '/')", folder, folder+"/", folder).
+		Count(&count).Error
+	if err != nil {
+		return false, fmt.Errorf("failed to check folder path conflicts for %s: %w", folder, err)
+	}
+	return count > 0, nil
 }
 
 // Update updates an existing album's name, description, hidden status, and location

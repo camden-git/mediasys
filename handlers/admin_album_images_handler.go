@@ -132,6 +132,16 @@ func (h *AdminAlbumHandler) UploadImages(w http.ResponseWriter, r *http.Request)
 		}
 
 		imagePath := folder + "/" + rel
+		owner, lookupErr := h.ImageRepo.GetByPath(imagePath)
+		if lookupErr == nil && owner.AlbumID != album.ID {
+			failed = append(failed, map[string]string{"path": rel, "error": "path belongs to another album"})
+			continue
+		}
+		if lookupErr != nil && !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
+			log.Printf("UploadImages: failed to look up %s: %v", imagePath, lookupErr)
+			failed = append(failed, map[string]string{"path": rel, "error": "failed to save image record"})
+			continue
+		}
 		objectKey := media.OriginalKey(imagePath)
 		broadcast(imagePath, "uploading", "")
 
@@ -167,6 +177,11 @@ func (h *AdminAlbumHandler) UploadImages(w http.ResponseWriter, r *http.Request)
 			DetectionStatus:  detectionStatus,
 		}
 		previous, dbErr := h.ImageRepo.Upsert(img)
+		if errors.Is(dbErr, repository.ErrPathOwnedByOtherAlbum) {
+			// lost a race with another album; its original must stay untouched
+			failed = append(failed, map[string]string{"path": rel, "error": "path belongs to another album"})
+			continue
+		}
 		if dbErr != nil {
 			log.Printf("UploadImages: failed to record %s: %v", imagePath, dbErr)
 			_ = h.Store.Delete(context.Background(), objectKey)

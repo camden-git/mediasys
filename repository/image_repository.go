@@ -26,6 +26,9 @@ func NewImageRepository(db *gorm.DB) *ImageRepository {
 	return &ImageRepository{DB: db}
 }
 
+// ErrPathOwnedByOtherAlbum is returned when an image path already belongs to a different album.
+var ErrPathOwnedByOtherAlbum = errors.New("image path belongs to another album")
+
 var taskColumns = map[string]string{
 	"metadata_status":  "metadata_error",
 	"thumbnail_status": "thumbnail_error",
@@ -59,6 +62,9 @@ func (r *ImageRepository) Upsert(img *models.Image) (*models.Image, error) {
 			return err
 		}
 		if err == nil {
+			if existing.AlbumID != img.AlbumID {
+				return ErrPathOwnedByOtherAlbum
+			}
 			previous = &existing
 			if err := deleteImageRelations(tx, []string{img.OriginalPath}, false); err != nil {
 				return err
@@ -69,6 +75,9 @@ func (r *ImageRepository) Upsert(img *models.Image) (*models.Image, error) {
 		}
 		return tx.Create(img).Error
 	})
+	if errors.Is(err, ErrPathOwnedByOtherAlbum) {
+		return nil, err
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to upsert image %s: %w", img.OriginalPath, err)
 	}
