@@ -84,7 +84,7 @@ const AlbumSubusersPage: React.FC = () => {
                 key: 'album-user-added-error',
                 type: 'error',
                 title: 'Error',
-                message: error.response?.data?.error || 'Failed to add user to album',
+                message: error.message || 'Failed to add user to album',
             });
         } finally {
             setIsSubmitting(false);
@@ -123,7 +123,7 @@ const AlbumSubusersPage: React.FC = () => {
                 key: 'album-permissions-updated-error',
                 type: 'error',
                 title: 'Error',
-                message: error.response?.data?.error || 'Failed to update user permissions',
+                message: error.message || 'Failed to update user permissions',
             });
         } finally {
             setIsSubmitting(false);
@@ -154,7 +154,7 @@ const AlbumSubusersPage: React.FC = () => {
                 key: 'album-user-removed-error',
                 type: 'error',
                 title: 'Error',
-                message: error.response?.data?.error || 'Failed to remove user from album',
+                message: error.message || 'Failed to remove user from album',
             });
         }
     };

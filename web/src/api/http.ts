@@ -1,5 +1,5 @@
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
-import { ApiErrorDetail, ApiErrorResponse, httpErrorToHuman } from './standard';
+import { ApiErrorDetail, httpErrorToHuman } from './standard';
 
 const getAuthToken = (): string | null => localStorage.getItem('authToken');
 
@@ -56,48 +56,25 @@ http.interceptors.response.use(
     (error) => {
         _progressCbs?.onComplete();
 
-        const parsePayload = (payload: unknown): ApiErrorResponse | undefined => {
-            if (!payload) {
-                return undefined;
+        // The backend always returns errors as {"errors": [{code, status, detail}]}, so if the
+        // response body came back as a JSON string for some reason, parse it before extracting.
+        let responseData = error.response?.data;
+        if (typeof responseData === 'string') {
+            try {
+                responseData = JSON.parse(responseData);
+            } catch {
+                responseData = undefined;
             }
-
-            if (typeof payload === 'string') {
-                try {
-                    return JSON.parse(payload) as ApiErrorResponse;
-                } catch {
-                    return { detail: payload };
-                }
-            }
-
-            if (typeof payload === 'object') {
-                return payload as ApiErrorResponse;
-            }
-
-            return undefined;
-        };
-
-        const parsedResponsePayload = parsePayload(error.response?.data);
-        const parsedRequestPayload =
-            !parsedResponsePayload && typeof error?.request?.responseText === 'string'
-                ? parsePayload(error.request.responseText)
-                : undefined;
-
-        let standardizedErrors: ApiErrorDetail[] | null = null;
-        const candidatePayload = parsedResponsePayload || parsedRequestPayload;
-        if (candidatePayload?.errors && Array.isArray(candidatePayload.errors) && candidatePayload.errors.length > 0) {
-            standardizedErrors = candidatePayload.errors as ApiErrorDetail[];
         }
+
+        const standardizedErrors: ApiErrorDetail[] | null =
+            responseData?.errors && Array.isArray(responseData.errors) && responseData.errors.length > 0
+                ? (responseData.errors as ApiErrorDetail[])
+                : null;
 
         const normalizedError = {
             ...error,
-            response: error.response
-                ? {
-                      ...error.response,
-                      data: parsedResponsePayload ?? error.response.data,
-                  }
-                : {
-                      data: candidatePayload,
-                  },
+            response: error.response ? { ...error.response, data: responseData } : undefined,
         };
 
         let errorMessage = httpErrorToHuman(normalizedError);

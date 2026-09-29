@@ -29,20 +29,16 @@ export const useUIStore = create<UIState>()((set) => ({
         })),
 
     clearAndAddHttpError: ({ error, key }) =>
-        set((state) => {
-            const errorsArr = (error as any)?.errors as Array<{ detail?: string }> | undefined;
-            const detail = Array.isArray(errorsArr) && errorsArr[0]?.detail ? errorsArr[0].detail : undefined;
-            return {
-                flashes: [
-                    ...state.flashes.filter((f) => f.key !== key),
-                    {
-                        key,
-                        type: 'error' as const,
-                        title: 'Error',
-                        message: detail || error.message || 'An error occurred',
-                        id: Date.now(),
-                    },
-                ],
-            };
-        }),
+        set((state) => ({
+            flashes: [
+                ...state.flashes.filter((f) => f.key !== key),
+                {
+                    key,
+                    type: 'error' as const,
+                    title: 'Error',
+                    message: error.message || 'An error occurred',
+                    id: Date.now(),
+                },
+            ],
+        })),
 }));

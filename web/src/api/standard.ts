@@ -6,44 +6,17 @@ export interface ApiErrorDetail {
 
 export interface ApiErrorResponse {
     errors?: ApiErrorDetail[];
-    detail?: string;
-    message?: string;
 }
 
 /**
- * Converts an error into a human readable response. Mostly just a generic helper to
- * make sure we display the message from the server back to the user if we can.
+ * Converts an error into a human readable response. The backend always returns errors as
+ * {"errors": [{code, status, detail}]}, so this just surfaces the first detail message,
+ * falling back to a generic error message if the response doesn't match that shape.
  */
 export function httpErrorToHuman(error: any): string {
-    if (!error) {
-        return 'An unexpected error occurred.';
-    }
-
-    const responseData = error?.response?.data;
-    if (responseData) {
-        let data = responseData;
-
-        // Some non-JSON requests can still return the error as a JSON block. In those cases, attempt
-        // to parse it into JSON so we can display an actual error.
-        if (typeof data === 'string') {
-            try {
-                data = JSON.parse(data);
-            } catch {
-                return data;
-            }
-        }
-
-        if (data?.errors && Array.isArray(data.errors) && data.errors[0]?.detail) {
-            return data.errors[0].detail;
-        }
-
-        if (typeof data?.detail === 'string') {
-            return data.detail;
-        }
-
-        if (typeof data?.message === 'string') {
-            return data.message;
-        }
+    const detail = error?.response?.data?.errors?.[0]?.detail;
+    if (typeof detail === 'string' && detail) {
+        return detail;
     }
 
     if (error?.message) {

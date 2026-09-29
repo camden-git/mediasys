@@ -60,7 +60,7 @@ export function UpdateAlbumForm() {
                                 key: 'album-update',
                                 type: 'error',
                                 title: 'Error',
-                                message: err?.response?.data?.error || 'Failed to update album',
+                                message: err.message || 'Failed to update album',
                             });
                         } finally {
                             setSubmitting(false);

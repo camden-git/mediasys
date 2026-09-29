@@ -127,10 +127,9 @@ const uploadBatchWithRetry = async (
             const is4xx =
                 typeof err === 'object' &&
                 err !== null &&
-                'response' in err &&
-                typeof (err as any).response?.status === 'number' &&
-                (err as any).response.status >= 400 &&
-                (err as any).response.status < 500;
+                typeof (err as any).status === 'number' &&
+                (err as any).status >= 400 &&
+                (err as any).status < 500;
             if (isAbort || is4xx || attempt === maxRetries) throw err;
             await sleep(Math.min(1000 * 2 ** attempt, 10_000)); // 1s, 2s, 4s … max 10s
         }

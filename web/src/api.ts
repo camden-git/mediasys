@@ -12,6 +12,7 @@ import {
     User,
     AuthResponse,
 } from './types';
+import { ApiErrorDetail } from './api/standard';
 
 const getAuthToken = (): string | null => localStorage.getItem('authToken');
 
@@ -52,55 +53,19 @@ const apiClient = async (url: string, options: RequestInit = {}, signal?: AbortS
 
     if (!response.ok) {
         let errorMessage = `HTTP error! status: ${response.status}`;
-        let standardizedErrors: Array<{ code: string; status: string; detail: string }> | null = null;
+        let standardizedErrors: ApiErrorDetail[] | null = null;
 
-        // Attempt to parse JSON error body
+        // The backend always returns errors as {"errors": [{code, status, detail}]}.
         try {
             const errorBody = await response.clone().json();
-            if (errorBody) {
-                if (Array.isArray(errorBody.errors)) {
-                    standardizedErrors = errorBody.errors;
-                    if (standardizedErrors && standardizedErrors.length > 0) {
-                        const first = standardizedErrors[0];
-                        if (first?.detail) {
-                            errorMessage = first.detail;
-                        }
-                    }
-                } else if (typeof errorBody.detail === 'string') {
-                    errorMessage = errorBody.detail;
-                } else if (typeof errorBody.message === 'string') {
-                    errorMessage = errorBody.message;
+            if (Array.isArray(errorBody?.errors) && errorBody.errors.length > 0) {
+                standardizedErrors = errorBody.errors;
+                if (standardizedErrors![0]?.detail) {
+                    errorMessage = standardizedErrors![0].detail;
                 }
             }
         } catch {
-            // Fallback: try text body
-            try {
-                const text = await response.text();
-                if (text) {
-                    try {
-                        const parsed = JSON.parse(text);
-                        if (parsed && Array.isArray(parsed.errors)) {
-                            standardizedErrors = parsed.errors;
-                            if (standardizedErrors && standardizedErrors.length > 0) {
-                                const first = standardizedErrors[0];
-                                if (first?.detail) {
-                                    errorMessage = first.detail;
-                                }
-                            }
-                        } else if (parsed?.detail) {
-                            errorMessage = parsed.detail;
-                        } else if (parsed?.message) {
-                            errorMessage = parsed.message;
-                        } else {
-                            errorMessage = text;
-                        }
-                    } catch {
-                        errorMessage = text;
-                    }
-                }
-            } catch {
-                // ignore
-            }
+            // ignore, fall back to the generic status message
         }
 
         const error = new Error(errorMessage);

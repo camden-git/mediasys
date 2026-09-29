@@ -59,7 +59,7 @@ const ProfileContainer: React.FC = () => {
                                 key: 'profile-info',
                                 type: 'error',
                                 title: 'Error',
-                                message: err?.response?.data?.error || 'Failed to update profile',
+                                message: err.message || 'Failed to update profile',
                             });
                         } finally {
                             setSubmitting(false);
@@ -106,7 +106,7 @@ const ProfileContainer: React.FC = () => {
                                 key: 'profile-password',
                                 type: 'error',
                                 title: 'Error',
-                                message: err?.response?.data?.error || 'Failed to change password',
+                                message: err.message || 'Failed to change password',
                             });
                         } finally {
                             setSubmitting(false);

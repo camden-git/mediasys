@@ -23,7 +23,7 @@ export function BannerUpload() {
                 key: 'banner-error',
                 type: 'error',
                 title: 'Error',
-                message: error.response?.data?.error || 'Failed to add banner',
+                message: error.message || 'Failed to add banner',
             });
         }
     };
@@ -37,7 +37,7 @@ export function BannerUpload() {
                 key: 'banner-error',
                 type: 'error',
                 title: 'Error',
-                message: error.response?.data?.error || 'Failed to remove banner',
+                message: error.message || 'Failed to remove banner',
             });
         }
     };
@@ -51,7 +51,7 @@ export function BannerUpload() {
                 key: 'banner-error',
                 type: 'error',
                 title: 'Error',
-                message: error.response?.data?.error || 'Failed to reorder banners',
+                message: error.message || 'Failed to reorder banners',
             });
         }
     };
