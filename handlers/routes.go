@@ -496,7 +496,6 @@ func RegisterRoutes(r chi.Router, deps AppDependencies) {
 			r.Get("/image_with_faces", deps.ImagePreviewHandler.ServeImageWithFaces)
 			r.Post("/queue_detection", deps.DebugHandler.QueueFaceDetection)
 			r.Get("/detection_status", deps.DebugHandler.GetDetectionStatus)
-			r.Get("/faces", deps.FaceHandler.DebugFaces)
 		})
 	})
 

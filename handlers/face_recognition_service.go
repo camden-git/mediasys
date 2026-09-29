@@ -320,16 +320,6 @@ func (s *FaceRecognitionService) GetUntaggedFacesWithSuggestions(limit int, filt
 	return results, nil
 }
 
-// GetEmbeddingRepo returns the embedding repository for debugging
-func (s *FaceRecognitionService) GetEmbeddingRepo() *repository.FaceEmbeddingRepository {
-	return s.embeddingRepo
-}
-
-// GetSimilarityThreshold returns the similarity threshold for debugging
-func (s *FaceRecognitionService) GetSimilarityThreshold() float32 {
-	return s.similarityThreshold
-}
-
 // CalculateSimilarity calculates cosine similarity between two embeddings
 func (s *FaceRecognitionService) CalculateSimilarity(embedding1, embedding2 []float32) float32 {
 	if len(embedding1) != len(embedding2) || len(embedding1) == 0 {

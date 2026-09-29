@@ -73,7 +73,6 @@ func TestAnonymousRejectedOnMutatingAndDebugRoutes(t *testing.T) {
 		{"update face", http.MethodPut, "/api/faces/1"},
 		{"delete face", http.MethodDelete, "/api/faces/1"},
 		{"tag face", http.MethodPost, "/api/faces/1/tag"},
-		{"debug faces", http.MethodGet, "/api/debug/faces"},
 		{"debug queue detection", http.MethodPost, "/api/debug/queue_detection"},
 		{"debug detection status", http.MethodGet, "/api/debug/detection_status"},
 		{"debug image with faces", http.MethodGet, "/api/debug/image_with_faces"},
