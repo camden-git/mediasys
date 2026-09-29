@@ -172,6 +172,31 @@ func (r *ImageRepository) UpdateDetectionResult(originalPath string, detections 
 		}
 
 		if len(detections) > 0 {
+			// Tagged faces are never deleted above, so drop any new detection that
+			// overlaps one — otherwise re-running detection duplicates tagged faces.
+			var taggedFaces []models.Face
+			if err := tx.Where("image_path = ? AND person_id IS NOT NULL", originalPath).Find(&taggedFaces).Error; err != nil {
+				return err
+			}
+			if len(taggedFaces) > 0 {
+				filtered := detections[:0]
+				for _, det := range detections {
+					overlapsTagged := false
+					for _, tf := range taggedFaces {
+						if boxIoU(det.X, det.Y, det.X+det.W, det.Y+det.H, tf.X1, tf.Y1, tf.X2, tf.Y2) > 0.5 {
+							overlapsTagged = true
+							break
+						}
+					}
+					if !overlapsTagged {
+						filtered = append(filtered, det)
+					}
+				}
+				detections = filtered
+			}
+		}
+
+		if len(detections) > 0 {
 			now := time.Now().Unix()
 			newFaces := make([]models.Face, len(detections))
 			for i, det := range detections {
@@ -220,6 +245,36 @@ func (r *ImageRepository) UpdateDetectionResult(originalPath string, detections 
 			"detection_error":        errStr,
 		}).Error
 	})
+}
+
+// boxIoU returns the intersection-over-union of two axis-aligned boxes given as corners.
+func boxIoU(ax1, ay1, ax2, ay2, bx1, by1, bx2, by2 int) float32 {
+	x1, y1 := ax1, ay1
+	if bx1 > x1 {
+		x1 = bx1
+	}
+	if by1 > y1 {
+		y1 = by1
+	}
+	x2, y2 := ax2, ay2
+	if bx2 < x2 {
+		x2 = bx2
+	}
+	if by2 < y2 {
+		y2 = by2
+	}
+	if x2 <= x1 || y2 <= y1 {
+		return 0
+	}
+
+	intersection := float32((x2 - x1) * (y2 - y1))
+	areaA := float32((ax2 - ax1) * (ay2 - ay1))
+	areaB := float32((bx2 - bx1) * (by2 - by1))
+	union := areaA + areaB - intersection
+	if union <= 0 {
+		return 0
+	}
+	return intersection / union
 }
 
 // RequeueTask sets a task back to 'pending' so the dispatcher runs it again.
