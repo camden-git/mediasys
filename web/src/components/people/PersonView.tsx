@@ -1,7 +1,7 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Person, FileInfo, PersonImageResult } from '../../types.ts';
-import { getPersonById, searchFacesByName, getPreviewImageUrl, getThumbnailUrl } from '../../api.ts';
+import { getPersonById, searchFacesByName, getPreviewImagePath } from '../../api.ts';
 import AdvancedImageGrid from '../album/AdvancedImageGrid.tsx';
 import ImageLightbox from '../album/ImageLightbox.tsx';
 import LoadingSpinner from '../elements/LoadingSpinner.tsx';
@@ -41,14 +41,19 @@ const PersonView: React.FC = () => {
 
     // Convert face search results to FileInfo objects for the grid, preferring the
     // lightweight thumbnail over the full-size preview when one is available.
-    const imageFiles: FileInfo[] = images.map(({ image_path: path, thumbnail_path }) => ({
-        name: path.split('/').pop() ?? path,
-        path: '/' + path,
-        is_dir: false,
-        size: 0,
-        mod_time: 0,
-        thumbnail_path: thumbnail_path ? getThumbnailUrl(thumbnail_path) : getPreviewImageUrl(path),
-    }));
+    // thumbnail_path stays a relative path; consumers prefix the backend URL.
+    const imageFiles: FileInfo[] = useMemo(
+        () =>
+            images.map(({ image_path: path, thumbnail_path }) => ({
+                name: path.split('/').pop() ?? path,
+                path: '/' + path,
+                is_dir: false,
+                size: 0,
+                mod_time: 0,
+                thumbnail_path: thumbnail_path || getPreviewImagePath(path),
+            })),
+        [images],
+    );
 
     const selectedIndex = selectedImage ? imageFiles.findIndex((f) => f.path === selectedImage.path) : -1;
 

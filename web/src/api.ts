@@ -146,8 +146,10 @@ export const getAlbumDownloadUrl = (id: string): string => {
     return `${import.meta.env.VITE_BACKEND_URL}/albums/${id}/zip`;
 };
 
+export const getPreviewImagePath = (imagePath: string): string => `/preview/${encodeImagePath(imagePath)}`;
+
 export const getPreviewImageUrl = (imagePath: string): string => {
-    return `${import.meta.env.VITE_BACKEND_URL}/preview/${encodeImagePath(imagePath)}`;
+    return `${import.meta.env.VITE_BACKEND_URL}${getPreviewImagePath(imagePath)}`;
 };
 
 export const getFacesForImage = async (imagePath: string): Promise<FaceData[]> => {
