@@ -16,7 +16,7 @@ const UserView: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const userId = id ? parseInt(id, 10) : 0;
 
-    const { data: user, error, isFetching } = useUser(userId);
+    const { data: user, error } = useUser(userId);
     const { clearFlashes, clearAndAddHttpError } = useFlash();
     const [isEditModalOpen, setEditModalOpen] = useState(false);
 
@@ -29,12 +29,12 @@ const UserView: React.FC = () => {
         clearAndAddHttpError({ error, key: 'user-view' });
     }, [error, clearFlashes, clearAndAddHttpError]);
 
-    if (!user || (error && isFetching)) {
-        return <LoadingSpinner />;
+    if (error && !user) {
+        return <ErrorMessage>Error: {error.message}</ErrorMessage>;
     }
 
-    if (error) {
-        return <ErrorMessage>Error: {error.message}</ErrorMessage>;
+    if (!user) {
+        return <LoadingSpinner />;
     }
 
     return (

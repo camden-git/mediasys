@@ -5,6 +5,7 @@ import CreateUserForm from './CreateUserForm';
 import { useUsers } from '../../../api/query/useUsers';
 import { useFlash } from '../../../hooks/useFlash';
 import FlashMessageRender from '../../elements/FlashMessageRender';
+import { ErrorMessage } from '../../elements/Fieldset';
 import LoadingSpinner from '../../elements/LoadingSpinner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../elements/Table.tsx';
 import { PaginationControls } from '../../elements/PaginationControls';
@@ -17,7 +18,7 @@ const UserList: React.FC = () => {
     const [page, setPage] = useState(1);
     const perPage = DEFAULT_PER_PAGE;
 
-    const { data: userResult, error, isFetching } = useUsers({ page, perPage });
+    const { data: userResult, error } = useUsers({ page, perPage });
     const { clearFlashes, clearAndAddHttpError } = useFlash();
     const [isCreateModalOpen, setCreateModalOpen] = useState(false);
 
@@ -38,7 +39,11 @@ const UserList: React.FC = () => {
         }
     }, [pagination, page]);
 
-    if (!userResult || (error && isFetching)) {
+    if (error && !userResult) {
+        return <ErrorMessage>Error: {error.message}</ErrorMessage>;
+    }
+
+    if (!userResult) {
         return <LoadingSpinner />;
     }
 

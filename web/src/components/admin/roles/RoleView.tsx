@@ -24,7 +24,7 @@ const RoleView: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const roleId = id ? parseInt(id, 10) : 0;
 
-    const { data: role, error, isFetching: isValidating } = useRole(roleId);
+    const { data: role, error } = useRole(roleId);
     const { data: allUsersResult } = useUsers({ perPage: 500 });
     const allUsers = allUsersResult?.items ?? [];
     const { addFlash, clearFlashes, clearAndAddHttpError } = useFlash();
@@ -72,12 +72,12 @@ const RoleView: React.FC = () => {
         clearAndAddHttpError({ error, key: 'role-view' });
     }, [error, clearFlashes, clearAndAddHttpError]);
 
-    if (!role || (error && isValidating)) {
-        return <LoadingSpinner />;
+    if (error && !role) {
+        return <ErrorMessage>Error: {error.message}</ErrorMessage>;
     }
 
-    if (error) {
-        return <ErrorMessage>Error: {error.message}</ErrorMessage>;
+    if (!role) {
+        return <LoadingSpinner />;
     }
 
     const handleAddUserToRole = async (userId: number) => {

@@ -3,6 +3,7 @@ import { CreateInviteCodeForm } from './CreateInviteCodeForm.tsx';
 import { Heading } from '../../elements/Heading.tsx';
 import PageContentBlock from '../../elements/PageContentBlock.tsx';
 import { Can } from '../../elements/Can.tsx';
+import { ErrorMessage } from '../../elements/Fieldset.tsx';
 import LoadingSpinner from '../../elements/LoadingSpinner.tsx';
 import { useInviteCodes } from '../../../api/query/useInviteCodes';
 import { useFlash } from '../../../hooks/useFlash';
@@ -15,7 +16,7 @@ import { PaginationControls } from '../../elements/PaginationControls';
 const InviteCodeManagementContainer: React.FC = () => {
     const [page, setPage] = useState(1);
     const perPage = 25;
-    const { data: inviteCodesResult, error, isFetching } = useInviteCodes({ page, perPage });
+    const { data: inviteCodesResult, error } = useInviteCodes({ page, perPage });
     const { clearFlashes, clearAndAddHttpError } = useFlash();
 
     useEffect(() => {
@@ -36,7 +37,11 @@ const InviteCodeManagementContainer: React.FC = () => {
         }
     }, [pagination, page]);
 
-    if (!inviteCodesResult || (error && isFetching)) {
+    if (error && !inviteCodesResult) {
+        return <ErrorMessage>Error: {error.message}</ErrorMessage>;
+    }
+
+    if (!inviteCodesResult) {
         return <LoadingSpinner />;
     }
 

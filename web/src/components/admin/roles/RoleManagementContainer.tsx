@@ -17,6 +17,7 @@ import { Text } from '../../elements/Text.tsx';
 import { useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '../../../lib/queryKeys';
 import { PaginationControls } from '../../elements/PaginationControls';
+import { ErrorMessage } from '../../elements/Fieldset';
 import { Dropdown, DropdownButton, DropdownItem, DropdownMenu, DropdownSeparator } from '../../elements/Dropdown';
 import { EllipsisHorizontalIcon } from '@heroicons/react/20/solid';
 import { Dialog, DialogActions, DialogDescription, DialogTitle } from '../../elements/Dialog';
@@ -27,7 +28,7 @@ const RoleManagementContainer: React.FC = () => {
     const [page, setPage] = useState(1);
     const perPage = DEFAULT_PER_PAGE;
     const queryClient = useQueryClient();
-    const { data: rolesResult, error, isFetching } = useRoles({ page, perPage });
+    const { data: rolesResult, error } = useRoles({ page, perPage });
     const { clearFlashes, clearAndAddHttpError, addFlash } = useFlash();
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
@@ -90,7 +91,11 @@ const RoleManagementContainer: React.FC = () => {
         });
     }, [roles, searchQuery]);
 
-    if (!rolesResult || (error && isFetching)) {
+    if (error && !rolesResult) {
+        return <ErrorMessage>Error: {error.message}</ErrorMessage>;
+    }
+
+    if (!rolesResult) {
         return <LoadingSpinner />;
     }
 
