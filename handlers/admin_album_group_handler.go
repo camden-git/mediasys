@@ -268,11 +268,6 @@ func (h *AdminAlbumGroupHandler) UploadGroupBanner(w http.ResponseWriter, r *htt
 		_ = h.Store.Delete(r.Context(), *group.BannerImagePath)
 	}
 
-	// remove the banner this one replaced
-	if group.BannerImagePath != nil && *group.BannerImagePath != savedRelPath {
-		_ = h.Store.Delete(r.Context(), *group.BannerImagePath)
-	}
-
 	updated, err := h.GroupRepo.GetByID(uint(id))
 	if err != nil {
 		WriteAPIResponse(w, http.StatusOK, map[string]string{"banner_image_path": savedRelPath})
