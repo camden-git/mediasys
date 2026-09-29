@@ -11,7 +11,7 @@ ARG VITE_API_URL=/api
 ARG VITE_BACKEND_URL=/api
 ARG VITE_TURNSTILE_SITE_KEY=
 ENV VITE_API_URL=$VITE_API_URL VITE_BACKEND_URL=$VITE_BACKEND_URL VITE_TURNSTILE_SITE_KEY=$VITE_TURNSTILE_SITE_KEY
-RUN rm -f .env* src/.env* && pnpm build
+RUN rm -f .env* && pnpm build
 
 FROM nginx:1.29-alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf
