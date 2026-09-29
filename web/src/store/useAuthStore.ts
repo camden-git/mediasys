@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import * as api from '../api';
 import { User, LoginPayload, RegisterPayload, AuthResponse } from '../types';
 import { Role } from '../types';
+import { queryClient } from '../lib/queryClient';
 
 export interface AuthenticatedUser extends User {
     roles: Role[];
@@ -56,6 +57,8 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
     clearAuth: () => {
         localStorage.removeItem('authToken');
+        // Drop cached server data so the next user never sees the previous user's data.
+        queryClient.clear();
         set({ user: null, token: null });
     },
 
@@ -63,6 +66,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
     login: async (payload) => {
         const response: AuthResponse = await api.loginUser(payload);
+        queryClient.clear();
         get().setToken(response.token);
         set({ user: response.user as AuthenticatedUser });
     },
@@ -83,8 +87,11 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
         try {
             const user: User = await api.getCurrentUser();
             set({ user: user as AuthenticatedUser });
-        } catch {
-            get().clearAuth();
+        } catch (error: any) {
+            // Only an invalid/expired token signs the user out; network blips and 5xx keep the session.
+            if (error?.status === 401) {
+                get().clearAuth();
+            }
         }
     },
 

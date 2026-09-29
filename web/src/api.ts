@@ -13,6 +13,7 @@ import {
     AuthResponse,
 } from './types';
 import { ApiErrorDetail } from './api/standard';
+import { handleUnauthorized } from './api/unauthorized';
 
 const getAuthToken = (): string | null => localStorage.getItem('authToken');
 
@@ -67,6 +68,8 @@ const apiClient = async (url: string, options: RequestInit = {}, signal?: AbortS
         } catch {
             // ignore, fall back to the generic status message
         }
+
+        handleUnauthorized(url, response.status);
 
         const error = new Error(errorMessage);
         (error as any).status = response.status;

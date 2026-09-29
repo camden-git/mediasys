@@ -1,4 +1,5 @@
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
+import { handleUnauthorized } from './unauthorized';
 import { ApiErrorDetail, httpErrorToHuman } from './standard';
 
 const getAuthToken = (): string | null => localStorage.getItem('authToken');
@@ -95,6 +96,8 @@ http.interceptors.response.use(
         if (!errorMessage) {
             errorMessage = `HTTP error! status: ${status || 'unknown'}`;
         }
+
+        handleUnauthorized(urlStr, status);
 
         const customError = new Error(errorMessage);
         (customError as any).status = status;
