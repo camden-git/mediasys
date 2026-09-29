@@ -181,7 +181,7 @@ const AlbumSubusersPage: React.FC = () => {
         <div className='space-y-6'>
             <div className='flex items-center justify-between'>
                 <Heading>Album Subusers</Heading>
-                <Can permission='album.manage.members.global'>
+                <Can permission={['album.manage.members.global', 'album.manage.members']} albumId={albumId}>
                     <Button onClick={() => setShowAddModal(true)}>Add User</Button>
                 </Can>
             </div>
@@ -277,7 +277,7 @@ const AlbumSubusersPage: React.FC = () => {
                                     </TableCell>
                                     <TableCell>
                                         <div className='flex space-x-2'>
-                                            <Can permission='album.manage.members.global'>
+                                            <Can permission={['album.manage.members.global', 'album.manage.members']} albumId={albumId}>
                                                 <Button
                                                     plain
                                                     onClick={() => openEditModal(userData)}

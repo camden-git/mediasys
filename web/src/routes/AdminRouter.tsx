@@ -31,6 +31,10 @@ export interface RouteDefinition {
 
 export interface AdminRouteDefinition extends RouteDefinition {
     permission: string | string[] | null;
+    // when true, users who only hold per-album permissions (no matching global permission)
+    // can still see/access this route, since it leads to an album list filtered to what
+    // they're allowed to see rather than requiring blanket global access.
+    allowAnyAlbumAccess?: boolean;
 }
 
 const navItems: AdminRouteDefinition[] = [
@@ -76,6 +80,7 @@ const navItems: AdminRouteDefinition[] = [
         permission: 'album.*',
         name: 'Albums',
         component: AlbumManagementContainer,
+        allowAnyAlbumAccess: true,
     },
     {
         path: 'albums/create',
@@ -129,8 +134,8 @@ const AdminRouter: React.FC = () => {
                     <NavbarSection className='max-lg:hidden'>
                         {navItems
                             .filter((route) => !!route.name)
-                            .map(({ path, permission, name, exact }) => (
-                                <Can permission={permission} key={path}>
+                            .map(({ path, permission, name, exact, allowAnyAlbumAccess }) => (
+                                <Can permission={permission} allowAnyAlbumAccess={allowAnyAlbumAccess} key={path}>
                                     <NavbarItem to={`/admin/${path}`.replace(/\/$/, '')} end={exact}>
                                         {name}
                                     </NavbarItem>
@@ -145,8 +150,8 @@ const AdminRouter: React.FC = () => {
                         <SidebarSection>
                             {navItems
                                 .filter((route) => !!route.name)
-                                .map(({ path, permission, name, exact }) => (
-                                    <Can permission={permission}>
+                                .map(({ path, permission, name, exact, allowAnyAlbumAccess }) => (
+                                    <Can permission={permission} allowAnyAlbumAccess={allowAnyAlbumAccess} key={path}>
                                         <SidebarItem key={path} to={`/admin/${path}`.replace(/\/$/, '')} end={exact}>
                                             {name}
                                         </SidebarItem>
@@ -159,13 +164,13 @@ const AdminRouter: React.FC = () => {
         >
             <Routes>
                 <Route element={<ProtectedRoute />}>
-                    {navItems.map(({ path, permission, component: Component }) => (
+                    {navItems.map(({ path, permission, component: Component, allowAnyAlbumAccess }) => (
                         <Route
                             path={path.replace(/\/$/, '')}
                             key={path}
                             element={
                                 <>
-                                    <Can permission={permission}>
+                                    <Can permission={permission} allowAnyAlbumAccess={allowAnyAlbumAccess}>
                                         <Component />
                                     </Can>
                                 </>

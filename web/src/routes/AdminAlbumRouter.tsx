@@ -77,13 +77,13 @@ const AdminAlbumRouter: React.FC = () => {
             path: '/',
             name: 'Details',
             component: AlbumView,
-            permission: 'album.list',
+            permission: ['album.list', 'album.view.content'],
         },
         {
             path: '/overview',
             name: 'Media',
             component: OverviewContainer,
-            permission: 'album.list',
+            permission: ['album.list', 'album.view.content'],
         },
         {
             path: '/settings',
@@ -95,7 +95,7 @@ const AdminAlbumRouter: React.FC = () => {
             path: '/subusers',
             name: 'Subusers',
             component: AlbumSubusersPage,
-            permission: 'album.manage.members.global',
+            permission: ['album.manage.members.global', 'album.manage.members'],
         },
         {
             path: '/faces',
@@ -138,7 +138,7 @@ const AdminAlbumRouter: React.FC = () => {
                     </Dropdown>
                     <NavbarSection className='max-lg:hidden'>
                         {navItems.map(({ path, permission, name }) => (
-                            <Can permission={permission} key={path}>
+                            <Can permission={permission} albumId={albumContext.id} key={path}>
                                 <NavbarItem to={`/admin/albums/view/${slug}${path}`}>{name}</NavbarItem>
                             </Can>
                         ))}
@@ -150,7 +150,7 @@ const AdminAlbumRouter: React.FC = () => {
                     <SidebarBody>
                         <SidebarSection>
                             {navItems.map(({ path, permission, name }) => (
-                                <Can permission={permission} key={path}>
+                                <Can permission={permission} albumId={albumContext.id} key={path}>
                                     <SidebarItem to={`/admin/albums/view/${slug}${path}`}>{name}</SidebarItem>
                                 </Can>
                             ))}
@@ -166,7 +166,7 @@ const AdminAlbumRouter: React.FC = () => {
                             path={path.replace(/\/$/, '')}
                             key={path}
                             element={
-                                <Can permission={permission}>
+                                <Can permission={permission} albumId={albumContext.id}>
                                     <Component key={slug} />
                                 </Can>
                             }
