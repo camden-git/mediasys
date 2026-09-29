@@ -24,7 +24,12 @@ import (
 // AutoMigrate path (as it used to run at startup, see git history for
 // database.AutoMigrateModels) against a second empty database built straight from
 // the models package structs, and asserts the two resulting schemas agree on
-// tables, columns (name/type/nullability) and indexes.
+// tables, columns (name/type/nullability) and the indexes the models declare.
+//
+// Constraints that exist only in SQL (foreign keys, see 00003) and extra indexes
+// added purely in SQL (e.g. partial indexes for the worker queue) are deliberately
+// tolerated: GORM runs without foreign key constraints, so the models can't express
+// them. Tables, columns and model-declared indexes must still match exactly.
 //
 // This only runs when TEST_DATABASE_URL is set, since it needs a real Postgres
 // server (with the ability to CREATE/DROP DATABASE and CREATE EXTENSION vector) to
@@ -93,8 +98,11 @@ func TestMigrationsMatchGORMSchema(t *testing.T) {
 
 	migratedIndexes := fetchIndexes(t, migratedSQLDB)
 	autoIndexes := fetchIndexes(t, autoSQLDB)
-	if diff := diffStringSlices(migratedIndexes, autoIndexes); diff != "" {
-		t.Errorf("indexes differ between migrations and AutoMigrate:\n%s", diff)
+	// The migrations may add indexes the models don't declare (worker queue partial
+	// indexes, FK-supporting indexes), so only require that every index the models
+	// declare exists, identically defined, in the migrated schema.
+	if diff := missingFrom(migratedIndexes, autoIndexes); diff != "" {
+		t.Errorf("indexes declared by the models are missing or differ in the migrations:\n%s", diff)
 	}
 }
 
@@ -282,6 +290,22 @@ func diffStringSlices(a, b []string) string {
 	}
 	for _, v := range b {
 		if !setA[v] {
+			diff += fmt.Sprintf("  only in AutoMigrate: %s\n", v)
+		}
+	}
+	return diff
+}
+
+// missingFrom returns the entries of want that are not in have, or "" if have
+// contains all of them.
+func missingFrom(have, want []string) string {
+	set := make(map[string]bool, len(have))
+	for _, v := range have {
+		set[v] = true
+	}
+	var diff string
+	for _, v := range want {
+		if !set[v] {
 			diff += fmt.Sprintf("  only in AutoMigrate: %s\n", v)
 		}
 	}
