@@ -18,7 +18,7 @@ const validationSchema = Yup.object({
         .required('Slug is required')
         .matches(/^[a-z0-9-]+$/, 'Slug can only contain lowercase letters, numbers, and hyphens')
         .min(1, 'Slug must be at least 1 character'),
-    folder_path: Yup.string().required('Folder path is required'),
+    folder_path: Yup.string().optional(),
     description: Yup.string().optional(),
     location: Yup.string().optional(),
     sort_order: Yup.string().optional(),
@@ -115,7 +115,7 @@ const CreateAlbumForm: React.FC = () => {
                             </Field>
 
                             <Field>
-                                <Label htmlFor='folder_path'>Folder Path</Label>
+                                <Label htmlFor='folder_path'>Storage Folder</Label>
                                 <Input
                                     id='folder_path'
                                     name='folder_path'
@@ -125,7 +125,7 @@ const CreateAlbumForm: React.FC = () => {
                                     placeholder='photos/2024/summer'
                                 />
                                 <Description>
-                                    Relative path to the folder containing the album's media files
+                                    Optional storage prefix for this album's files. Defaults to the slug.
                                 </Description>
                                 {touched.folder_path && errors.folder_path && (
                                     <ErrorMessage>{errors.folder_path}</ErrorMessage>

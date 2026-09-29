@@ -160,6 +160,7 @@ export const getCurrentUser = async (): Promise<User> => {
 };
 
 export const getThumbnailUrl = (thumbnailPath: string): string => {
+    if (/^https?:\/\//.test(thumbnailPath)) return thumbnailPath;
     return `${import.meta.env.VITE_BACKEND_URL}${thumbnailPath}`;
 };
 
@@ -167,9 +168,16 @@ export const getBannerUrl = (bannerPath: string): string => {
     return `${import.meta.env.VITE_BACKEND_URL}/${bannerPath}`;
 };
 
+// encodes each segment of an image path for use in a URL
+const encodeImagePath = (imagePath: string): string =>
+    imagePath
+        .replace(/^\/+/, '')
+        .split('/')
+        .map(encodeURIComponent)
+        .join('/');
+
 export const getOriginalImageUrl = (imagePath: string): string => {
-    const path = imagePath.startsWith('/') ? imagePath : `/${imagePath}`;
-    return `${import.meta.env.VITE_BACKEND_URL}${path}`;
+    return `${import.meta.env.VITE_BACKEND_URL}/originals/${encodeImagePath(imagePath)}`;
 };
 
 export const getAlbumDownloadUrl = (id: string): string => {
@@ -177,8 +185,7 @@ export const getAlbumDownloadUrl = (id: string): string => {
 };
 
 export const getPreviewImageUrl = (imagePath: string): string => {
-    const path = imagePath.startsWith('/') ? imagePath : `/${imagePath}`;
-    return `${import.meta.env.VITE_BACKEND_URL}/preview${path}`;
+    return `${import.meta.env.VITE_BACKEND_URL}/preview/${encodeImagePath(imagePath)}`;
 };
 
 export const getFacesForImage = async (imagePath: string): Promise<FaceData[]> => {
