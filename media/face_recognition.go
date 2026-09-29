@@ -241,32 +241,3 @@ func (f *FaceRecognitionModel) normalizeEmbedding(embedding []float32) []float32
 
 	return normalized
 }
-
-// CalculateSimilarity calculates cosine similarity between two embeddings
-func (f *FaceRecognitionModel) CalculateSimilarity(embedding1, embedding2 []float32) float32 {
-	if len(embedding1) != len(embedding2) || len(embedding1) == 0 {
-		return 0.0
-	}
-
-	var dotProduct float32
-	for i := 0; i < len(embedding1); i++ {
-		dotProduct += embedding1[i] * embedding2[i]
-	}
-
-	// Since embeddings are normalized, dot product equals cosine similarity
-	return dotProduct
-}
-
-// FindSimilarFaces finds faces similar to a given embedding
-func (f *FaceRecognitionModel) FindSimilarFaces(targetEmbedding []float32, candidateEmbeddings [][]float32, threshold float32) []int {
-	var similarIndices []int
-
-	for i, candidateEmbedding := range candidateEmbeddings {
-		similarity := f.CalculateSimilarity(targetEmbedding, candidateEmbedding)
-		if similarity >= threshold {
-			similarIndices = append(similarIndices, i)
-		}
-	}
-
-	return similarIndices
-}

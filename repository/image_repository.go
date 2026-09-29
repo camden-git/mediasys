@@ -225,9 +225,6 @@ func (r *ImageRepository) UpdateDetectionResult(originalPath string, detections 
 					DetectionConfidence: det.Confidence,
 					QualityScore:        det.QualityScore,
 					Landmarks:           landmarksStr,
-					PoseYaw:             det.PoseYaw,
-					PosePitch:           det.PosePitch,
-					PoseRoll:            det.PoseRoll,
 					CreatedAt:           now,
 					UpdatedAt:           now,
 				}

@@ -1,23 +1,5 @@
 package media
 
-type AssetType string
-
-const (
-	AssetTypeThumbnail AssetType = "thumbnail"
-	AssetTypeBanner    AssetType = "banner"
-	AssetTypeArchive   AssetType = "archive"
-	AssetTypePreview   AssetType = "preview"
-)
-
-// ImageProcessingOptions holds parameters for transformations
-type ImageProcessingOptions struct {
-	TargetWidth  int
-	TargetHeight int // 0 preserves aspect ratio
-	MaxSize      int
-	Quality      int
-	Format       string // defaults to jpeg
-}
-
 // Metadata struct
 // Contains EXIF and dimension information
 type Metadata struct {
@@ -46,13 +28,10 @@ type DetectionResult struct {
 
 	// Enhanced face detection fields
 	QualityScore *float32  `json:"quality_score,omitempty"`
-	Landmarks    []Point2D `json:"landmarks,omitempty"`  // 5 facial landmarks (eyes, nose, mouth corners)
-	PoseYaw      *float32  `json:"pose_yaw,omitempty"`   // Yaw angle in degrees
-	PosePitch    *float32  `json:"pose_pitch,omitempty"` // Pitch angle in degrees
-	PoseRoll     *float32  `json:"pose_roll,omitempty"`  // Roll angle in degrees
+	Landmarks    []Point2D `json:"landmarks,omitempty"` // 5 facial landmarks (eyes, nose, mouth corners)
 
 	// Face recognition fields
-	Embedding []float32 `json:"embedding,omitempty"`  // 128-dimensional face embedding
+	Embedding []float32 `json:"embedding,omitempty"`  // 512-dimensional face embedding
 	ModelName string    `json:"model_name,omitempty"` // Name of the recognition model used
 }
 

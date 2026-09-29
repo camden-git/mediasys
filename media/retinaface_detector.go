@@ -265,10 +265,10 @@ func (r *RetinaFaceDetector) parseRetinaFaceOutput(boxes, scores, landmarks gocv
 			rawBox[j] = boxes2D.GetFloatAt(i, j)
 		}
 		decoded := DecodeBox(rawBox, priors[i], variances)
-		x1 := maxFloat32(0, decoded[0]*imgWidth)
-		y1 := maxFloat32(0, decoded[1]*imgHeight)
-		x2 := minFloat32(imgWidth, decoded[2]*imgWidth)
-		y2 := minFloat32(imgHeight, decoded[3]*imgHeight)
+		x1 := max(0, decoded[0]*imgWidth)
+		y1 := max(0, decoded[1]*imgHeight)
+		x2 := min(imgWidth, decoded[2]*imgWidth)
+		y2 := min(imgHeight, decoded[3]*imgHeight)
 		if x2 <= x1 || y2 <= y1 {
 			continue
 		}
@@ -399,10 +399,10 @@ func (r *RetinaFaceDetector) nonMaxSuppression(detections []DetectionResult) []D
 // calculateIoU calculates the Intersection over Union between two detections
 func (r *RetinaFaceDetector) calculateIoU(a, b DetectionResult) float32 {
 	// Calculate intersection rectangle
-	x1 := maxInt(a.X, b.X)
-	y1 := maxInt(a.Y, b.Y)
-	x2 := minInt(a.X+a.W, b.X+b.W)
-	y2 := minInt(a.Y+a.H, b.Y+b.H)
+	x1 := max(a.X, b.X)
+	y1 := max(a.Y, b.Y)
+	x2 := min(a.X+a.W, b.X+b.W)
+	y2 := min(a.Y+a.H, b.Y+b.H)
 
 	if x2 <= x1 || y2 <= y1 {
 		return 0.0
