@@ -87,6 +87,15 @@ func TestGroupDetailHidesHiddenAlbums(t *testing.T) {
 		}
 	}
 
+	resp = doRequest(t, http.MethodGet, "/api/admin/albums/"+visible.Slug, env.adminToken, nil, "")
+	var adm struct {
+		GroupID *uint `json:"group_id"`
+	}
+	resp.decodeData(t, &adm)
+	if adm.GroupID == nil || *adm.GroupID != group.ID {
+		t.Fatalf("expected admin album group_id %d, got %v", group.ID, adm.GroupID)
+	}
+
 	resp = doRequest(t, http.MethodGet, "/api/groups/grp-"+s, "", nil, "")
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("get group: %d %s", resp.StatusCode, resp.Body)

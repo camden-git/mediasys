@@ -73,6 +73,7 @@ type AdminAlbumResponse struct {
 	UpdatedAt          int64                `json:"updated_at"`
 	IsHidden           bool                 `json:"is_hidden"`
 	Location           *string              `json:"location,omitempty"`
+	GroupID            *uint                `json:"group_id,omitempty"`
 	Artists            []struct {
 		ID        uint   `json:"id"`
 		Username  string `json:"username"`
@@ -104,6 +105,7 @@ func convertAlbumToAdminResponse(album *models.Album, banners []models.AlbumBann
 		UpdatedAt:          album.UpdatedAt,
 		IsHidden:           album.IsHidden,
 		Location:           album.Location,
+		GroupID:            album.GroupID,
 	}
 }
 
