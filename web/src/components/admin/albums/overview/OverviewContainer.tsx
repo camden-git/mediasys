@@ -9,7 +9,11 @@ import { FileInfo } from '../../../../types.ts';
 import { ListBulletIcon, RectangleStackIcon, Squares2X2Icon, TrashIcon } from '@heroicons/react/20/solid';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../../elements/Table';
 import { getThumbnailUrl } from '../../../../api.ts';
+import { queryClient } from '../../../../lib/queryClient';
+import { queryKeys } from '../../../../lib/queryKeys';
 import UploadZone from './UploadZone.tsx';
+
+const invalidatePublicAlbums = () => void queryClient.invalidateQueries({ queryKey: queryKeys.publicAlbum.all() });
 
 const REQUIRED_TASKS = ['thumbnail', 'metadata', 'detection'];
 const TOTAL_TASKS = REQUIRED_TASKS.length;
@@ -41,11 +45,20 @@ const OverviewContainer: React.FC = () => {
         };
     }, []);
     const [, setTick] = React.useState(0);
-    // Always tick every second so ETA stays live during both upload and processing
+    // Tick every second so ETA stays live, but only while uploads or processing are in flight
+    const isActive =
+        isUploading ||
+        Object.values(items).some(
+            (it) =>
+                !it.error &&
+                !Object.values(it.tasks).includes('error') &&
+                Object.values(it.tasks).filter((s) => s === 'done').length < TOTAL_TASKS,
+        );
     React.useEffect(() => {
+        if (!isActive) return;
         const id = setInterval(() => setTick((t) => t + 1), 1000);
         return () => clearInterval(id);
-    }, []);
+    }, [isActive]);
 
     // Debounced gallery refresh after file completions
     const refreshTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -73,6 +86,8 @@ const OverviewContainer: React.FC = () => {
                     const data = JSON.parse(e.data);
                     if (!data || (data.type !== 'upload' && data.type !== 'task')) return;
                     const rel = String(data.path || '');
+                    // Ignore events for other albums
+                    if (!rel.startsWith(album.folder_path + '/')) return;
                     setItems((prev) => {
                         const next = { ...prev };
                         const current = { ...(next[rel] || { path: rel, tasks: {} }) };
@@ -120,7 +135,7 @@ const OverviewContainer: React.FC = () => {
         } catch (err) {
             if ((import.meta as any).env.DEV) console.warn('Invalid websocket base URL', apiUrl, err);
         }
-    }, [apiUrl, authToken]);
+    }, [apiUrl, authToken, album.folder_path]);
 
     const [listing, setListing] = React.useState<{ path: string; files: FileInfo[] } | null>(null);
     const [isLoadingImages, setIsLoadingImages] = React.useState(false);
@@ -151,7 +166,10 @@ const OverviewContainer: React.FC = () => {
                 Object.values(it.tasks).includes('error'),
         );
         if (Object.keys(items).length > 0 && allDone) {
-            scheduleRefresh(fetchImages);
+            scheduleRefresh(() => {
+                fetchImages();
+                invalidatePublicAlbums();
+            });
         }
     }, [items, scheduleRefresh, fetchImages]);
 
@@ -190,12 +208,14 @@ const OverviewContainer: React.FC = () => {
         } finally {
             setIsUploading(false);
             abortControllerRef.current = null;
+            invalidatePublicAlbums();
         }
     };
 
     const handleDeleteImage = async (image: FileInfo) => {
         const fullPath = image.path.startsWith('/') ? image.path.slice(1) : image.path;
         await deleteAlbumImage(album.id, fullPath);
+        invalidatePublicAlbums();
         await fetchImages();
     };
 
@@ -211,7 +231,7 @@ const OverviewContainer: React.FC = () => {
         });
     };
 
-    const Toolbar = () => (
+    const toolbar = (
         <div className='flex flex-wrap items-center justify-between gap-3 rounded border bg-white px-3 py-2'>
             <div className='flex items-center gap-1'>
                 <button
@@ -594,7 +614,7 @@ const OverviewContainer: React.FC = () => {
                             <h2 className='text-lg font-medium text-gray-900'>Photos</h2>
                         </div>
                         <div className='space-y-4 px-6 py-4'>
-                            <Toolbar />
+                            {toolbar}
                             {renderContent()}
                         </div>
                     </div>
