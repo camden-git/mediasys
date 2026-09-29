@@ -38,7 +38,7 @@ function chunkImagesBySize(images: FileInfo[], maxBytes: number): FileInfo[][] {
 const AlbumView: React.FC = () => {
     const routeParams = useParams<{ identifier: string; '*': string }>();
     const identifier = routeParams.identifier;
-    const imagePathFromUrl = routeParams['*'] ? decodeURIComponent(routeParams['*']) : null;
+    const imagePathFromUrl = routeParams['*'] || null;
 
     const { data: currentAlbum, isLoading, error: albumError } = usePublicAlbumDetail(identifier);
     const { data: contentsData, fetchNextPage, hasNextPage, isFetchingNextPage } = usePublicAlbumContents(identifier);
