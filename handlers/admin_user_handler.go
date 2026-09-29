@@ -326,6 +326,17 @@ func (h *AdminUserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+		if isSuperAdmin(user) && !hasSuperAdminRole(newRoles) {
+			last, err := h.isLastSuperAdmin()
+			if err != nil {
+				WriteAPIError(w, http.StatusInternalServerError, "RoleFetchError", "Failed to check Super Administrators: "+err.Error())
+				return
+			}
+			if last {
+				WriteAPIError(w, http.StatusForbidden, "ForbiddenLastSuperAdmin", "The last Super Administrator cannot lose the Super Administrator role")
+				return
+			}
+		}
 		user.Roles = newRoles
 	}
 
@@ -372,6 +383,26 @@ func roleSetDifference(a, b []*models.Role) []*models.Role {
 	return diff
 }
 
+func hasSuperAdminRole(roles []*models.Role) bool {
+	return isSuperAdmin(&models.User{Roles: roles})
+}
+
+// isLastSuperAdmin reports whether at most one user holds the Super Administrator role.
+func (h *AdminUserHandler) isLastSuperAdmin() (bool, error) {
+	role, err := h.RoleRepo.GetByName(models.SuperAdminRoleName)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	users, err := h.RoleRepo.FindUsersByRoleID(role.ID)
+	if err != nil {
+		return false, err
+	}
+	return len(users) <= 1, nil
+}
+
 // DeleteUser godoc
 // @Summary Delete a user
 // @Description Remove a user from the system
@@ -379,6 +410,7 @@ func roleSetDifference(a, b []*models.Role) []*models.Role {
 // @Param id path int true "User ID"
 // @Success 204 "No Content"
 // @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string "Cannot delete yourself or a Super Administrator (or the last one)"
 // @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @Router /api/admin/users/{id} [delete]
@@ -391,7 +423,7 @@ func (h *AdminUserHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = h.UserRepo.GetByID(uint(userID))
+	target, err := h.UserRepo.GetByID(uint(userID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			WriteAPIError(w, http.StatusNotFound, "UserNotFound", "User not found")
@@ -399,6 +431,30 @@ func (h *AdminUserHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		}
 		WriteAPIError(w, http.StatusInternalServerError, "UserFetchError", "Failed to check user before delete: "+err.Error())
 		return
+	}
+
+	caller, ok := requestUser(w, r)
+	if !ok {
+		return
+	}
+	if caller.ID == target.ID {
+		WriteAPIError(w, http.StatusForbidden, "ForbiddenSelfDelete", "You cannot delete your own account")
+		return
+	}
+	if isSuperAdmin(target) {
+		if !isSuperAdmin(caller) {
+			WriteAPIError(w, http.StatusForbidden, "ForbiddenUserDelete", "Only a Super Administrator can delete a Super Administrator")
+			return
+		}
+		last, err := h.isLastSuperAdmin()
+		if err != nil {
+			WriteAPIError(w, http.StatusInternalServerError, "RoleFetchError", "Failed to check Super Administrators: "+err.Error())
+			return
+		}
+		if last {
+			WriteAPIError(w, http.StatusForbidden, "ForbiddenLastSuperAdmin", "The last Super Administrator cannot be deleted")
+			return
+		}
 	}
 
 	if err := h.UserRepo.Delete(uint(userID)); err != nil {
