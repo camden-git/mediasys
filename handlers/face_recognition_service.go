@@ -11,7 +11,6 @@ import (
 // FaceRecognitionService provides high-level face recognition operations
 type FaceRecognitionService struct {
 	faceRepo            repository.FaceRepositoryInterface
-	personRepo          repository.PersonRepositoryInterface
 	embeddingRepo       *repository.FaceEmbeddingRepository
 	similarityThreshold float32
 }
@@ -19,13 +18,11 @@ type FaceRecognitionService struct {
 // NewFaceRecognitionService creates a new face recognition service
 func NewFaceRecognitionService(
 	faceRepo repository.FaceRepositoryInterface,
-	personRepo repository.PersonRepositoryInterface,
 	embeddingRepo *repository.FaceEmbeddingRepository,
 	similarityThreshold float32,
 ) *FaceRecognitionService {
 	return &FaceRecognitionService{
 		faceRepo:            faceRepo,
-		personRepo:          personRepo,
 		embeddingRepo:       embeddingRepo,
 		similarityThreshold: similarityThreshold,
 	}
@@ -118,49 +115,73 @@ func (s *FaceRecognitionService) FindSimilarFaces(faceID uint, limit int) ([]Sim
 	return results, nil
 }
 
+// personVote is one similar face's contribution to a person suggestion.
+type personVote struct {
+	PersonID   *uint
+	PersonName *string
+	Similarity float32
+}
+
+// PersonSuggestion is the winning person among a set of similar faces.
+type PersonSuggestion struct {
+	PersonID   *uint
+	PersonName *string
+	Count      int     // number of similar faces tagged with the suggested person
+	Similarity float32 // highest similarity among those faces
+}
+
+// suggestPerson picks the person appearing most often among the votes, breaking
+// ties by the highest similarity. Untagged votes are ignored.
+func suggestPerson(votes []personVote) PersonSuggestion {
+	counts := make(map[uint]int)
+	similarities := make(map[uint]float32)
+	names := make(map[uint]*string)
+	for _, v := range votes {
+		if v.PersonID == nil {
+			continue
+		}
+		pid := *v.PersonID
+		counts[pid]++
+		if v.Similarity > similarities[pid] {
+			similarities[pid] = v.Similarity
+		}
+		if names[pid] == nil {
+			names[pid] = v.PersonName
+		}
+	}
+
+	var best PersonSuggestion
+	for pid, count := range counts {
+		sim := similarities[pid]
+		if count > best.Count || (count == best.Count && sim > best.Similarity) {
+			id := pid
+			best = PersonSuggestion{PersonID: &id, PersonName: names[pid], Count: count, Similarity: sim}
+		}
+	}
+	return best
+}
+
+// SuggestPerson suggests a person for a face based on its most similar faces
+func (s *FaceRecognitionService) SuggestPerson(faceID uint) (PersonSuggestion, error) {
+	similarFaces, err := s.FindSimilarFaces(faceID, 10)
+	if err != nil {
+		return PersonSuggestion{}, err
+	}
+
+	votes := make([]personVote, len(similarFaces))
+	for i, sf := range similarFaces {
+		votes[i] = personVote{PersonID: sf.PersonID, PersonName: sf.PersonName, Similarity: sf.Similarity}
+	}
+	return suggestPerson(votes), nil
+}
+
 // SuggestPersonForFace suggests a person for an untagged face based on similar faces
 func (s *FaceRecognitionService) SuggestPersonForFace(faceID uint) (*uint, *string, float32, error) {
-	// Get similar faces
-	similarFaces, err := s.FindSimilarFaces(faceID, 10)
+	suggestion, err := s.SuggestPerson(faceID)
 	if err != nil {
 		return nil, nil, 0, err
 	}
-
-	// Count person occurrences
-	personCounts := make(map[uint]int)
-	personSimilarities := make(map[uint]float32)
-
-	for _, similarFace := range similarFaces {
-		if similarFace.PersonID != nil {
-			personCounts[*similarFace.PersonID]++
-			if similarFace.Similarity > personSimilarities[*similarFace.PersonID] {
-				personSimilarities[*similarFace.PersonID] = similarFace.Similarity
-			}
-		}
-	}
-
-	// Find the most common person with highest similarity
-	var bestPersonID *uint
-	var bestPersonName *string
-	var bestSimilarity float32
-	maxCount := 0
-
-	for personID, count := range personCounts {
-		similarity := personSimilarities[personID]
-		if count > maxCount || (count == maxCount && similarity > bestSimilarity) {
-			maxCount = count
-			bestSimilarity = similarity
-			bestPersonID = &personID
-
-			// Get person name
-			person, err := s.personRepo.GetByID(personID)
-			if err == nil {
-				bestPersonName = &person.PrimaryName
-			}
-		}
-	}
-
-	return bestPersonID, bestPersonName, bestSimilarity, nil
+	return suggestion.PersonID, suggestion.PersonName, suggestion.Similarity, nil
 }
 
 // TagFaceWithPerson tags a face with a person and updates related faces.
@@ -238,12 +259,7 @@ func (s *FaceRecognitionService) GetUntaggedFacesWithSuggestions(limit int, filt
 			return nil, fmt.Errorf("failed to find similar faces for face %d: %w", embedding.FaceID, err)
 		}
 
-		type simResult struct {
-			personID   *uint
-			personName *string
-			similarity float32
-		}
-		var similar []simResult
+		var similar []personVote
 		for _, other := range similarEmbeddings {
 			if other.FaceID == embedding.FaceID || other.Face == nil {
 				continue
@@ -262,44 +278,15 @@ func (s *FaceRecognitionService) GetUntaggedFacesWithSuggestions(limit int, filt
 					personName = &name
 				}
 			}
-			similar = append(similar, simResult{
-				personID:   personID,
-				personName: personName,
-				similarity: sim,
+			similar = append(similar, personVote{
+				PersonID:   personID,
+				PersonName: personName,
+				Similarity: sim,
 			})
 		}
 
 		// Vote for suggested person by count, breaking ties by similarity
-		personCounts := make(map[uint]int)
-		personSimilarities := make(map[uint]float32)
-		personNames := make(map[uint]*string)
-		for _, sf := range similar {
-			if sf.personID != nil {
-				pid := *sf.personID
-				personCounts[pid]++
-				if sf.similarity > personSimilarities[pid] {
-					personSimilarities[pid] = sf.similarity
-				}
-				if personNames[pid] == nil {
-					personNames[pid] = sf.personName
-				}
-			}
-		}
-
-		var suggestedPersonID *uint
-		var suggestedPersonName *string
-		maxCount := 0
-		var bestSim float32
-		for pid, count := range personCounts {
-			sim := personSimilarities[pid]
-			if count > maxCount || (count == maxCount && sim > bestSim) {
-				maxCount = count
-				bestSim = sim
-				pid2 := pid
-				suggestedPersonID = &pid2
-				suggestedPersonName = personNames[pid]
-			}
-		}
+		suggestion := suggestPerson(similar)
 
 		results = append(results, map[string]interface{}{
 			"face_id":               embedding.FaceID,
@@ -311,9 +298,9 @@ func (s *FaceRecognitionService) GetUntaggedFacesWithSuggestions(limit int, filt
 			"detection_confidence":  embedding.Face.DetectionConfidence,
 			"quality_score":         embedding.Face.QualityScore,
 			"similar_faces_count":   len(similar),
-			"suggested_person_id":   suggestedPersonID,
-			"suggested_person_name": suggestedPersonName,
-			"suggestion_count":      maxCount,
+			"suggested_person_id":   suggestion.PersonID,
+			"suggested_person_name": suggestion.PersonName,
+			"suggestion_count":      suggestion.Count,
 		})
 	}
 

@@ -568,7 +568,7 @@ func (fh *FaceHandler) SuggestFace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	similarFaces, err := fh.FaceRecognitionService.FindSimilarFaces(uint(faceID), 10)
+	suggestion, err := fh.FaceRecognitionService.SuggestPerson(uint(faceID))
 	if err != nil {
 		if strings.Contains(err.Error(), "failed to get target face embedding") {
 			WriteAPIError(w, http.StatusNotFound, "FaceNoEmbedding", "Face does not have an embedding")
@@ -579,44 +579,10 @@ func (fh *FaceHandler) SuggestFace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Count person occurrences among similar faces
-	personCounts := make(map[uint]int)
-	personNames := make(map[uint]string)
-	personSimilarities := make(map[uint]float32)
-
-	for _, sf := range similarFaces {
-		if sf.PersonID != nil {
-			personCounts[*sf.PersonID]++
-			if sf.PersonName != nil {
-				personNames[*sf.PersonID] = *sf.PersonName
-			}
-			if sf.Similarity > personSimilarities[*sf.PersonID] {
-				personSimilarities[*sf.PersonID] = sf.Similarity
-			}
-		}
-	}
-
-	var bestPersonID *uint
-	var bestPersonName *string
-	maxCount := 0
-	var bestSimilarity float32
-
-	for personID, count := range personCounts {
-		similarity := personSimilarities[personID]
-		if count > maxCount || (count == maxCount && similarity > bestSimilarity) {
-			maxCount = count
-			bestSimilarity = similarity
-			pid := personID
-			bestPersonID = &pid
-			name := personNames[personID]
-			bestPersonName = &name
-		}
-	}
-
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"suggested_person_id":   bestPersonID,
-		"suggested_person_name": bestPersonName,
-		"suggestion_count":      maxCount,
-		"confidence":            bestSimilarity,
+		"suggested_person_id":   suggestion.PersonID,
+		"suggested_person_name": suggestion.PersonName,
+		"suggestion_count":      suggestion.Count,
+		"confidence":            suggestion.Similarity,
 	})
 }

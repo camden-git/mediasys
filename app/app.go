@@ -87,7 +87,6 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 
 	faceRecognitionService := handlers.NewFaceRecognitionService(
 		faceRepo,
-		personRepo,
 		faceEmbeddingRepo,
 		float32(cfg.FaceRecognitionThreshold),
 	)
