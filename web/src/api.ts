@@ -163,14 +163,14 @@ export const getFacesForImage = async (imagePath: string): Promise<FaceData[]> =
 // Album Groups
 export const getGroups = async (signal?: AbortSignal): Promise<AlbumGroup[]> => {
     const response = await apiClient('/groups', {}, signal);
-    const body = await response.json();
-    return (body?.data ?? body) as AlbumGroup[];
+    const body = (await response.json()) as { data: AlbumGroup[] };
+    return body.data;
 };
 
 export const getGroup = async (slug: string, signal?: AbortSignal): Promise<AlbumGroup> => {
     const response = await apiClient(`/groups/${encodeURIComponent(slug)}`, {}, signal);
-    const body = await response.json();
-    return (body?.data ?? body) as AlbumGroup;
+    const body = (await response.json()) as { data: AlbumGroup };
+    return body.data;
 };
 
 export const getGroupPhotos = async (
@@ -184,8 +184,8 @@ export const getGroupPhotos = async (
     if (params?.min_rating !== undefined) search.set('min_rating', String(params.min_rating));
     const qs = search.toString();
     const response = await apiClient(`/groups/${encodeURIComponent(slug)}/photos${qs ? `?${qs}` : ''}`, {}, signal);
-    const body = await response.json();
-    return (body?.data ?? body) as DirectoryListing;
+    const body = (await response.json()) as { data: DirectoryListing };
+    return body.data;
 };
 
 // People
@@ -258,8 +258,8 @@ export const setPersonKeyPhoto = async (personId: number, faceId: number | null)
         method: 'PUT',
         body: JSON.stringify({ face_id: faceId ?? 0 }),
     });
-    const body = await response.json();
-    return (body?.data ?? body) as Person;
+    const body = (await response.json()) as { data: Person };
+    return body.data;
 };
 
 // Face management (admin)
