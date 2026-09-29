@@ -13,6 +13,7 @@ import { usePermissionDefinitions } from '../../../api/query/useRoles';
 import { useAdminAlbums } from '../../../api/query/useAlbums';
 import { Select } from '../../elements/Select.tsx';
 import { useQueryClient } from '@tanstack/react-query';
+import { refreshAuthUser } from '../../../store/useAuthStore';
 import { queryKeys } from '../../../lib/queryKeys';
 
 const RoleUpdateSchema = Yup.object().shape({
@@ -100,6 +101,8 @@ const EditRoleForm: React.FC<EditRoleFormProps> = ({ isOpen, onClose, role }) =>
                     try {
                         await updateRole(role.id, values);
                         queryClient.invalidateQueries({ queryKey: queryKeys.roles.all() });
+                        queryClient.invalidateQueries({ queryKey: queryKeys.users.all() });
+                        refreshAuthUser();
 
                         addFlash({
                             key: 'role-edit',

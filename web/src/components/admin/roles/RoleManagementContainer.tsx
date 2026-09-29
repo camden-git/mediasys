@@ -15,6 +15,7 @@ import { deleteRole } from '../../../api/admin/roles';
 import { Input } from '../../elements/Input';
 import { Text } from '../../elements/Text.tsx';
 import { useQueryClient } from '@tanstack/react-query';
+import { refreshAuthUser } from '../../../store/useAuthStore';
 import { queryKeys } from '../../../lib/queryKeys';
 import { PaginationControls } from '../../elements/PaginationControls';
 import { ErrorMessage } from '../../elements/Fieldset';
@@ -61,6 +62,8 @@ const RoleManagementContainer: React.FC = () => {
         try {
             await deleteRole(roleForDelete.id);
             queryClient.invalidateQueries({ queryKey: queryKeys.roles.all() });
+            queryClient.invalidateQueries({ queryKey: queryKeys.users.all() });
+            refreshAuthUser();
             addFlash({
                 key: 'roles',
                 type: 'success',
@@ -72,7 +75,7 @@ const RoleManagementContainer: React.FC = () => {
         } finally {
             setRoleForDelete(null);
         }
-    }, [roleForDelete, addFlash, clearAndAddHttpError]);
+    }, [roleForDelete, addFlash, clearAndAddHttpError, queryClient]);
 
     const filteredRoles = useMemo(() => {
         if (!roles) return [];
@@ -117,6 +120,7 @@ const RoleManagementContainer: React.FC = () => {
             </div>
 
             <FlashMessageRender byKey={'roles'} className={'mb-4'} />
+            <FlashMessageRender byKey={'role-edit'} className={'mb-4'} />
 
             <CreateRoleForm isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} />
             <EditRoleForm

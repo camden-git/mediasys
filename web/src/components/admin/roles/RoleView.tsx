@@ -7,6 +7,9 @@ import ContentBlock from '../../elements/PageContentBlock.tsx';
 import { Button } from '../../elements/Button';
 import { Can } from '../../elements/Can';
 import EditRoleForm from './EditRoleForm';
+import { useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '../../../lib/queryKeys';
+import { refreshAuthUser } from '../../../store/useAuthStore';
 import { useRole } from '../../../api/query/useRoles';
 import { useUsers } from '../../../api/query/useUsers';
 import { useFlash } from '../../../hooks/useFlash';
@@ -28,6 +31,7 @@ const RoleView: React.FC = () => {
     const { data: allUsersResult } = useUsers({ perPage: 500 });
     const allUsers = allUsersResult?.items ?? [];
     const { addFlash, clearFlashes, clearAndAddHttpError } = useFlash();
+    const queryClient = useQueryClient();
 
     const [userResult, setUserResult] = useState<PaginatedResult<UserSummary> | null>(null);
     const [isLoadingUsers, setIsLoadingUsers] = useState(false);
@@ -38,6 +42,12 @@ const RoleView: React.FC = () => {
     const [isEditModalOpen, setEditModalOpen] = useState(false);
     const [isAddUserModalOpen, setAddUserModalOpen] = useState(false);
     const [userForRemove, setUserForRemove] = useState<{ id: number; username: string } | null>(null);
+
+    const refreshRoleMembership = (userId: number) => {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.roles.all() });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.users.all() });
+        refreshAuthUser(userId);
+    };
 
     const loadRoleUsers = useCallback(
         async (pageToLoad: number) => {
@@ -83,6 +93,7 @@ const RoleView: React.FC = () => {
     const handleAddUserToRole = async (userId: number) => {
         try {
             await addUserToRole(roleId, userId);
+            refreshRoleMembership(userId);
             await loadRoleUsers(userPage);
             addFlash({
                 key: 'role-view',
@@ -107,6 +118,7 @@ const RoleView: React.FC = () => {
         if (!userForRemove) return;
         try {
             await removeUserFromRole(roleId, userForRemove.id);
+            refreshRoleMembership(userForRemove.id);
             await loadRoleUsers(userPage);
             addFlash({
                 key: 'role-view',
@@ -200,6 +212,7 @@ const RoleView: React.FC = () => {
     return (
         <>
             <FlashMessageRender byKey={'role-view'} className={'mb-4'} />
+            <FlashMessageRender byKey={'role-edit'} className={'mb-4'} />
 
             <ContentBlock>
                 <div className='flex items-center justify-between'>

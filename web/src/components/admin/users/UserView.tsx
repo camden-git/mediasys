@@ -40,6 +40,7 @@ const UserView: React.FC = () => {
     return (
         <>
             <FlashMessageRender byKey={'user-view'} className={'mb-4'} />
+            <FlashMessageRender byKey={'edit-user-form'} className={'mb-4'} />
 
             <ContentBlock>
                 <div className='flex items-center justify-between'>

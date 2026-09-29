@@ -103,3 +103,11 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
         }
     },
 }));
+
+/** Re-fetch the signed-in user's roles/permissions after a change that may have affected them. */
+export const refreshAuthUser = (userId?: number) => {
+    const { user, fetchCurrentUser } = useAuthStore.getState();
+    if (user && (userId === undefined || user.id === userId)) {
+        void fetchCurrentUser();
+    }
+};

@@ -3,6 +3,7 @@ import { listUsers, getUser, updateUser } from '../admin/users';
 import { AdminUserResponse, UserUpdatePayload } from '../../types';
 import { PaginatedResult, PaginationRequest } from '../standard';
 import { queryKeys } from '../../lib/queryKeys';
+import { refreshAuthUser } from '../../store/useAuthStore';
 
 export const useUsers = (params?: PaginationRequest) => {
     return useQuery<PaginatedResult<AdminUserResponse>>({
@@ -25,6 +26,8 @@ export const useUpdateUser = () => {
         mutationFn: ({ id, payload }: { id: number; payload: UserUpdatePayload }) => updateUser(id, payload),
         onSuccess: (updatedUser) => {
             queryClient.invalidateQueries({ queryKey: queryKeys.users.all() });
+            queryClient.invalidateQueries({ queryKey: queryKeys.roles.all() });
+            refreshAuthUser(updatedUser.id);
             queryClient.setQueryData(queryKeys.users.detail(updatedUser.id), updatedUser);
         },
     });

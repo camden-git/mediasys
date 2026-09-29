@@ -35,7 +35,7 @@ const EditUserForm: React.FC<EditUserFormProps> = ({ isOpen, onClose, user }) =>
     const [formMessage, setFormMessage] = useState<string | null>(null);
 
     useEffect(() => {
-        if (!isOpen) {
+        if (isOpen) {
             clearFlashes('edit-user-form');
         }
     }, [isOpen, clearFlashes]);
