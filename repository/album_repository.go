@@ -280,6 +280,20 @@ func (r *AlbumRepository) Delete(id uint) error {
 	return nil
 }
 
+// DeleteCascade removes an album and its related banners, default tags, and
+// user/role album permissions in a single transaction, then hard-deletes the
+// album itself.
+func (r *AlbumRepository) DeleteCascade(albumID uint) error {
+	return r.DB.Transaction(func(tx *gorm.DB) error {
+		for _, m := range []any{&models.AlbumBanner{}, &models.AlbumDefaultTag{}, &models.UserAlbumPermission{}, &models.RoleAlbumPermission{}} {
+			if err := tx.Where("album_id = ?", albumID).Delete(m).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Unscoped().Delete(&models.Album{}, albumID).Error
+	})
+}
+
 // ListPendingZips returns albums whose archive was requested but never finished
 // (e.g. interrupted by a restart).
 func (r *AlbumRepository) ListPendingZips() ([]models.Album, error) {

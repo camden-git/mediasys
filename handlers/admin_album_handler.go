@@ -386,15 +386,7 @@ func (h *AdminAlbumHandler) DeleteAlbum(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	db := h.AlbumRepo.(*repository.AlbumRepository).DB
-	err = db.Transaction(func(tx *gorm.DB) error {
-		for _, m := range []any{&models.AlbumBanner{}, &models.AlbumDefaultTag{}, &models.UserAlbumPermission{}, &models.RoleAlbumPermission{}} {
-			if err := tx.Where("album_id = ?", album.ID).Delete(m).Error; err != nil {
-				return err
-			}
-		}
-		return tx.Unscoped().Delete(&models.Album{}, album.ID).Error
-	})
+	err = h.AlbumRepo.DeleteCascade(album.ID)
 	if err != nil {
 		log.Printf("Error deleting album %d: %v", album.ID, err)
 		WriteAPIError(w, http.StatusInternalServerError, "AlbumDeleteError", "Failed to delete album")

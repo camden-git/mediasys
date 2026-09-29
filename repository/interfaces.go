@@ -32,6 +32,7 @@ type AlbumRepositoryInterface interface {
 	ListPendingZips() ([]models.Album, error)
 	UpdateSortOrder(albumID uint, sortOrder string) error
 	Delete(id uint) error
+	DeleteCascade(albumID uint) error
 	GetBanners(albumID uint) ([]models.AlbumBanner, error)
 	AddBanner(banner *models.AlbumBanner) error
 	DeleteBanner(bannerID uint, albumID uint) error
