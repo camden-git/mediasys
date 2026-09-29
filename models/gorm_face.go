@@ -27,8 +27,8 @@ type Face struct {
 	PosePitch *float32 `gorm:"" json:"pose_pitch,omitempty"` // pitch angle in degrees
 	PoseRoll  *float32 `gorm:"" json:"pose_roll,omitempty"`  // roll angle in degrees
 
-	CreatedAt int64          `gorm:"not null" json:"created_at"`        // Stored as INTEGER in SQLite, Unix timestamp
-	UpdatedAt int64          `gorm:"not null" json:"updated_at"`        // Stored as INTEGER in SQLite, Unix timestamp
+	CreatedAt int64          `gorm:"not null" json:"created_at"`        // Unix timestamp
+	UpdatedAt int64          `gorm:"not null" json:"updated_at"`        // Unix timestamp
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"` // For soft deletes
 
 	Person    *Person        `gorm:"foreignKey:PersonID" json:"person,omitempty"`  // Belongs to Person

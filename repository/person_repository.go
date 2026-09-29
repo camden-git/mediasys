@@ -102,10 +102,6 @@ func (r *PersonRepository) UpdateKeyPhoto(personID uint, faceID *uint) error {
 // Update updates an existing person's details
 func (r *PersonRepository) Update(person *models.Person) error {
 	person.UpdatedAt = time.Now().Unix()
-	// result := r.DB.Model(&models.Person{ID: person.ID}).Updates(map[string]interface{}{
-	// 	"PrimaryName": person.PrimaryName,
-	// 	"UpdatedAt":   person.UpdatedAt,
-	// })
 	result := r.DB.Model(&models.Person{ID: person.ID}).Updates(models.Person{
 		PrimaryName: person.PrimaryName,
 		UpdatedAt:   person.UpdatedAt,

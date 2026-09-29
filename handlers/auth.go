@@ -105,13 +105,9 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// a UserDTO might be better here.
-	userForResponse := *user
-	userForResponse.PasswordHash = "" // i dont think this is needed
-
 	response := LoginResponse{
 		Token:     tokenString,
-		User:      userForResponse,
+		User:      *user,
 		ExpiresAt: expirationTime,
 	}
 
@@ -224,7 +220,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.InviteCodeRepo.IncrementUses(inviteCode.ID); err != nil {
-		fmt.Printf("CRITICAL: User %s created but failed to increment uses for invite code %s (ID: %d): %v\n", newUser.Username, inviteCode.Code, inviteCode.ID, err)
+		log.Printf("CRITICAL: User %s created but failed to increment uses for invite code %s (ID: %d): %v", newUser.Username, inviteCode.Code, inviteCode.ID, err)
 	}
 
 	// TODO: deactivate invite code if it reached max uses after this increment

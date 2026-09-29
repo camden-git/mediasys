@@ -18,8 +18,8 @@ type Album struct {
 	ZipLastGeneratedAt *int64            `gorm:"" json:"zip_last_generated_at,omitempty"` // Nullable, Unix timestamp
 	ZipLastRequestedAt *int64            `gorm:"" json:"zip_last_requested_at,omitempty"` // Nullable, Unix timestamp
 	ZipError           *string           `gorm:"" json:"zip_error,omitempty"`             // Nullable
-	CreatedAt          int64             `gorm:"not null" json:"created_at"`              // Stored as INTEGER in SQLite, Unix timestamp
-	UpdatedAt          int64             `gorm:"not null" json:"updated_at"`              // Stored as INTEGER in SQLite, Unix timestamp
+	CreatedAt          int64             `gorm:"not null" json:"created_at"`              // Unix timestamp
+	UpdatedAt          int64             `gorm:"not null" json:"updated_at"`              // Unix timestamp
 	IsHidden           bool              `gorm:"not null;default:false" json:"-"`
 	Location           *string           `gorm:"" json:"location,omitempty"`      // Nullable
 	GroupID            *uint             `gorm:"index" json:"group_id,omitempty"` // Nullable FK to AlbumGroup

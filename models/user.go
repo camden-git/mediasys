@@ -18,15 +18,8 @@ type User struct {
 	PasswordHash      string   `json:"-" gorm:"not null"`                                   // "-" means don't include in JSON responses
 	GlobalPermissions []string `json:"global_permissions" gorm:"serializer:json;type:text"` // Use JSON serializer
 	Roles             []*Role  `json:"roles,omitempty" gorm:"many2many:user_roles;"`        // Roles assigned to the user
-	// AlbumPermissions stores permissions specific to certain albums.
-	// Key: AlbumID (as string, since GORM might handle complex map keys better as JSON or serialized string)
-	// Value: List of permission strings for that album
-	// For simplicity with GORM and various DBs, this might be better stored as a separate table
-	// or as a JSONB field if the database supports it.
-	// Let's start with a separate table approach in mind for DB design,
-	// but for the model, we can represent the desired structure.
-	// For now, let's assume we'll handle serialization/deserialization if using a single JSON field.
-	// A more robust way is a separate UserAlbumPermission table: UserID, AlbumID, Permission
+	// AlbumPermissionsMap holds the user's direct per-album permissions, keyed by album ID (as a string),
+	// loaded from the user_album_permissions table.
 	AlbumPermissionsMap map[string][]string `json:"album_permissions_map" gorm:"-"` // not directly mapped, handled by logic
 	CreatedAt           time.Time           `json:"created_at"`
 	UpdatedAt           time.Time           `json:"updated_at"`

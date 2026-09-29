@@ -32,9 +32,6 @@ func (r *AlbumRepository) Create(album *models.Album) error {
 		album.UpdatedAt = now
 	}
 	album.FolderPath = filepath.ToSlash(album.FolderPath)
-	if album.SortOrder == "" {
-		// who cares i guess???
-	}
 	if album.ZipStatus == "" {
 		album.ZipStatus = database.StatusNotRequired
 	}
