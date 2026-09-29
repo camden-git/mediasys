@@ -12,6 +12,7 @@ interface UIState {
     flashes: FlashMessage[];
     addFlash: (flash: FlashMessage) => void;
     clearFlashes: (key: string) => void;
+    removeFlash: (id: number) => void;
     clearAndAddHttpError: (params: { error: Error; key: string }) => void;
 }
 
@@ -26,6 +27,11 @@ export const useUIStore = create<UIState>()((set) => ({
     clearFlashes: (key) =>
         set((state) => ({
             flashes: state.flashes.filter((f) => f.key !== key),
+        })),
+
+    removeFlash: (id) =>
+        set((state) => ({
+            flashes: state.flashes.filter((f) => f.id !== id),
         })),
 
     clearAndAddHttpError: ({ error, key }) =>

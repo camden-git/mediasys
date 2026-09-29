@@ -14,14 +14,16 @@ interface Props {
     title?: string;
     children: string;
     type?: FlashMessageType;
+    onClose?: () => void;
 }
 
-const Notification = ({ title, children, type }: Props) => {
+const Notification = ({ title, children, type, onClose }: Props) => {
     const [show, setShow] = useState<boolean>(true);
 
     return (
         <Transition
             show={show}
+            afterLeave={onClose}
             as={Fragment}
             enter='transform ease-out duration-300 transition'
             enterFrom='translate-y-2 opacity-0 sm:translate-y-0 sm:translate-x-2'
