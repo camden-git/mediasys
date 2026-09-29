@@ -145,7 +145,7 @@ func clampToMinimum(value, min int) int {
 }
 
 func clampPerPage(perPage int) int {
-	perPage = clampToMinimum(perPage, defaultPerPage)
+	perPage = clampToMinimum(perPage, 1)
 	if perPage > maxPerPage {
 		return maxPerPage
 	}
