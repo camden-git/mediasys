@@ -4,7 +4,6 @@ import (
 	"errors"
 	"log"
 	"net/http"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"gorm.io/gorm"
@@ -27,24 +26,7 @@ func (h *CollectionHandler) ShareCollectionHTML(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	scheme := "http"
-	if r.Header.Get("X-Forwarded-Proto") == "https" || r.TLS != nil {
-		scheme = "https"
-	}
-	host := r.Header.Get("X-Forwarded-Host")
-	if host == "" {
-		host = r.Host
-	}
-
-	absolute := func(path string) string {
-		if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
-			return path
-		}
-		if !strings.HasPrefix(path, "/") {
-			path = "/" + path
-		}
-		return scheme + "://" + host + path
-	}
+	absolute := absoluteURLFunc(r)
 
 	pageURL := absolute("/collections/" + collection.Slug)
 
@@ -69,27 +51,5 @@ func (h *CollectionHandler) ShareCollectionHTML(w http.ResponseWriter, r *http.R
 		desc = *collection.Description
 	}
 
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	html := "<!doctype html><html lang=\"en\"><head>" +
-		"<meta charset=\"utf-8\">" +
-		"<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">" +
-		"<title>" + htmlEscape(title) + "</title>" +
-		"<meta property=\"og:type\" content=\"website\">" +
-		"<meta property=\"og:url\" content=\"" + htmlAttr(pageURL) + "\">" +
-		"<meta property=\"og:title\" content=\"" + htmlAttr(title) + "\">" +
-		"<meta property=\"og:description\" content=\"" + htmlAttr(desc) + "\">"
-	if imageURL != "" {
-		html += "<meta property=\"og:image\" content=\"" + htmlAttr(imageURL) + "\">" +
-			"<meta property=\"og:image:alt\" content=\"" + htmlAttr(title) + "\">"
-	}
-	html += "<meta name=\"twitter:card\" content=\"summary_large_image\">" +
-		"<meta name=\"twitter:title\" content=\"" + htmlAttr(title) + "\">" +
-		"<meta name=\"twitter:description\" content=\"" + htmlAttr(desc) + "\">"
-	if imageURL != "" {
-		html += "<meta name=\"twitter:image\" content=\"" + htmlAttr(imageURL) + "\">"
-	}
-	html += "<meta http-equiv=\"refresh\" content=\"0;url=" + htmlAttr(pageURL) + "\">" +
-		"</head><body><a href=\"" + htmlAttr(pageURL) + "\">Open collection</a></body></html>"
-
-	_, _ = w.Write([]byte(html))
+	writeSharePage(w, sharePage{Title: title, Desc: desc, PageURL: pageURL, ImageURL: imageURL, LinkText: "Open collection"})
 }
