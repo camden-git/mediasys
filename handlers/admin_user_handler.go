@@ -152,6 +152,7 @@ func (h *AdminUserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 // @Param user body UserCreatePayload true "User creation payload"
 // @Success 201 {object} UserResponseDTO
 // @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string "Caller lacks a permission or role being granted"
 // @Failure 500 {object} map[string]string
 // @Router /api/admin/users [post]
 // @Security BearerAuth
@@ -172,6 +173,15 @@ func (h *AdminUserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 			WriteAPIError(w, http.StatusBadRequest, "ValidationError", fmt.Sprintf("Invalid global permission key: %s", pKey))
 			return
 		}
+	}
+
+	caller, ok := requestUser(w, r)
+	if !ok {
+		return
+	}
+	if msg := globalGrantDenial(caller, payload.GlobalPermissions, nil); msg != "" {
+		WriteAPIError(w, http.StatusForbidden, "ForbiddenPermissionGrant", msg)
+		return
 	}
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(payload.Password), bcrypt.DefaultCost)
@@ -198,6 +208,10 @@ func (h *AdminUserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 				} else {
 					WriteAPIError(w, http.StatusInternalServerError, "RoleFetchError", fmt.Sprintf("Failed to retrieve role %d: %s", roleID, err.Error()))
 				}
+				return
+			}
+			if msg := roleGrantDenial(caller, role); msg != "" {
+				WriteAPIError(w, http.StatusForbidden, "ForbiddenRoleAssignment", msg)
 				return
 			}
 			user.Roles = append(user.Roles, role)
@@ -229,6 +243,7 @@ func (h *AdminUserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 // @Param user body UserUpdatePayload true "User update payload"
 // @Success 200 {object} UserResponseDTO
 // @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string "Caller lacks a permission or role being granted, or target is a Super Administrator"
 // @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @Router /api/admin/users/{id} [put]
@@ -257,6 +272,15 @@ func (h *AdminUserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	caller, ok := requestUser(w, r)
+	if !ok {
+		return
+	}
+	if isSuperAdmin(user) && !isSuperAdmin(caller) {
+		WriteAPIError(w, http.StatusForbidden, "ForbiddenUserUpdate", "Only a Super Administrator can edit a Super Administrator")
+		return
+	}
+
 	if payload.Username != nil {
 		user.Username = *payload.Username
 	}
@@ -272,6 +296,10 @@ func (h *AdminUserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 				WriteAPIError(w, http.StatusBadRequest, "ValidationError", fmt.Sprintf("Invalid global permission key: %s", pKey))
 				return
 			}
+		}
+		if msg := globalGrantDenial(caller, *payload.GlobalPermissions, user.GlobalPermissions); msg != "" {
+			WriteAPIError(w, http.StatusForbidden, "ForbiddenPermissionGrant", msg)
+			return
 		}
 		user.GlobalPermissions = *payload.GlobalPermissions
 	}
@@ -289,6 +317,14 @@ func (h *AdminUserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			newRoles = append(newRoles, role)
+		}
+		// every role being added or removed must be one the caller may hand out
+		changedRoles := append(roleSetDifference(newRoles, user.Roles), roleSetDifference(user.Roles, newRoles)...)
+		for _, role := range changedRoles {
+			if msg := roleGrantDenial(caller, role); msg != "" {
+				WriteAPIError(w, http.StatusForbidden, "ForbiddenRoleAssignment", msg)
+				return
+			}
 		}
 		user.Roles = newRoles
 	}
@@ -314,6 +350,26 @@ func (h *AdminUserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	userAlbumPerms, _ := h.UserRepo.GetUserAlbumPermissions(updatedUser.ID)
 
 	WriteAPIResponse(w, http.StatusOK, toUserResponseDTO(updatedUser, userAlbumPerms))
+}
+
+// roleSetDifference returns the roles in a whose IDs are not present in b.
+func roleSetDifference(a, b []*models.Role) []*models.Role {
+	inB := make(map[uint]struct{}, len(b))
+	for _, role := range b {
+		if role != nil {
+			inB[role.ID] = struct{}{}
+		}
+	}
+	var diff []*models.Role
+	for _, role := range a {
+		if role == nil {
+			continue
+		}
+		if _, ok := inB[role.ID]; !ok {
+			diff = append(diff, role)
+		}
+	}
+	return diff
 }
 
 // DeleteUser godoc
