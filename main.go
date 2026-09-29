@@ -31,6 +31,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("FATAL: Failed to load configuration: %v", err)
 	}
+	handlers.SetJWTSecret(cfg.JWTSecret)
 
 	if memLimitStr := os.Getenv("GOMEMLIMIT"); memLimitStr != "" {
 		if memLimit, parseErr := strconv.ParseInt(memLimitStr, 10, 64); parseErr == nil && memLimit > 0 {

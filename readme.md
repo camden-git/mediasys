@@ -13,7 +13,7 @@ Everything runs with Docker Compose: Postgres, [Silo](https://github.com/pgsty/s
 web frontend behind nginx.
 
 ```sh
-cp .env.example .env   # set passwords and JWT_SECRET
+cp .env.example .env   # set passwords and JWT_SECRET (e.g. `openssl rand -hex 32`)
 mkdir -p ml-models     # drop the face models in here (see below)
 docker compose up -d --build
 ```

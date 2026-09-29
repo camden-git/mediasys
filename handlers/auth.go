@@ -6,7 +6,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
 	"net/url"
 	"strings"
 	"time"
@@ -17,14 +16,18 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// jwtKey signs auth tokens. Set JWT_SECRET in production.
-var jwtKey = func() []byte {
-	if s := os.Getenv("JWT_SECRET"); s != "" {
-		return []byte(s)
-	}
-	log.Println("WARNING: JWT_SECRET is not set, using an insecure default")
-	return []byte("your_super_secret_key_that_should_be_in_config")
-}()
+// jwtKey holds the JWT signing secret. It must be initialized via SetJWTSecret
+// (from config.Config.JWTSecret, which config.LoadConfig requires and validates)
+// before any tokens are issued or verified; there is intentionally no hardcoded
+// fallback, since a known default secret would let anyone forge auth tokens.
+var jwtKey []byte
+
+// SetJWTSecret configures the secret used to sign and verify auth tokens. It
+// must be called once at startup, before the HTTP server begins accepting
+// requests.
+func SetJWTSecret(secret string) {
+	jwtKey = []byte(secret)
+}
 
 const jwtExpirationHours = 24
 

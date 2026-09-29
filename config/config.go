@@ -64,7 +64,15 @@ type Config struct {
 	// Cloudflare Turnstile
 	TurnstileSiteKey   string
 	TurnstileSecretKey string
+
+	// JWT signing secret used to sign and verify auth tokens
+	JWTSecret string
 }
+
+// knownInsecureJWTSecret is the old hardcoded fallback secret that used to live in
+// handlers/auth.go. It must never be accepted as a real secret since it is public
+// (visible in source history), so LoadConfig rejects it explicitly.
+const knownInsecureJWTSecret = "your_super_secret_key_that_should_be_in_config"
 
 func getEnvOrDefault(key, defaultValue string) string {
 	value := os.Getenv(key)
@@ -159,6 +167,14 @@ func LoadConfig() (Config, error) {
 	turnstileSiteKey := getEnvOrDefault("TURNSTILE_SITE_KEY", "")
 	turnstileSecretKey := getEnvOrDefault("TURNSTILE_SECRET_KEY", "")
 
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		return Config{}, fmt.Errorf("JWT_SECRET must be set to a strong, random value")
+	}
+	if jwtSecret == knownInsecureJWTSecret {
+		return Config{}, fmt.Errorf("JWT_SECRET must not be set to the known default value; generate a new secret")
+	}
+
 	cfg := Config{
 		DatabaseURL:               dbURL,
 		DatabaseDebug:             getEnvBoolOrDefault("DATABASE_DEBUG", false),
@@ -185,6 +201,7 @@ func LoadConfig() (Config, error) {
 		FaceRecognitionEnabled:    faceRecognitionEnabled,
 		TurnstileSiteKey:          turnstileSiteKey,
 		TurnstileSecretKey:        turnstileSecretKey,
+		JWTSecret:                 jwtSecret,
 	}
 
 	return cfg, nil

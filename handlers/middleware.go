@@ -44,7 +44,7 @@ func AuthMiddleware(userRepo repository.UserRepository, next http.Handler) http.
 			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 			}
-			return jwtKey, nil // jwtKey is defined in auth.go (ideally from config)
+			return jwtKey, nil // jwtKey is defined in auth.go and set from config.Config.JWTSecret via SetJWTSecret
 		})
 
 		if err != nil {
