@@ -54,10 +54,20 @@ const CreateAlbumForm: React.FC = () => {
                     try {
                         await createAlbumAPI(values);
                         queryClient.invalidateQueries({ queryKey: queryKeys.albums.all() });
-                        addFlash({ key: 'album-created', type: 'success', title: 'Created', message: 'Album created successfully' });
+                        addFlash({
+                            key: 'album-created',
+                            type: 'success',
+                            title: 'Created',
+                            message: 'Album created successfully',
+                        });
                         navigate('/admin/albums');
                     } catch (err: any) {
-                        addFlash({ key: 'album-created-error', type: 'error', title: 'Error', message: err.message || 'Failed to create album' });
+                        addFlash({
+                            key: 'album-created-error',
+                            type: 'error',
+                            title: 'Error',
+                            message: err.message || 'Failed to create album',
+                        });
                     } finally {
                         setSubmitting(false);
                     }

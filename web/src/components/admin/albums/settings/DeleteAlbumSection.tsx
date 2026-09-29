@@ -20,7 +20,12 @@ export function DeleteAlbumSection() {
     const handleDelete = async () => {
         try {
             await deleteAlbumAPI(album.id);
-            addFlash({ key: 'album-deleted', type: 'success', title: 'Deleted', message: 'Album deleted successfully' });
+            addFlash({
+                key: 'album-deleted',
+                type: 'success',
+                title: 'Deleted',
+                message: 'Album deleted successfully',
+            });
             setIsOpen(false);
             navigate('/admin/albums');
         } catch (err: any) {

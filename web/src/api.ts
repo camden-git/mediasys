@@ -136,11 +136,7 @@ export const getBannerUrl = (bannerPath: string): string => {
 
 // encodes each segment of an image path for use in a URL
 const encodeImagePath = (imagePath: string): string =>
-    imagePath
-        .replace(/^\/+/, '')
-        .split('/')
-        .map(encodeURIComponent)
-        .join('/');
+    imagePath.replace(/^\/+/, '').split('/').map(encodeURIComponent).join('/');
 
 export const getOriginalImageUrl = (imagePath: string): string => {
     return `${import.meta.env.VITE_BACKEND_URL}/originals/${encodeImagePath(imagePath)}`;

@@ -28,7 +28,13 @@ const matchesPermission = (perm: string, userPerms: string[]): boolean => {
     return false;
 };
 
-export const Can: React.FC<CanProps> = ({ permission, requireAll = false, albumId, allowAnyAlbumAccess = false, children }) => {
+export const Can: React.FC<CanProps> = ({
+    permission,
+    requireAll = false,
+    albumId,
+    allowAnyAlbumAccess = false,
+    children,
+}) => {
     const user = useAuthStore((s) => s.user);
     const currentUserPermissions = React.useMemo(() => {
         if (!user) return [];

@@ -1,5 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
-import { listAlbums, getAlbum, getAlbumUsers, getAvailableUsers, AdminAlbumResponse, AlbumUserPermissionResponse } from '../admin/albums';
+import {
+    listAlbums,
+    getAlbum,
+    getAlbumUsers,
+    getAvailableUsers,
+    AdminAlbumResponse,
+    AlbumUserPermissionResponse,
+} from '../admin/albums';
 import { User } from '../../types';
 import { queryKeys } from '../../lib/queryKeys';
 

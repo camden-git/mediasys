@@ -15,7 +15,6 @@ export const usePublicAlbumContents = (identifier?: string) =>
         queryFn: ({ pageParam, signal }) =>
             getAlbumContents(identifier!, { offset: pageParam as number, limit: 50 }, signal),
         initialPageParam: 0 as number,
-        getNextPageParam: (last) =>
-            last.has_more ? (last.offset ?? 0) + (last.files?.length ?? 0) : undefined,
+        getNextPageParam: (last) => (last.has_more ? (last.offset ?? 0) + (last.files?.length ?? 0) : undefined),
         enabled: !!identifier,
     });

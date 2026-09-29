@@ -277,7 +277,10 @@ const AlbumSubusersPage: React.FC = () => {
                                     </TableCell>
                                     <TableCell>
                                         <div className='flex space-x-2'>
-                                            <Can permission={['album.manage.members.global', 'album.manage.members']} albumId={albumId}>
+                                            <Can
+                                                permission={['album.manage.members.global', 'album.manage.members']}
+                                                albumId={albumId}
+                                            >
                                                 <Button
                                                     plain
                                                     onClick={() => openEditModal(userData)}

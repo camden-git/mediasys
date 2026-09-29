@@ -41,17 +41,9 @@ const AlbumView: React.FC = () => {
     const imagePathFromUrl = routeParams['*'] ? decodeURIComponent(routeParams['*']) : null;
 
     const { data: currentAlbum, isLoading, error: albumError } = usePublicAlbumDetail(identifier);
-    const {
-        data: contentsData,
-        fetchNextPage,
-        hasNextPage,
-        isFetchingNextPage,
-    } = usePublicAlbumContents(identifier);
+    const { data: contentsData, fetchNextPage, hasNextPage, isFetchingNextPage } = usePublicAlbumContents(identifier);
 
-    const allFiles = useMemo(
-        () => contentsData?.pages.flatMap((p) => p.files ?? []) ?? [],
-        [contentsData],
-    );
+    const allFiles = useMemo(() => contentsData?.pages.flatMap((p) => p.files ?? []) ?? [], [contentsData]);
 
     const directoryListingMeta = contentsData?.pages[contentsData.pages.length - 1];
 
@@ -122,10 +114,7 @@ const AlbumView: React.FC = () => {
     };
 
     const activeFiles = highlightsMode ? (highlightsListing?.files ?? []) : allFiles;
-    const imageFiles = useMemo(
-        () => activeFiles.filter((file) => !file.is_dir && file.thumbnail_path),
-        [activeFiles],
-    );
+    const imageFiles = useMemo(() => activeFiles.filter((file) => !file.is_dir && file.thumbnail_path), [activeFiles]);
 
     const canLoadMore = useMemo(() => {
         if (highlightsMode) return false;
@@ -234,7 +223,8 @@ const AlbumView: React.FC = () => {
         return imageFiles.findIndex((f) => f.path === selectedImage.path);
     }, [selectedImage, imageFiles]);
 
-    const totalImageCount = (highlightsMode ? highlightsListing?.total : directoryListingMeta?.total) ?? imageFiles.length;
+    const totalImageCount =
+        (highlightsMode ? highlightsListing?.total : directoryListingMeta?.total) ?? imageFiles.length;
     const canPrev = selectedIndex > 0;
     const canNext = selectedIndex >= 0 && selectedIndex < totalImageCount - 1;
 
@@ -322,7 +312,8 @@ const AlbumView: React.FC = () => {
                 key: 'album',
                 type: 'error',
                 title: 'Failed to share',
-                message: 'Your browser does not support the Web Share API. Please consider downloading the album zip instead.',
+                message:
+                    'Your browser does not support the Web Share API. Please consider downloading the album zip instead.',
             });
             return;
         }
