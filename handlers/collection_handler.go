@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/camden-git/mediasysbackend/config"
+	"github.com/camden-git/mediasysbackend/database"
 	"github.com/camden-git/mediasysbackend/models"
 	"github.com/camden-git/mediasysbackend/repository"
 	"github.com/go-chi/chi/v5"
@@ -128,33 +129,30 @@ func (h *CollectionHandler) GetCollectionPhotos(w http.ResponseWriter, r *http.R
 		}
 	}
 
-	paths, err := h.CollectionRepo.GetImagePathsMatchingFilters(c.ID)
+	sortOrder := c.SortOrder
+	if !database.IsValidSortOrder(sortOrder) {
+		sortOrder = database.DefaultSortOrder
+	}
+
+	images, total, err := h.CollectionRepo.ListImages(c.ID, sortOrder, offset, limit)
 	if err != nil {
 		log.Printf("Error querying collection photos for '%s': %v", slug, err)
 		WriteAPIError(w, http.StatusInternalServerError, "CollectionPhotosError", "Failed to retrieve collection photos")
 		return
 	}
 
-	if len(paths) == 0 {
-		WriteAPIResponse(w, http.StatusOK, DirectoryListing{
-			Path:    "/collections/" + slug + "/photos",
-			Files:   []FileInfo{},
-			Total:   0,
-			Offset:  offset,
-			Limit:   limit,
-			HasMore: false,
-		})
-		return
+	files := make([]FileInfo, 0, len(images))
+	for i := range images {
+		files = append(files, imageToFileInfo(&images[i]))
 	}
-
-	images, err := h.ImageRepo.GetImagesByPaths(paths)
-	if err != nil {
-		log.Printf("Error fetching images for collection '%s': %v", slug, err)
-		WriteAPIError(w, http.StatusInternalServerError, "CollectionPhotosError", "Failed to retrieve collection photos")
-		return
+	listing := DirectoryListing{
+		Path:    "/collections/" + slug + "/photos",
+		Files:   files,
+		Total:   total,
+		Offset:  offset,
+		Limit:   limit,
+		HasMore: offset+len(files) < total,
 	}
-
-	listing := paginate("/collections/"+slug+"/photos", imagesToSortedFileInfos(images, c.SortOrder), offset, limit)
 	setCacheHeaders(w, 300)
 	WriteAPIResponse(w, http.StatusOK, listing)
 }

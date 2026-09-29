@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/camden-git/mediasysbackend/database"
 	"github.com/camden-git/mediasysbackend/models"
 	"gorm.io/gorm"
 )
@@ -120,19 +121,20 @@ func (r *GormCollectionRepository) SetInheritBanners(collectionID uint, inherit 
 // GetInheritedBannerPaths returns banner image paths from all albums that
 // contain images in this collection.
 func (r *GormCollectionRepository) GetInheritedBannerPaths(collectionID uint) ([]string, error) {
-	paths, err := r.GetImagePathsMatchingFilters(collectionID)
+	subSQL, args, err := r.buildFilterSubquery(collectionID)
 	if err != nil {
 		return nil, err
 	}
-	if len(paths) == 0 {
+	if subSQL == "" {
 		return []string{}, nil
 	}
 
+	whereSQL := fmt.Sprintf("original_path IN (%s)", subSQL)
 	var result []string
 	err = r.db.Table("album_banners").
 		Joins("JOIN albums ON album_banners.album_id = albums.id").
 		Where("albums.deleted_at IS NULL AND albums.id IN (?)",
-			r.db.Model(&models.Image{}).Distinct("album_id").Where("original_path IN ?", paths)).
+			r.db.Model(&models.Image{}).Distinct("album_id").Where(whereSQL, args...)).
 		Order("albums.id, album_banners.sort_order").
 		Pluck("album_banners.image_path", &result).Error
 	if err != nil {
@@ -158,21 +160,25 @@ func (r *GormCollectionRepository) SetFilters(collectionID uint, filters []model
 	})
 }
 
-// GetImagePathsMatchingFilters returns all image paths matching the collection's tag filters.
+// buildFilterSubquery returns a SELECT statement (and its bind args) over
+// image_tags that yields the image_path values matching the collection's tag
+// filters. It returns an empty sql string when the collection has no filters
+// (or no positive/inclusion filter), which callers must treat as "matches
+// nothing" without running a query.
+//
 // Positive filters (Negate=false): image must have the tag.
 // Negative filters (Negate=true): image must NOT have the tag.
 // FilterMatch="all": image must match every positive inclusion group (AND across keys, OR within key).
 // FilterMatch="any": image must match at least one positive inclusion group (OR across groups).
 // Negative filters always apply regardless of filter_match mode.
-// Sorting and pagination are performed by the caller after fetching all matching paths.
-func (r *GormCollectionRepository) GetImagePathsMatchingFilters(collectionID uint) ([]string, error) {
+func (r *GormCollectionRepository) buildFilterSubquery(collectionID uint) (string, []interface{}, error) {
 	// Load filters
 	var filters []models.CollectionTagFilter
 	if err := r.db.Where("collection_id = ?", collectionID).Find(&filters).Error; err != nil {
-		return nil, err
+		return "", nil, err
 	}
 	if len(filters) == 0 {
-		return []string{}, nil
+		return "", nil, nil
 	}
 
 	// Load filter_match from collection
@@ -180,7 +186,7 @@ func (r *GormCollectionRepository) GetImagePathsMatchingFilters(collectionID uin
 		FilterMatch string
 	}
 	if err := r.db.Model(&models.Collection{}).Select("filter_match").Where("id = ?", collectionID).Scan(&coll).Error; err != nil {
-		return nil, err
+		return "", nil, err
 	}
 	filterMatch := coll.FilterMatch
 	if filterMatch != "any" {
@@ -202,7 +208,7 @@ func (r *GormCollectionRepository) GetImagePathsMatchingFilters(collectionID uin
 
 	// Require at least one positive filter
 	if len(positiveByKey) == 0 {
-		return []string{}, nil
+		return "", nil, nil
 	}
 
 	// Build positive WHERE clause: (tag_key=? AND tag_value IN (?,?)) OR ...
@@ -256,8 +262,23 @@ func (r *GormCollectionRepository) GetImagePathsMatchingFilters(collectionID uin
 		baseArgs = append(baseArgs, distinctKeyCount)
 	}
 
+	return baseSQL, baseArgs, nil
+}
+
+// GetImagePathsMatchingFilters returns all image paths matching the collection's tag filters.
+// Prefer ListImages for user-facing listings: it sorts and pages in SQL instead of
+// materializing every matching path into Go and passing them back through IN (...).
+func (r *GormCollectionRepository) GetImagePathsMatchingFilters(collectionID uint) ([]string, error) {
+	subSQL, args, err := r.buildFilterSubquery(collectionID)
+	if err != nil {
+		return nil, err
+	}
+	if subSQL == "" {
+		return []string{}, nil
+	}
+
 	var rows []struct{ ImagePath string }
-	if err := r.db.Raw(baseSQL, baseArgs...).Scan(&rows).Error; err != nil {
+	if err := r.db.Raw(subSQL, args...).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 
@@ -266,4 +287,33 @@ func (r *GormCollectionRepository) GetImagePathsMatchingFilters(collectionID uin
 		paths = append(paths, row.ImagePath)
 	}
 	return paths, nil
+}
+
+// ListImages returns a sorted, paginated page of images matching the collection's tag
+// filters, plus the total number of matching images. The filter is applied as a
+// subquery join (images.original_path IN (SELECT ... FROM image_tags ...)) so the
+// matching path set never needs to round-trip through Go, and sorting/paging happen
+// in SQL.
+func (r *GormCollectionRepository) ListImages(collectionID uint, sortOrder string, offset, limit int) ([]models.Image, int, error) {
+	subSQL, args, err := r.buildFilterSubquery(collectionID)
+	if err != nil {
+		return nil, 0, err
+	}
+	if subSQL == "" {
+		return []models.Image{}, 0, nil
+	}
+
+	whereSQL := fmt.Sprintf("original_path IN (%s)", subSQL)
+	db := r.db.Model(&models.Image{}).Where(whereSQL, args...)
+
+	var total int64
+	if err := db.Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("failed to count collection %d images: %w", collectionID, err)
+	}
+
+	var images []models.Image
+	if err := db.Order(database.SQLOrderClause(sortOrder)).Offset(offset).Limit(limit).Find(&images).Error; err != nil {
+		return nil, 0, fmt.Errorf("failed to list collection %d images: %w", collectionID, err)
+	}
+	return images, int(total), nil
 }

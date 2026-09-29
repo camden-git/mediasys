@@ -69,6 +69,9 @@ type ImageRepositoryInterface interface {
 	ListPendingProcessing(limit int) ([]models.Image, error)
 	ListPendingDetection(limit int) ([]models.Image, error)
 	ListByAlbum(albumID uint, minRating *int) ([]models.Image, error)
+	// ListByAlbumPaged returns a sorted, paginated page of images in an album (sorting
+	// and paging performed in SQL), plus the total number of matching images.
+	ListByAlbumPaged(albumID uint, minRating *int, sortOrder string, offset, limit int) ([]models.Image, int, error)
 	GetImagesByPaths(originalPaths []string) ([]models.Image, error)
 	GetImagesByAlbumIDs(albumIDs []uint, minRating *int, offset, limit int) ([]models.Image, int, error)
 	GetDistinctUploaderIDsByAlbum(albumID uint) ([]uint, error)
@@ -199,8 +202,13 @@ type CollectionRepositoryInterface interface {
 	// GetImagePathsMatchingFilters returns all image paths that match the collection's tag filters.
 	// Behaviour is controlled by Collection.FilterMatch ("all" = AND across inclusion groups, "any" = OR).
 	// Filters with Negate=true exclude images that have the given tag.
-	// Sorting and pagination are handled by the caller.
+	// Prefer ListImages for listings: it sorts and pages in SQL instead of returning
+	// every matching path.
 	GetImagePathsMatchingFilters(collectionID uint) ([]string, error)
+	// ListImages returns a sorted, paginated page of images matching the collection's
+	// tag filters (sorting and paging performed in SQL via a subquery/join), plus the
+	// total number of matching images.
+	ListImages(collectionID uint, sortOrder string, offset, limit int) ([]models.Image, int, error)
 	GetBanners(collectionID uint) ([]models.CollectionBanner, error)
 	AddBanner(banner *models.CollectionBanner) error
 	DeleteCollectionBanner(bannerID uint, collectionID uint) error

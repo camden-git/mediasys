@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/camden-git/mediasysbackend/database"
 	"github.com/go-chi/chi/v5"
 	"gorm.io/gorm"
 )
@@ -45,14 +46,30 @@ func (ah *AlbumHandler) GetAlbumContents(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	images, err := ah.ImageRepo.ListByAlbum(album.ID, minRating)
+	sortOrder := album.SortOrder
+	if !database.IsValidSortOrder(sortOrder) {
+		sortOrder = database.DefaultSortOrder
+	}
+
+	images, total, err := ah.ImageRepo.ListByAlbumPaged(album.ID, minRating, sortOrder, offset, limit)
 	if err != nil {
 		log.Printf("Error listing contents for album %d/%s: %v", album.ID, album.Slug, err)
 		WriteAPIError(w, http.StatusInternalServerError, "InternalError", "Failed to list album contents")
 		return
 	}
 
-	listing := paginate("/"+album.FolderPath, imagesToSortedFileInfos(images, album.SortOrder), offset, limit)
+	files := make([]FileInfo, 0, len(images))
+	for i := range images {
+		files = append(files, imageToFileInfo(&images[i]))
+	}
+	listing := DirectoryListing{
+		Path:    "/" + album.FolderPath,
+		Files:   files,
+		Total:   total,
+		Offset:  offset,
+		Limit:   limit,
+		HasMore: offset+len(files) < total,
+	}
 	setCacheHeaders(w, 120)
 	writeJSON(w, http.StatusOK, listing)
 }

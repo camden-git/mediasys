@@ -282,6 +282,26 @@ func (r *ImageRepository) ListByAlbum(albumID uint, minRating *int) ([]models.Im
 	return images, nil
 }
 
+// ListByAlbumPaged returns a sorted, paginated page of images in an album, plus the
+// total number of matching images, with sorting and paging performed in SQL.
+func (r *ImageRepository) ListByAlbumPaged(albumID uint, minRating *int, sortOrder string, offset, limit int) ([]models.Image, int, error) {
+	db := r.DB.Model(&models.Image{}).Where("album_id = ?", albumID)
+	if minRating != nil {
+		db = db.Where("rating >= ?", *minRating)
+	}
+
+	var total int64
+	if err := db.Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("failed to count images for album %d: %w", albumID, err)
+	}
+
+	var images []models.Image
+	if err := db.Order(database.SQLOrderClause(sortOrder)).Offset(offset).Limit(limit).Find(&images).Error; err != nil {
+		return nil, 0, fmt.Errorf("failed to list images for album %d: %w", albumID, err)
+	}
+	return images, int(total), nil
+}
+
 // GetImagesByPaths retrieves multiple image records by their paths
 func (r *ImageRepository) GetImagesByPaths(originalPaths []string) ([]models.Image, error) {
 	if len(originalPaths) == 0 {
