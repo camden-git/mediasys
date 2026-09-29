@@ -192,6 +192,42 @@ func TestZipInvalidatedWhenImagesChange(t *testing.T) {
 	}
 }
 
+func TestPerAlbumPermissionBySlug(t *testing.T) {
+	env := requireShared(t)
+	s := randomSuffix()
+	a := createAlbum(t, env.adminToken, "Slug A "+s, "slug-a-"+s, "")
+	b := createAlbum(t, env.adminToken, "Slug B "+s, "slug-b-"+s, "")
+
+	username, password := "slugu_"+s, "test-password-"+s
+	userID := createUser(t, env.adminToken, username, password)
+	grantAlbumPermission(t, env.adminToken, a.ID, userID, []string{"album.view.content"})
+	token, err := login(env.server.URL, username, password)
+	if err != nil {
+		t.Fatalf("login failed: %v", err)
+	}
+
+	resp := doRequest(t, http.MethodGet, "/api/admin/albums/"+a.Slug, token, nil, "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 for granted album by slug, got %d: %s", resp.StatusCode, resp.Body)
+	}
+	var got adminAlbum
+	resp.decodeData(t, &got)
+	if got.ID != a.ID {
+		t.Fatalf("expected album %d, got %d", a.ID, got.ID)
+	}
+
+	resp = doRequest(t, http.MethodGet, "/api/admin/albums/"+b.Slug, token, nil, "")
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected 403 for other album by slug, got %d: %s", resp.StatusCode, resp.Body)
+	}
+	assertErrorShape(t, resp)
+
+	resp = doRequest(t, http.MethodGet, "/api/admin/albums/no-such-slug-"+s, token, nil, "")
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected 403 for unknown slug, got %d: %s", resp.StatusCode, resp.Body)
+	}
+}
+
 func TestReuploadReplacesOriginal(t *testing.T) {
 	env := requireShared(t)
 	s := randomSuffix()

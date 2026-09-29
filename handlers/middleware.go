@@ -130,6 +130,31 @@ func RequireAnyGlobalPermission(permissions []string, next http.Handler) http.Ha
 	})
 }
 
+// ResolveAlbumSlug rewrites a non-numeric "id" URL parameter to the numeric ID of
+// the album with that slug, so the per-album permission checks and handlers nested
+// under the route only ever see IDs. Unknown slugs are left untouched and fall
+// through to the normal permission/not-found handling.
+func ResolveAlbumSlug(albumRepo repository.AlbumRepositoryInterface) func(next http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if rctx := chi.RouteContext(r.Context()); rctx != nil {
+				for i, key := range rctx.URLParams.Keys {
+					if key != "id" {
+						continue
+					}
+					if _, err := strconv.ParseUint(rctx.URLParams.Values[i], 10, 64); err != nil {
+						if album, err := albumRepo.GetBySlug(rctx.URLParams.Values[i]); err == nil {
+							rctx.URLParams.Values[i] = strconv.FormatUint(uint64(album.ID), 10)
+						}
+					}
+					break
+				}
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // RequireAlbumPermission is a middleware that grants access if the authenticated user has
 // the given global permission, OR the given album-scoped permission for the album identified
 // by the "id" URL parameter. It should be used after AuthMiddleware, on routes nested under

@@ -104,11 +104,12 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	}
 
 	deps := handlers.AppDependencies{
-		Cfg:      cfg,
-		Hub:      hub,
-		UserRepo: userRepo,
-		Store:    mediaStore,
-		DB:       gormDB,
+		Cfg:       cfg,
+		Hub:       hub,
+		UserRepo:  userRepo,
+		AlbumRepo: albumRepo,
+		Store:     mediaStore,
+		DB:        gormDB,
 
 		AlbumHandler:        &handlers.AlbumHandler{AlbumRepo: albumRepo, ImageRepo: imageRepo, UserRepo: userRepo, TagRepo: imageTagRepo, Cfg: cfg, ThumbGen: imageProcessor, MediaProcessor: mediaProcessor, Store: mediaStore},
 		PersonHandler:       &handlers.PersonHandler{PersonRepo: personRepo, FaceRepo: faceRepo, ImageRepo: imageRepo, Store: mediaStore, Cfg: cfg},

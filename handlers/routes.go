@@ -16,11 +16,12 @@ import (
 
 // AppDependencies holds all handlers, repositories, and configuration needed for route registration.
 type AppDependencies struct {
-	Cfg      config.Config
-	Hub      *realtime.Hub
-	UserRepo repository.UserRepository
-	Store    *media.Store
-	DB       *gorm.DB
+	Cfg       config.Config
+	Hub       *realtime.Hub
+	UserRepo  repository.UserRepository
+	AlbumRepo repository.AlbumRepositoryInterface
+	Store     *media.Store
+	DB        *gorm.DB
 
 	AlbumHandler           *AlbumHandler
 	PersonHandler          *PersonHandler
@@ -196,6 +197,8 @@ func RegisterRoutes(r chi.Router, deps AppDependencies) {
 				}).Post("/", deps.AdminAlbumHandler.CreateAlbum)
 
 				r.Route("/{id}", func(r chi.Router) {
+					r.Use(ResolveAlbumSlug(deps.AlbumRepo))
+
 					r.With(func(next http.Handler) http.Handler {
 						return RequireAlbumPermission("album.list", "album.view.content", next)
 					}).Get("/", deps.AdminAlbumHandler.GetAlbum)
