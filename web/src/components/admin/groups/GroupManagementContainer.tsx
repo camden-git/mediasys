@@ -8,6 +8,8 @@ import { Button } from '../../elements/Button';
 import CreateGroupForm from './CreateGroupForm';
 import EditGroupForm from './EditGroupForm';
 import { deleteGroup, listGroups } from '../../../api/admin/groups';
+import { queryClient } from '../../../lib/queryClient';
+import { queryKeys } from '../../../lib/queryKeys';
 import { useFlash } from '../../../hooks/useFlash';
 import FlashMessageRender from '../../elements/FlashMessageRender';
 import { Text } from '../../elements/Text.tsx';
@@ -18,14 +20,12 @@ import { Dialog, DialogActions, DialogDescription, DialogTitle } from '../../ele
 const GroupManagementContainer: React.FC = () => {
     const [groups, setGroups] = useState<AlbumGroup[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const { clearFlashes, clearAndAddHttpError, addFlash } = useFlash();
+    const { clearAndAddHttpError, addFlash } = useFlash();
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [groupForEdit, setGroupForEdit] = useState<AlbumGroup | null>(null);
     const [groupForDelete, setGroupForDelete] = useState<AlbumGroup | null>(null);
 
     const fetchGroups = useCallback(async () => {
-        setIsLoading(true);
-        clearFlashes('groups');
         try {
             const data = await listGroups();
             setGroups(data);
@@ -34,10 +34,15 @@ const GroupManagementContainer: React.FC = () => {
         } finally {
             setIsLoading(false);
         }
-    }, [clearFlashes, clearAndAddHttpError]);
+    }, [clearAndAddHttpError]);
 
     useEffect(() => {
         fetchGroups();
+    }, [fetchGroups]);
+
+    const handleChanged = useCallback(() => {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.groups.all() });
+        void fetchGroups();
     }, [fetchGroups]);
 
     const confirmDeleteGroup = useCallback(async () => {
@@ -45,6 +50,7 @@ const GroupManagementContainer: React.FC = () => {
         try {
             await deleteGroup(groupForDelete.id);
             setGroups((prev) => prev.filter((g) => g.id !== groupForDelete.id));
+            void queryClient.invalidateQueries({ queryKey: queryKeys.groups.all() });
             addFlash({
                 key: 'groups',
                 type: 'success',
@@ -79,13 +85,13 @@ const GroupManagementContainer: React.FC = () => {
             <CreateGroupForm
                 isOpen={showCreateModal}
                 onClose={() => setShowCreateModal(false)}
-                onCreated={fetchGroups}
+                onCreated={handleChanged}
             />
             <EditGroupForm
                 key={groupForEdit?.id ?? 'edit-group'}
                 isOpen={!!groupForEdit}
                 onClose={() => setGroupForEdit(null)}
-                onUpdated={fetchGroups}
+                onUpdated={handleChanged}
                 group={groupForEdit ?? undefined}
             />
 

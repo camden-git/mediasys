@@ -17,6 +17,8 @@ import {
     AdminCollectionResponse,
 } from '../../../api/admin/collections';
 import { CollectionBanner } from '../../../types';
+import { queryClient } from '../../../lib/queryClient';
+import { queryKeys } from '../../../lib/queryKeys';
 import { useFlash } from '../../../hooks/useFlash';
 import FlashMessageRender from '../../elements/FlashMessageRender';
 import CollectionFiltersEditor from './CollectionFiltersEditor';
@@ -28,6 +30,8 @@ interface EditCollectionFormProps {
     onUpdated: () => void;
     collection?: AdminCollectionResponse;
 }
+
+const invalidateCollections = () => void queryClient.invalidateQueries({ queryKey: queryKeys.collections.all() });
 
 const EditCollectionForm: React.FC<EditCollectionFormProps> = ({ isOpen, onClose, onUpdated, collection }) => {
     const [name, setName] = useState('');
@@ -88,6 +92,7 @@ const EditCollectionForm: React.FC<EditCollectionFormProps> = ({ isOpen, onClose
         setInheritBanners(checked);
         try {
             await setCollectionInheritBanners(collection.id, checked);
+            invalidateCollections();
         } catch {
             setInheritBanners(!checked);
             addFlash({ key: 'edit-collection', type: 'error', message: 'Failed to update inherit setting.' });
@@ -245,6 +250,7 @@ const EditCollectionForm: React.FC<EditCollectionFormProps> = ({ isOpen, onClose
                                             try {
                                                 const newBanner = await addCollectionBanner(collection.id, file);
                                                 setBanners((prev) => [...prev, newBanner]);
+                                                invalidateCollections();
                                             } catch {
                                                 addFlash({
                                                     key: 'edit-collection',
@@ -258,6 +264,7 @@ const EditCollectionForm: React.FC<EditCollectionFormProps> = ({ isOpen, onClose
                                             try {
                                                 await deleteCollectionBanner(collection.id, bannerId);
                                                 setBanners((prev) => prev.filter((b) => b.id !== bannerId));
+                                                invalidateCollections();
                                             } catch {
                                                 addFlash({
                                                     key: 'edit-collection',
@@ -274,6 +281,7 @@ const EditCollectionForm: React.FC<EditCollectionFormProps> = ({ isOpen, onClose
                                             setBanners(newOrder);
                                             try {
                                                 await reorderCollectionBanners(collection.id, ids);
+                                                invalidateCollections();
                                             } catch {
                                                 addFlash({
                                                     key: 'edit-collection',

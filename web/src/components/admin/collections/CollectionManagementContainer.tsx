@@ -7,6 +7,8 @@ import { Button } from '../../elements/Button';
 import CreateCollectionForm from './CreateCollectionForm';
 import EditCollectionForm from './EditCollectionForm';
 import { AdminCollectionResponse, deleteCollection, listCollections } from '../../../api/admin/collections';
+import { queryClient } from '../../../lib/queryClient';
+import { queryKeys } from '../../../lib/queryKeys';
 import { useFlash } from '../../../hooks/useFlash';
 import FlashMessageRender from '../../elements/FlashMessageRender';
 import { Text } from '../../elements/Text.tsx';
@@ -17,14 +19,12 @@ import { Dialog, DialogActions, DialogDescription, DialogTitle } from '../../ele
 const CollectionManagementContainer: React.FC = () => {
     const [collections, setCollections] = useState<AdminCollectionResponse[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const { clearFlashes, clearAndAddHttpError, addFlash } = useFlash();
+    const { clearAndAddHttpError, addFlash } = useFlash();
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [collectionForEdit, setCollectionForEdit] = useState<AdminCollectionResponse | null>(null);
     const [collectionForDelete, setCollectionForDelete] = useState<AdminCollectionResponse | null>(null);
 
     const fetchCollections = useCallback(async () => {
-        setIsLoading(true);
-        clearFlashes('collections');
         try {
             const data = await listCollections();
             setCollections(data);
@@ -33,17 +33,27 @@ const CollectionManagementContainer: React.FC = () => {
         } finally {
             setIsLoading(false);
         }
-    }, [clearFlashes, clearAndAddHttpError]);
+    }, [clearAndAddHttpError]);
 
     useEffect(() => {
         fetchCollections();
     }, [fetchCollections]);
+
+    const handleChanged = useCallback(
+        (message: string) => {
+            void queryClient.invalidateQueries({ queryKey: queryKeys.collections.all() });
+            void fetchCollections();
+            addFlash({ key: 'collections', type: 'success', message });
+        },
+        [fetchCollections, addFlash],
+    );
 
     const confirmDelete = useCallback(async () => {
         if (!collectionForDelete) return;
         try {
             await deleteCollection(collectionForDelete.id);
             setCollections((prev) => prev.filter((c) => c.id !== collectionForDelete.id));
+            void queryClient.invalidateQueries({ queryKey: queryKeys.collections.all() });
             addFlash({
                 key: 'collections',
                 type: 'success',
@@ -78,13 +88,13 @@ const CollectionManagementContainer: React.FC = () => {
             <CreateCollectionForm
                 isOpen={showCreateModal}
                 onClose={() => setShowCreateModal(false)}
-                onCreated={fetchCollections}
+                onCreated={() => handleChanged('Collection created successfully!')}
             />
             <EditCollectionForm
                 key={collectionForEdit?.id ?? 'edit-collection'}
                 isOpen={!!collectionForEdit}
                 onClose={() => setCollectionForEdit(null)}
-                onUpdated={fetchCollections}
+                onUpdated={() => handleChanged('Collection updated successfully!')}
                 collection={collectionForEdit ?? undefined}
             />
 
