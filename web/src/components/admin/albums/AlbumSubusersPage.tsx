@@ -23,6 +23,46 @@ import { usePermissionDefinitions } from '../../../api/query/useRoles';
 import { useAlbumId } from '../../../store/albumContextHooks';
 import FlashMessageRender from '../../elements/FlashMessageRender';
 
+interface AlbumPermissionCheckboxesProps {
+    permissions: { key: string; name: string }[];
+    selected: string[];
+    onChange: (selected: string[]) => void;
+    disabled: boolean;
+}
+
+const AlbumPermissionCheckboxes: React.FC<AlbumPermissionCheckboxesProps> = ({
+    permissions,
+    selected,
+    onChange,
+    disabled,
+}) => (
+    <Field>
+        <Label>Permissions</Label>
+        <Description>Select the permissions to grant to this user for this album</Description>
+        <div className='mt-2 space-y-2'>
+            {permissions.map((perm) => (
+                <label key={perm.key} className='flex items-center space-x-2'>
+                    <Checkbox
+                        checked={selected.includes(perm.key)}
+                        onChange={(checked) => {
+                            if (checked) {
+                                onChange([...selected, perm.key]);
+                            } else {
+                                onChange(selected.filter((p) => p !== perm.key));
+                            }
+                        }}
+                        disabled={disabled}
+                    />
+                    <span className='text-sm'>
+                        {perm.name}
+                        <span className='ml-1 text-gray-500'>({perm.key})</span>
+                    </span>
+                </label>
+            ))}
+        </div>
+    </Field>
+);
+
 const AlbumSubusersPage: React.FC = () => {
     const albumId = useAlbumId();
     const { addFlash } = useFlash();
@@ -329,33 +369,12 @@ const AlbumSubusersPage: React.FC = () => {
                             <Description>Select a user to add to this album</Description>
                         </Field>
 
-                        <Field>
-                            <Label>Permissions</Label>
-                            <Description>Select the permissions to grant to this user for this album</Description>
-                            <div className='mt-2 space-y-2'>
-                                {albumScopedPermissions.map((perm) => (
-                                    <label key={perm.key} className='flex items-center space-x-2'>
-                                        <Checkbox
-                                            checked={selectedPermissions.includes(perm.key)}
-                                            onChange={(checked) => {
-                                                if (checked) {
-                                                    setSelectedPermissions([...selectedPermissions, perm.key]);
-                                                } else {
-                                                    setSelectedPermissions(
-                                                        selectedPermissions.filter((p) => p !== perm.key),
-                                                    );
-                                                }
-                                            }}
-                                            disabled={isSubmitting}
-                                        />
-                                        <span className='text-sm'>
-                                            {perm.name}
-                                            <span className='ml-1 text-gray-500'>({perm.key})</span>
-                                        </span>
-                                    </label>
-                                ))}
-                            </div>
-                        </Field>
+                        <AlbumPermissionCheckboxes
+                            permissions={albumScopedPermissions}
+                            selected={selectedPermissions}
+                            onChange={setSelectedPermissions}
+                            disabled={isSubmitting}
+                        />
                     </FieldGroup>
                 </DialogBody>
                 <DialogActions>
@@ -379,33 +398,12 @@ const AlbumSubusersPage: React.FC = () => {
                         </div>
                     )}
                     <FieldGroup>
-                        <Field>
-                            <Label>Permissions</Label>
-                            <Description>Select the permissions to grant to this user for this album</Description>
-                            <div className='mt-2 space-y-2'>
-                                {albumScopedPermissions.map((perm) => (
-                                    <label key={perm.key} className='flex items-center space-x-2'>
-                                        <Checkbox
-                                            checked={selectedPermissions.includes(perm.key)}
-                                            onChange={(checked) => {
-                                                if (checked) {
-                                                    setSelectedPermissions([...selectedPermissions, perm.key]);
-                                                } else {
-                                                    setSelectedPermissions(
-                                                        selectedPermissions.filter((p) => p !== perm.key),
-                                                    );
-                                                }
-                                            }}
-                                            disabled={isSubmitting}
-                                        />
-                                        <span className='text-sm'>
-                                            {perm.name}
-                                            <span className='ml-1 text-gray-500'>({perm.key})</span>
-                                        </span>
-                                    </label>
-                                ))}
-                            </div>
-                        </Field>
+                        <AlbumPermissionCheckboxes
+                            permissions={albumScopedPermissions}
+                            selected={selectedPermissions}
+                            onChange={setSelectedPermissions}
+                            disabled={isSubmitting}
+                        />
                     </FieldGroup>
                 </DialogBody>
                 <DialogActions>
