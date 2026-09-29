@@ -23,7 +23,3 @@ export const updateUser = async (userId: number, payload: UserUpdatePayload): Pr
     const response = await http.put<ApiResponse<AdminUserResponse>>(`/admin/users/${userId}`, payload);
     return response.data.data;
 };
-
-export const deleteUser = async (userId: number): Promise<void> => {
-    await http.delete(`/admin/users/${userId}`);
-};

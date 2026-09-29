@@ -18,9 +18,7 @@ const http: AxiosInstance = axios.create({
 });
 
 http.interceptors.request.use((req) => {
-    if (!req.url?.endsWith('/resources')) {
-        _progressCbs?.onStart();
-    }
+    _progressCbs?.onStart();
 
     // Add auth token if available
     const token = getAuthToken();
@@ -48,9 +46,7 @@ http.interceptors.request.use((req) => {
 
 http.interceptors.response.use(
     (resp: AxiosResponse) => {
-        if (!resp.request?.url?.endsWith('/resources')) {
-            _progressCbs?.onComplete();
-        }
+        _progressCbs?.onComplete();
 
         return resp;
     },

@@ -43,10 +43,3 @@ export const deleteGroup = async (id: number): Promise<void> => {
 export const setAlbumGroup = async (albumId: number, groupId: number | null): Promise<void> => {
     await http.put(`/admin/albums/${albumId}/group`, { group_id: groupId });
 };
-
-export const uploadGroupBanner = async (id: number, file: File): Promise<AlbumGroup> => {
-    const formData = new FormData();
-    formData.append('banner_image', file);
-    const response = await http.put<ApiResponse<AlbumGroup>>(`/admin/groups/${id}/banner`, formData);
-    return response.data.data;
-};

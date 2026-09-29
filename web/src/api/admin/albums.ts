@@ -32,11 +32,6 @@ export const listAlbums = async (): Promise<AdminAlbumResponse[]> => {
     return response.data.data;
 };
 
-export const getAlbum = async (id: number): Promise<AdminAlbumResponse> => {
-    const response = await http.get<ApiResponse<AdminAlbumResponse>>(`/admin/albums/${id}`);
-    return response.data.data;
-};
-
 export const getAlbumBySlug = async (slug: string): Promise<AdminAlbumResponse> => {
     const response = await http.get<ApiResponse<AdminAlbumResponse>>(`/admin/albums/${slug}`);
     return response.data.data;
@@ -73,27 +68,12 @@ export const reorderAlbumBanners = async (id: number, bannerIds: number[]): Prom
     await http.put(`/admin/albums/${id}/banners/order`, { banner_ids: bannerIds });
 };
 
-export interface UploadResult {
+interface UploadResult {
     uploaded: number;
     failed: Array<{ path: string; error: string }>;
 }
 
-export const uploadAlbumImages = async (
-    id: number,
-    files: Array<{ file: File; relativePath?: string }>,
-): Promise<UploadResult> => {
-    const formData = new FormData();
-    for (const item of files) {
-        if (item.relativePath) {
-            formData.append('relative_path', item.relativePath);
-        }
-        formData.append('files', item.file, item.relativePath || item.file.name);
-    }
-    const resp = await http.post<ApiResponse<UploadResult>>(`/admin/albums/${id}/upload`, formData);
-    return resp.data.data;
-};
-
-export interface UploadAlbumImagesBatchOptions {
+interface UploadAlbumImagesBatchOptions {
     batchSize?: number; // max number of files per request
     maxBatchBytes?: number; // max total bytes per request (default: 95 MB, below Cloudflare free plan 100 MB limit)
     concurrency?: number; // number of parallel requests
@@ -207,18 +187,6 @@ export const listAlbumImages = async (id: number): Promise<DirectoryListing> => 
 export const deleteAlbumImage = async (id: number, imagePath: string): Promise<void> => {
     // imagePath should be full relative path (e.g., "album/folder/IMG_1234.jpg")
     await http.delete(`/admin/albums/${id}/images`, { params: { path: imagePath } });
-};
-
-export const requestAlbumZip = async (id: number): Promise<{ message: string }> => {
-    const response = await http.post<ApiResponse<{ message: string }>>(`/admin/albums/${id}/zip`);
-    return response.data.data;
-};
-
-export const downloadAlbumZip = async (id: number): Promise<Blob> => {
-    const response = await http.get(`/admin/albums/${id}/zip`, {
-        responseType: 'blob',
-    });
-    return response.data;
 };
 
 export interface AlbumUserPermissionResponse {

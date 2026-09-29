@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import {
     listAlbums,
-    getAlbum,
     getAlbumUsers,
     getAvailableUsers,
     AdminAlbumResponse,
@@ -16,15 +15,6 @@ export const useAdminAlbums = () => {
         queryFn: listAlbums,
     });
     return { albums: data ?? [], isLoading, error };
-};
-
-export const useAdminAlbum = (id: number | null) => {
-    const { data, error, isLoading } = useQuery<AdminAlbumResponse>({
-        queryKey: queryKeys.albums.detail(id!),
-        queryFn: () => getAlbum(id!),
-        enabled: !!id,
-    });
-    return { album: data, isLoading, error };
 };
 
 export const useAlbumUsers = (albumId: number | null) => {

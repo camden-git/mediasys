@@ -15,7 +15,3 @@ export const createInviteCode = async (payload: InviteCodeCreatePayload): Promis
     const response = await http.post<ApiResponse<AdminInviteCodeResponse>>('/admin/invite-codes', payload);
     return response.data.data;
 };
-
-export const deleteInviteCode = async (codeId: number): Promise<void> => {
-    await http.delete(`/admin/invite-codes/${codeId}`);
-};

@@ -6,7 +6,7 @@ export interface AdminCollectionResponse extends Omit<Collection, 'banners'> {
     banners: CollectionBanner[];
 }
 
-export interface CollectionCreatePayload {
+interface CollectionCreatePayload {
     name: string;
     slug: string;
     description?: string;
@@ -14,7 +14,7 @@ export interface CollectionCreatePayload {
     filter_match?: 'all' | 'any';
 }
 
-export interface CollectionUpdatePayload {
+interface CollectionUpdatePayload {
     name?: string;
     slug?: string;
     description?: string;
@@ -25,11 +25,6 @@ export interface CollectionUpdatePayload {
 
 export const listCollections = async (): Promise<AdminCollectionResponse[]> => {
     const response = await http.get<ApiResponse<AdminCollectionResponse[]>>('/admin/collections/');
-    return response.data.data;
-};
-
-export const getCollection = async (id: number): Promise<AdminCollectionResponse> => {
-    const response = await http.get<ApiResponse<AdminCollectionResponse>>(`/admin/collections/${id}`);
     return response.data.data;
 };
 

@@ -18,7 +18,5 @@ export const useAlbumData = (): AdminAlbumResponse => {
 };
 
 export const useAlbumId = () => useAlbumData().id;
-export const useAlbumName = () => useAlbumData().name;
-export const useAlbumSlug = () => useAlbumData().slug;
 
 export type { AdminAlbumResponse };

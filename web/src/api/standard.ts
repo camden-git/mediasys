@@ -4,10 +4,6 @@ export interface ApiErrorDetail {
     detail: string;
 }
 
-export interface ApiErrorResponse {
-    errors?: ApiErrorDetail[];
-}
-
 /**
  * Converts an error into a human readable response. The backend always returns errors as
  * {"errors": [{code, status, detail}]}, so this just surfaces the first detail message,
@@ -26,7 +22,7 @@ export function httpErrorToHuman(error: any): string {
     return 'An unexpected error occurred.';
 }
 
-export interface PaginationMetaResponse {
+interface PaginationMetaResponse {
     total: number;
     count: number;
     per_page: number;
@@ -70,7 +66,7 @@ export function toPaginationQuery(params?: PaginationRequest): Record<string, nu
     };
 }
 
-export function getPaginationSet(meta?: PaginationMetaResponse): PaginationDataSet {
+function getPaginationSet(meta?: PaginationMetaResponse): PaginationDataSet {
     if (!meta) {
         return {
             total: 0,
@@ -96,49 +92,3 @@ export function toPaginatedResult<T>(response: ApiResponse<T[]>): PaginatedResul
         pagination: getPaginationSet(response.meta?.pagination),
     };
 }
-
-type QueryBuilderFilterValue = string | number | boolean | null;
-
-export interface QueryBuilderParams<FilterKeys extends string = string, SortKeys extends string = string> {
-    page?: number;
-    filters?: {
-        [K in FilterKeys]?: QueryBuilderFilterValue | Readonly<QueryBuilderFilterValue[]>;
-    };
-    sorts?: {
-        [K in SortKeys]?: -1 | 0 | 1 | 'asc' | 'desc' | null;
-    };
-}
-
-/**
- * Helper function that parses a data object provided and builds query parameters
- * automatically. This will apply sorts and filters deterministically based on the provided values.
- */
-export const withQueryBuilderParams = (
-    data?: QueryBuilderParams,
-): Record<string, QueryBuilderFilterValue | Readonly<QueryBuilderFilterValue[]> | string | number | undefined> => {
-    if (!data) return {};
-
-    const filters = Object.keys(data.filters || {}).reduce(
-        (obj, key) => {
-            const value = data.filters?.[key];
-
-            return !value || value === '' ? obj : { ...obj, [`filter[${key}]`]: value };
-        },
-        {} as NonNullable<QueryBuilderParams['filters']>,
-    );
-
-    const sorts = Object.keys(data.sorts || {}).reduce((arr, key) => {
-        const value = data.sorts?.[key];
-        if (!value || !['asc', 'desc', 1, -1].includes(value)) {
-            return arr;
-        }
-
-        return [...arr, (value === -1 || value === 'desc' ? '-' : '') + key];
-    }, [] as string[]);
-
-    return {
-        ...filters,
-        sort: !sorts.length ? undefined : sorts.join(','),
-        page: data.page,
-    };
-};
