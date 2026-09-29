@@ -112,8 +112,28 @@ func (r *GormUserRepository) GetByUsername(username string) (*models.User, error
 	return &user, nil
 }
 
+// Update saves the user's own columns only; associations such as roles are left untouched.
 func (r *GormUserRepository) Update(user *models.User) error {
-	return r.db.Session(&gorm.Session{FullSaveAssociations: true}).Save(user).Error
+	return r.db.Omit(clause.Associations).Save(user).Error
+}
+
+// UpdateWithRoles saves the user's own columns and replaces the user's roles with roleIDs in one transaction.
+func (r *GormUserRepository) UpdateWithRoles(user *models.User, roleIDs []uint) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Omit(clause.Associations).Save(user).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("user_id = ?", user.ID).Delete(&models.UserRole{}).Error; err != nil {
+			return err
+		}
+		for _, roleID := range roleIDs {
+			userRole := models.UserRole{UserID: user.ID, RoleID: roleID}
+			if err := tx.Omit(clause.Associations).Clauses(clause.OnConflict{DoNothing: true}).Create(&userRole).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (r *GormUserRepository) Delete(id uint) error {

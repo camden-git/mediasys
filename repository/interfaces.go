@@ -120,7 +120,8 @@ type UserRepository interface {
 	Create(user *models.User) error
 	GetByID(id uint) (*models.User, error)
 	GetByUsername(username string) (*models.User, error)
-	Update(user *models.User) error
+	Update(user *models.User) error                          // saves the user's own columns only, not roles
+	UpdateWithRoles(user *models.User, roleIDs []uint) error // saves the user and replaces its roles atomically
 	Delete(id uint) error
 	ListAll() ([]models.User, error)
 	CountAll() (int64, error)

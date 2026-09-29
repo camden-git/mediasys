@@ -304,6 +304,7 @@ func (h *AdminUserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		user.GlobalPermissions = *payload.GlobalPermissions
 	}
 
+	var newRoleIDs []uint
 	if payload.RoleIDs != nil {
 		newRoles := make([]*models.Role, 0, len(*payload.RoleIDs))
 		for _, roleID := range *payload.RoleIDs {
@@ -338,6 +339,10 @@ func (h *AdminUserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		user.Roles = newRoles
+		newRoleIDs = make([]uint, 0, len(newRoles))
+		for _, role := range newRoles {
+			newRoleIDs = append(newRoleIDs, role.ID)
+		}
 	}
 
 	if payload.FirstName != nil {
@@ -347,8 +352,14 @@ func (h *AdminUserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		user.LastName = *payload.LastName
 	}
 
-	if err := h.UserRepo.Update(user); err != nil {
-		WriteAPIError(w, http.StatusInternalServerError, "UserUpdateError", "Failed to update user: "+err.Error())
+	var updateErr error
+	if payload.RoleIDs != nil {
+		updateErr = h.UserRepo.UpdateWithRoles(user, newRoleIDs)
+	} else {
+		updateErr = h.UserRepo.Update(user)
+	}
+	if updateErr != nil {
+		WriteAPIError(w, http.StatusInternalServerError, "UserUpdateError", "Failed to update user: "+updateErr.Error())
 		return
 	}
 
