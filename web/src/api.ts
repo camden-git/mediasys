@@ -216,7 +216,7 @@ export const createPerson = async (name: string): Promise<Person> => {
 export const updatePerson = async (id: number, name: string): Promise<Person> => {
     const response = await apiClient(`/people/${id}`, {
         method: 'PUT',
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ primary_name: name }),
     });
     return (await response.json()) as Person;
 };
