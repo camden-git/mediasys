@@ -22,7 +22,7 @@ func (h *CollectionHandler) ShareCollectionHTML(w http.ResponseWriter, r *http.R
 			http.NotFound(w, r)
 		} else {
 			log.Printf("Error getting collection for share '%s': %v", slug, err)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			WriteAPIError(w, http.StatusInternalServerError, "CollectionFetchError", "Internal Server Error")
 		}
 		return
 	}

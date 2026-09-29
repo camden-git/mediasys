@@ -21,6 +21,6 @@ func (h *PermissionHandler) ListPermissionDefinitions(w http.ResponseWriter, r *
 		// Log error, but response header is already sent.
 		// Consider logging to a more persistent store or system logger
 		// fmt.Printf("Error encoding JSON response for ListPermissionDefinitions: %v\n", err)
-		http.Error(w, "Failed to encode permission definitions", http.StatusInternalServerError)
+		WriteAPIError(w, http.StatusInternalServerError, "EncodingError", "Failed to encode permission definitions")
 	}
 }

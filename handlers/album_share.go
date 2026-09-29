@@ -22,7 +22,7 @@ func (ah *AlbumHandler) ShareAlbumHTML(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 		} else {
 			log.Printf("Error getting album for share '%s': %v", identifier, err)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			WriteAPIError(w, http.StatusInternalServerError, "AlbumFetchError", "Internal Server Error")
 		}
 		return
 	}

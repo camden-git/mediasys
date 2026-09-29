@@ -93,22 +93,22 @@ func SyncSuperAdminRole(roleRepo repository.RoleRepository) error {
 func (h *SetupHandler) CreateFirstAdmin(w http.ResponseWriter, r *http.Request) {
 	count, err := h.UserRepo.CountAll()
 	if err != nil {
-		http.Error(w, "Database error while checking for existing users.", http.StatusInternalServerError)
+		WriteAPIError(w, http.StatusInternalServerError, "UserCountError", "Database error while checking for existing users.")
 		return
 	}
 	if count > 0 {
-		http.Error(w, "Setup has already been completed: users exist.", http.StatusForbidden)
+		WriteAPIError(w, http.StatusForbidden, "SetupAlreadyCompleted", "Setup has already been completed: users exist.")
 		return
 	}
 
 	var payload FirstAdminPayload
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		http.Error(w, "Invalid request payload: "+err.Error(), http.StatusBadRequest)
+		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request payload: "+err.Error())
 		return
 	}
 
 	if payload.Username == "" || payload.Password == "" {
-		http.Error(w, "Username and password are required", http.StatusBadRequest)
+		WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Username and password are required")
 		return
 	}
 
@@ -116,15 +116,15 @@ func (h *SetupHandler) CreateFirstAdmin(w http.ResponseWriter, r *http.Request) 
 		Username: payload.Username,
 	}
 	if err := adminUser.SetPassword(payload.Password); err != nil {
-		http.Error(w, "Failed to create first admin user: "+err.Error(), http.StatusInternalServerError)
+		WriteAPIError(w, http.StatusInternalServerError, "AdminCreateError", "Failed to create first admin user: "+err.Error())
 		return
 	}
 
 	if err := h.UserRepo.CreateFirstAdmin(adminUser, models.SuperAdminRoleName); err != nil {
 		if errors.Is(err, repository.ErrSetupAlreadyCompleted) {
-			http.Error(w, "Setup has already been completed.", http.StatusForbidden)
+			WriteAPIError(w, http.StatusForbidden, "SetupAlreadyCompleted", "Setup has already been completed.")
 		} else {
-			http.Error(w, "Failed to create first admin user: "+err.Error(), http.StatusInternalServerError)
+			WriteAPIError(w, http.StatusInternalServerError, "AdminCreateError", "Failed to create first admin user: "+err.Error())
 		}
 		return
 	}

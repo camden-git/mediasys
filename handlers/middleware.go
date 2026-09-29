@@ -28,13 +28,13 @@ func AuthMiddleware(userRepo repository.UserRepository, next http.Handler) http.
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
-			http.Error(w, "Authorization header required", http.StatusUnauthorized)
+			WriteAPIError(w, http.StatusUnauthorized, "AuthHeaderMissing", "Authorization header required")
 			return
 		}
 
 		parts := strings.Split(authHeader, " ")
 		if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
-			http.Error(w, "Authorization header format must be Bearer {token}", http.StatusUnauthorized)
+			WriteAPIError(w, http.StatusUnauthorized, "AuthHeaderFormat", "Authorization header format must be Bearer {token}")
 			return
 		}
 		tokenString := parts[1]
@@ -49,15 +49,15 @@ func AuthMiddleware(userRepo repository.UserRepository, next http.Handler) http.
 
 		if err != nil {
 			if errors.Is(err, jwt.ErrSignatureInvalid) {
-				http.Error(w, "Invalid token signature", http.StatusUnauthorized)
+				WriteAPIError(w, http.StatusUnauthorized, "InvalidTokenSignature", "Invalid token signature")
 				return
 			}
-			http.Error(w, "Invalid token: "+err.Error(), http.StatusUnauthorized)
+			WriteAPIError(w, http.StatusUnauthorized, "InvalidToken", "Invalid token: "+err.Error())
 			return
 		}
 
 		if !token.Valid {
-			http.Error(w, "Invalid token", http.StatusUnauthorized)
+			WriteAPIError(w, http.StatusUnauthorized, "InvalidToken", "Invalid token")
 			return
 		}
 
@@ -65,7 +65,7 @@ func AuthMiddleware(userRepo repository.UserRepository, next http.Handler) http.
 		var userID uint
 		// Convert userIDStr (which is fmt.Sprint(user.ID)) back to uint
 		if _, err := fmt.Sscan(userIDStr, &userID); err != nil {
-			http.Error(w, "Invalid user ID in token", http.StatusUnauthorized)
+			WriteAPIError(w, http.StatusUnauthorized, "InvalidTokenSubject", "Invalid user ID in token")
 			// Log this error server-side as it indicates a malformed token subject
 			fmt.Printf("Error parsing userID from token subject '%s': %v\n", userIDStr, err)
 			return
@@ -74,7 +74,7 @@ func AuthMiddleware(userRepo repository.UserRepository, next http.Handler) http.
 		user, err := userRepo.GetByID(userID)
 		if err != nil {
 			// This could happen if the user was deleted after the token was issued.
-			http.Error(w, "User not found", http.StatusUnauthorized)
+			WriteAPIError(w, http.StatusUnauthorized, "UserNotFound", "User not found")
 			return
 		}
 
@@ -91,12 +91,12 @@ func RequireGlobalPermission(requiredPermission string, next http.Handler) http.
 		user, ok := r.Context().Value(UserContextKey).(*models.User) // models.User needs to be imported
 		if !ok || user == nil {
 			// This should not happen if AuthMiddleware ran successfully
-			http.Error(w, "User not found in context", http.StatusInternalServerError)
+			WriteAPIError(w, http.StatusInternalServerError, "ContextUserMissing", "User not found in context")
 			return
 		}
 
 		if !user.HasGlobalPermission(requiredPermission) {
-			http.Error(w, fmt.Sprintf("Forbidden: requires global permission '%s'", requiredPermission), http.StatusForbidden)
+			WriteAPIError(w, http.StatusForbidden, "Forbidden", fmt.Sprintf("Forbidden: requires global permission '%s'", requiredPermission))
 			return
 		}
 
@@ -110,7 +110,7 @@ func RequireAnyGlobalPermission(permissions []string, next http.Handler) http.Ha
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		user, ok := r.Context().Value(UserContextKey).(*models.User) // models.User needs to be imported
 		if !ok || user == nil {
-			http.Error(w, "User not found in context", http.StatusInternalServerError)
+			WriteAPIError(w, http.StatusInternalServerError, "ContextUserMissing", "User not found in context")
 			return
 		}
 
@@ -123,7 +123,7 @@ func RequireAnyGlobalPermission(permissions []string, next http.Handler) http.Ha
 		}
 
 		if !hasAtLeastOne {
-			http.Error(w, fmt.Sprintf("Forbidden: requires at least one of the following global permissions: %s", strings.Join(permissions, ", ")), http.StatusForbidden)
+			WriteAPIError(w, http.StatusForbidden, "Forbidden", fmt.Sprintf("Forbidden: requires at least one of the following global permissions: %s", strings.Join(permissions, ", ")))
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -138,7 +138,7 @@ func RequireAlbumPermission(globalPermission, albumPermission string, next http.
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		user, ok := r.Context().Value(UserContextKey).(*models.User)
 		if !ok || user == nil {
-			http.Error(w, "User not found in context", http.StatusInternalServerError)
+			WriteAPIError(w, http.StatusInternalServerError, "ContextUserMissing", "User not found in context")
 			return
 		}
 
@@ -158,7 +158,7 @@ func RequireAlbumPermission(globalPermission, albumPermission string, next http.
 			}
 		}
 
-		http.Error(w, fmt.Sprintf("Forbidden: requires global permission '%s' or album permission '%s'", globalPermission, albumPermission), http.StatusForbidden)
+		WriteAPIError(w, http.StatusForbidden, "Forbidden", fmt.Sprintf("Forbidden: requires global permission '%s' or album permission '%s'", globalPermission, albumPermission))
 	})
 }
 
@@ -171,7 +171,7 @@ func RequireAnyGlobalPermissionOrAlbumAccess(globalPermissions []string) func(ne
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			user, ok := r.Context().Value(UserContextKey).(*models.User)
 			if !ok || user == nil {
-				http.Error(w, "User not found in context", http.StatusInternalServerError)
+				WriteAPIError(w, http.StatusInternalServerError, "ContextUserMissing", "User not found in context")
 				return
 			}
 
@@ -187,7 +187,7 @@ func RequireAnyGlobalPermissionOrAlbumAccess(globalPermissions []string) func(ne
 				return
 			}
 
-			http.Error(w, fmt.Sprintf("Forbidden: requires at least one of the following global permissions: %s", strings.Join(globalPermissions, ", ")), http.StatusForbidden)
+			WriteAPIError(w, http.StatusForbidden, "Forbidden", fmt.Sprintf("Forbidden: requires at least one of the following global permissions: %s", strings.Join(globalPermissions, ", ")))
 		})
 	}
 }

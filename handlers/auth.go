@@ -301,7 +301,7 @@ func (h *AuthHandler) CurrentUser(w http.ResponseWriter, r *http.Request) {
 	user, ok := r.Context().Value(UserContextKey).(*models.User)
 	if !ok || user == nil {
 		// ideally impossible
-		http.Error(w, "Could not retrieve user from context", http.StatusInternalServerError)
+		WriteAPIError(w, http.StatusInternalServerError, "ContextUserMissing", "Could not retrieve user from context")
 		return
 	}
 

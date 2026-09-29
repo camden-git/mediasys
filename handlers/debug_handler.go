@@ -31,7 +31,7 @@ type QueueDetectionResponse struct {
 func (dh *DebugHandler) QueueFaceDetection(w http.ResponseWriter, r *http.Request) {
 	dbPath := strings.TrimPrefix(r.URL.Query().Get("path"), "/")
 	if dbPath == "" {
-		http.Error(w, "Missing 'path' query parameter", http.StatusBadRequest)
+		WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Missing 'path' query parameter")
 		return
 	}
 
@@ -61,7 +61,7 @@ func (dh *DebugHandler) QueueFaceDetection(w http.ResponseWriter, r *http.Reques
 func (dh *DebugHandler) GetDetectionStatus(w http.ResponseWriter, r *http.Request) {
 	relativePath := r.URL.Query().Get("path")
 	if relativePath == "" {
-		http.Error(w, "Missing 'path' query parameter", http.StatusBadRequest)
+		WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Missing 'path' query parameter")
 		return
 	}
 
@@ -70,7 +70,7 @@ func (dh *DebugHandler) GetDetectionStatus(w http.ResponseWriter, r *http.Reques
 	// Get image record
 	image, err := dh.ImageRepo.GetByPath(dbPath)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Image not found: %v", err), http.StatusNotFound)
+		WriteAPIError(w, http.StatusNotFound, "ImageNotFound", fmt.Sprintf("Image not found: %v", err))
 		return
 	}
 

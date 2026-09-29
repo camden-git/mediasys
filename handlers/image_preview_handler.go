@@ -110,7 +110,7 @@ func (iph *ImagePreviewHandler) ServeScaledPreview(w http.ResponseWriter, r *htt
 func (iph *ImagePreviewHandler) ServeImageWithFaces(w http.ResponseWriter, r *http.Request) {
 	dbPath := strings.TrimPrefix(r.URL.Query().Get("path"), "/")
 	if dbPath == "" {
-		http.Error(w, "Missing 'path' query parameter", http.StatusBadRequest)
+		WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Missing 'path' query parameter")
 		return
 	}
 	imgRow, err := iph.ImageRepo.GetByPath(dbPath)
@@ -127,13 +127,13 @@ func (iph *ImagePreviewHandler) ServeImageWithFaces(w http.ResponseWriter, r *ht
 	data, err := io.ReadAll(obj)
 	obj.Close()
 	if err != nil {
-		http.Error(w, "Failed to read image", http.StatusInternalServerError)
+		WriteAPIError(w, http.StatusInternalServerError, "ImageReadError", "Failed to read image")
 		return
 	}
 
 	img, err := gocv.IMDecode(data, gocv.IMReadColor)
 	if err != nil || img.Empty() {
-		http.Error(w, "Failed to decode image", http.StatusInternalServerError)
+		WriteAPIError(w, http.StatusInternalServerError, "ImageDecodeError", "Failed to decode image")
 		return
 	}
 	defer img.Close()
@@ -156,7 +156,7 @@ func (iph *ImagePreviewHandler) ServeImageWithFaces(w http.ResponseWriter, r *ht
 
 	buf, err := gocv.IMEncode(gocv.JPEGFileExt, img)
 	if err != nil {
-		http.Error(w, "Failed to encode image", http.StatusInternalServerError)
+		WriteAPIError(w, http.StatusInternalServerError, "ImageEncodeError", "Failed to encode image")
 		return
 	}
 	defer buf.Close()

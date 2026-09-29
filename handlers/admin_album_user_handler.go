@@ -136,22 +136,22 @@ func (h *AdminAlbumUserHandler) GetAlbumUsers(w http.ResponseWriter, r *http.Req
 	albumIDStr := chi.URLParam(r, "id")
 	albumID, err := strconv.ParseUint(albumIDStr, 10, 64)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid album ID"})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidID", "Invalid album ID")
 		return
 	}
 
 	if _, err := h.AlbumRepo.GetByID(uint(albumID)); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album not found"})
+			WriteAPIError(w, http.StatusNotFound, "AlbumNotFound", "Album not found")
 		} else {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to verify album"})
+			WriteAPIError(w, http.StatusInternalServerError, "AlbumFetchError", "Failed to verify album")
 		}
 		return
 	}
 
 	users, directPermissionsByUser, err := h.UserRepo.GetUsersWithAlbumPermissions(uint(albumID))
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve album users: " + err.Error()})
+		WriteAPIError(w, http.StatusInternalServerError, "AlbumUserListError", "Failed to retrieve album users: "+err.Error())
 		return
 	}
 
@@ -213,22 +213,22 @@ func (h *AdminAlbumUserHandler) GetAvailableUsers(w http.ResponseWriter, r *http
 	albumIDStr := chi.URLParam(r, "id")
 	albumID, err := strconv.ParseUint(albumIDStr, 10, 64)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid album ID"})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidID", "Invalid album ID")
 		return
 	}
 
 	if _, err := h.AlbumRepo.GetByID(uint(albumID)); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album not found"})
+			WriteAPIError(w, http.StatusNotFound, "AlbumNotFound", "Album not found")
 		} else {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to verify album"})
+			WriteAPIError(w, http.StatusInternalServerError, "AlbumFetchError", "Failed to verify album")
 		}
 		return
 	}
 
 	users, err := h.UserRepo.GetUsersWithoutAlbumPermissions(uint(albumID))
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve available users: " + err.Error()})
+		WriteAPIError(w, http.StatusInternalServerError, "UserListError", "Failed to retrieve available users: "+err.Error())
 		return
 	}
 
@@ -240,30 +240,30 @@ func (h *AdminAlbumUserHandler) AddUserToAlbum(w http.ResponseWriter, r *http.Re
 	albumIDStr := chi.URLParam(r, "id")
 	albumID, err := strconv.ParseUint(albumIDStr, 10, 64)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid album ID"})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidID", "Invalid album ID")
 		return
 	}
 
 	var payload AddUserToAlbumPayload
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request payload: " + err.Error()})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request payload: "+err.Error())
 		return
 	}
 
 	if _, err := h.AlbumRepo.GetByID(uint(albumID)); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album not found"})
+			WriteAPIError(w, http.StatusNotFound, "AlbumNotFound", "Album not found")
 		} else {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to verify album"})
+			WriteAPIError(w, http.StatusInternalServerError, "AlbumFetchError", "Failed to verify album")
 		}
 		return
 	}
 
 	if _, err := h.UserRepo.GetByID(payload.UserID); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "User not found"})
+			WriteAPIError(w, http.StatusNotFound, "UserNotFound", "User not found")
 		} else {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to verify user"})
+			WriteAPIError(w, http.StatusInternalServerError, "UserFetchError", "Failed to verify user")
 		}
 		return
 	}
@@ -271,18 +271,18 @@ func (h *AdminAlbumUserHandler) AddUserToAlbum(w http.ResponseWriter, r *http.Re
 	for _, perm := range payload.Permissions {
 		permDef, ok := permissions.GetPermissionDefinition(perm)
 		if !ok {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("Invalid permission: %s", perm)})
+			WriteAPIError(w, http.StatusBadRequest, "InvalidPermission", fmt.Sprintf("Invalid permission: %s", perm))
 			return
 		}
 		if permDef.Scope != permissions.ScopeAlbum {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("Permission %s is not album-scoped", perm)})
+			WriteAPIError(w, http.StatusBadRequest, "InvalidPermission", fmt.Sprintf("Permission %s is not album-scoped", perm))
 			return
 		}
 	}
 
 	existingPerm, err := h.UserRepo.GetUserAlbumPermission(payload.UserID, uint(albumID))
 	if err == nil && existingPerm != nil {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "User already has permissions for this album"})
+		WriteAPIError(w, http.StatusConflict, "AlbumUserConflict", "User already has permissions for this album")
 		return
 	}
 
@@ -293,7 +293,7 @@ func (h *AdminAlbumUserHandler) AddUserToAlbum(w http.ResponseWriter, r *http.Re
 	}
 
 	if err := h.UserRepo.CreateUserAlbumPermission(userAlbumPerm); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to add user to album: " + err.Error()})
+		WriteAPIError(w, http.StatusInternalServerError, "AlbumUserCreateError", "Failed to add user to album: "+err.Error())
 		return
 	}
 
@@ -305,37 +305,37 @@ func (h *AdminAlbumUserHandler) UpdateUserAlbumPermissions(w http.ResponseWriter
 	albumIDStr := chi.URLParam(r, "id")
 	albumID, err := strconv.ParseUint(albumIDStr, 10, 64)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid album ID"})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidID", "Invalid album ID")
 		return
 	}
 
 	userIDStr := chi.URLParam(r, "userID")
 	userID, err := strconv.ParseUint(userIDStr, 10, 64)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid user ID"})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidID", "Invalid user ID")
 		return
 	}
 
 	var payload UpdateUserAlbumPermissionsPayload
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request payload: " + err.Error()})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request payload: "+err.Error())
 		return
 	}
 
 	if _, err := h.AlbumRepo.GetByID(uint(albumID)); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album not found"})
+			WriteAPIError(w, http.StatusNotFound, "AlbumNotFound", "Album not found")
 		} else {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to verify album"})
+			WriteAPIError(w, http.StatusInternalServerError, "AlbumFetchError", "Failed to verify album")
 		}
 		return
 	}
 
 	if _, err := h.UserRepo.GetByID(uint(userID)); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "User not found"})
+			WriteAPIError(w, http.StatusNotFound, "UserNotFound", "User not found")
 		} else {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to verify user"})
+			WriteAPIError(w, http.StatusInternalServerError, "UserFetchError", "Failed to verify user")
 		}
 		return
 	}
@@ -343,11 +343,11 @@ func (h *AdminAlbumUserHandler) UpdateUserAlbumPermissions(w http.ResponseWriter
 	for _, perm := range payload.Permissions {
 		permDef, ok := permissions.GetPermissionDefinition(perm)
 		if !ok {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("Invalid permission: %s", perm)})
+			WriteAPIError(w, http.StatusBadRequest, "InvalidPermission", fmt.Sprintf("Invalid permission: %s", perm))
 			return
 		}
 		if permDef.Scope != permissions.ScopeAlbum {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("Permission %s is not album-scoped", perm)})
+			WriteAPIError(w, http.StatusBadRequest, "InvalidPermission", fmt.Sprintf("Permission %s is not album-scoped", perm))
 			return
 		}
 	}
@@ -355,9 +355,9 @@ func (h *AdminAlbumUserHandler) UpdateUserAlbumPermissions(w http.ResponseWriter
 	userAlbumPerm, err := h.UserRepo.GetUserAlbumPermission(uint(userID), uint(albumID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "User does not have permissions for this album"})
+			WriteAPIError(w, http.StatusNotFound, "AlbumUserNotFound", "User does not have permissions for this album")
 		} else {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve user album permissions"})
+			WriteAPIError(w, http.StatusInternalServerError, "AlbumUserFetchError", "Failed to retrieve user album permissions")
 		}
 		return
 	}
@@ -365,7 +365,7 @@ func (h *AdminAlbumUserHandler) UpdateUserAlbumPermissions(w http.ResponseWriter
 	userAlbumPerm.Permissions = payload.Permissions
 
 	if err := h.UserRepo.UpdateUserAlbumPermission(userAlbumPerm); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to update user album permissions: " + err.Error()})
+		WriteAPIError(w, http.StatusInternalServerError, "AlbumUserUpdateError", "Failed to update user album permissions: "+err.Error())
 		return
 	}
 
@@ -377,37 +377,37 @@ func (h *AdminAlbumUserHandler) RemoveUserFromAlbum(w http.ResponseWriter, r *ht
 	albumIDStr := chi.URLParam(r, "id")
 	albumID, err := strconv.ParseUint(albumIDStr, 10, 64)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid album ID"})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidID", "Invalid album ID")
 		return
 	}
 
 	userIDStr := chi.URLParam(r, "userID")
 	userID, err := strconv.ParseUint(userIDStr, 10, 64)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid user ID"})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidID", "Invalid user ID")
 		return
 	}
 
 	if _, err := h.AlbumRepo.GetByID(uint(albumID)); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album not found"})
+			WriteAPIError(w, http.StatusNotFound, "AlbumNotFound", "Album not found")
 		} else {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to verify album"})
+			WriteAPIError(w, http.StatusInternalServerError, "AlbumFetchError", "Failed to verify album")
 		}
 		return
 	}
 
 	if _, err := h.UserRepo.GetByID(uint(userID)); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "User not found"})
+			WriteAPIError(w, http.StatusNotFound, "UserNotFound", "User not found")
 		} else {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to verify user"})
+			WriteAPIError(w, http.StatusInternalServerError, "UserFetchError", "Failed to verify user")
 		}
 		return
 	}
 
 	if err := h.UserRepo.DeleteUserAlbumPermission(uint(userID), uint(albumID)); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to remove user from album: " + err.Error()})
+		WriteAPIError(w, http.StatusInternalServerError, "AlbumUserDeleteError", "Failed to remove user from album: "+err.Error())
 		return
 	}
 

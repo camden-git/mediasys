@@ -470,11 +470,11 @@ func RegisterRoutes(r chi.Router, deps AppDependencies) {
 
 		r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
 			if err := deps.Store.Ping(r.Context()); err != nil {
-				http.Error(w, "object store unavailable", http.StatusServiceUnavailable)
+				WriteAPIError(w, http.StatusServiceUnavailable, "ObjectStoreUnavailable", "object store unavailable")
 				return
 			}
 			if sqlDB, err := deps.DB.DB(); err != nil || sqlDB.PingContext(r.Context()) != nil {
-				http.Error(w, "database unavailable", http.StatusServiceUnavailable)
+				WriteAPIError(w, http.StatusServiceUnavailable, "DatabaseUnavailable", "database unavailable")
 				return
 			}
 			_, _ = w.Write([]byte("ok"))

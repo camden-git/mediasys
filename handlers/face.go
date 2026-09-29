@@ -36,29 +36,29 @@ func (fh *FaceHandler) AddFace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body: " + err.Error()})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request body: "+err.Error())
 		return
 	}
 
 	if req.ImagePath == "" || req.X1 < 0 || req.Y1 < 0 || req.X2 <= req.X1 || req.Y2 <= req.Y1 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Missing or invalid required fields (image_path, coordinates)"})
+		WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Missing or invalid required fields (image_path, coordinates)")
 		return
 	}
 
 	var personIDUint *uint
 	if req.PersonID != nil {
 		if *req.PersonID <= 0 {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid person_id value"})
+			WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Invalid person_id value")
 			return
 		}
 		pid := uint(*req.PersonID)
 		personIDUint = &pid
 		if _, err := fh.PersonRepo.GetByID(*personIDUint); err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Person with provided person_id not found"})
+				WriteAPIError(w, http.StatusBadRequest, "PersonNotFound", "Person with provided person_id not found")
 			} else {
 				log.Printf("Error checking person %d before adding face: %v", *personIDUint, err)
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to verify person"})
+				WriteAPIError(w, http.StatusInternalServerError, "PersonFetchError", "Failed to verify person")
 			}
 			return
 		}
@@ -67,10 +67,10 @@ func (fh *FaceHandler) AddFace(w http.ResponseWriter, r *http.Request) {
 	imagePathForDB := strings.TrimLeft(req.ImagePath, "/")
 	if _, err := fh.ImageRepo.GetByPath(imagePathForDB); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "image_path does not exist: " + imagePathForDB})
+			WriteAPIError(w, http.StatusBadRequest, "ImageNotFound", "image_path does not exist: "+imagePathForDB)
 		} else {
 			log.Printf("Error checking image %s during face add: %v", imagePathForDB, err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Could not verify image_path"})
+			WriteAPIError(w, http.StatusInternalServerError, "ImageFetchError", "Could not verify image_path")
 		}
 		return
 	}
@@ -86,7 +86,7 @@ func (fh *FaceHandler) AddFace(w http.ResponseWriter, r *http.Request) {
 	createErr := fh.FaceRepo.Create(&face)
 	if createErr != nil {
 		log.Printf("Error adding face (person: %v) to image %s: %v", req.PersonID, imagePathForDB, createErr)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to add face tag"})
+		WriteAPIError(w, http.StatusInternalServerError, "FaceCreateError", "Failed to add face tag")
 		return
 	}
 
@@ -102,19 +102,19 @@ func (fh *FaceHandler) AddFace(w http.ResponseWriter, r *http.Request) {
 func (fh *FaceHandler) ListFacesByImage(w http.ResponseWriter, r *http.Request) {
 	imageQueryParam := r.URL.Query().Get("path")
 	if imageQueryParam == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Missing required query parameter: path"})
+		WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Missing required query parameter: path")
 		return
 	}
 	imagePath, err := url.QueryUnescape(imageQueryParam)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid URL encoding for path parameter"})
+		WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Invalid URL encoding for path parameter")
 		return
 	}
 	imagePathForDB := strings.TrimLeft(imagePath, "/")
 	faces, err := fh.FaceRepo.ListByImagePath(imagePathForDB)
 	if err != nil {
 		log.Printf("Error listing faces for image %s: %v", imagePathForDB, err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve faces for image"})
+		WriteAPIError(w, http.StatusInternalServerError, "FaceListError", "Failed to retrieve faces for image")
 		return
 	}
 	if faces == nil {
@@ -127,16 +127,16 @@ func (fh *FaceHandler) GetFace(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "face_id")
 	faceID, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid face ID format"})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidID", "Invalid face ID format")
 		return
 	}
 	face, err := fh.FaceRepo.GetByID(uint(faceID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Face tag not found"})
+			WriteAPIError(w, http.StatusNotFound, "FaceNotFound", "Face tag not found")
 		} else {
 			log.Printf("Error getting face %d: %v", faceID, err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve face tag"})
+			WriteAPIError(w, http.StatusInternalServerError, "FaceFetchError", "Failed to retrieve face tag")
 		}
 		return
 	}
@@ -147,24 +147,24 @@ func (fh *FaceHandler) UpdateFace(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "face_id")
 	faceID, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid face ID format"})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidID", "Invalid face ID format")
 		return
 	}
 
 	// check if face exists first
 	if _, err := fh.FaceRepo.GetByID(uint(faceID)); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Face tag not found"})
+			WriteAPIError(w, http.StatusNotFound, "FaceNotFound", "Face tag not found")
 		} else {
 			log.Printf("Error finding face %d for update: %v", faceID, err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to find face tag for update"})
+			WriteAPIError(w, http.StatusInternalServerError, "FaceFetchError", "Failed to find face tag for update")
 		}
 		return
 	}
 
 	var reqMap map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&reqMap); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body: " + err.Error()})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request body: "+err.Error())
 		return
 	}
 
@@ -180,11 +180,11 @@ func (fh *FaceHandler) UpdateFace(w http.ResponseWriter, r *http.Request) {
 			if pidUint > 0 {
 				personIDUpdate = &pidUint
 			} else { // person_id: 0 is not valid for tagging
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid non-zero value for person_id"})
+				WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Invalid non-zero value for person_id")
 				return
 			}
 		} else {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid type for person_id, expected number or null"})
+			WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Invalid type for person_id, expected number or null")
 			return
 		}
 	}
@@ -211,10 +211,10 @@ func (fh *FaceHandler) UpdateFace(w http.ResponseWriter, r *http.Request) {
 		// *personIDUpdate is uint here because personIDUpdate is *uint
 		if _, err := fh.PersonRepo.GetByID(*personIDUpdate); err != nil { // Use PersonRepo
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Person with provided person_id not found"})
+				WriteAPIError(w, http.StatusBadRequest, "PersonNotFound", "Person with provided person_id not found")
 			} else {
 				log.Printf("Error checking person %d before updating face %d: %v", *personIDUpdate, faceID, err)
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to verify person"})
+				WriteAPIError(w, http.StatusInternalServerError, "PersonFetchError", "Failed to verify person")
 			}
 			return
 		}
@@ -223,10 +223,10 @@ func (fh *FaceHandler) UpdateFace(w http.ResponseWriter, r *http.Request) {
 	updateErr := fh.FaceRepo.Update(uint(faceID), personIDUpdate, x1Update, y1Update, x2Update, y2Update)
 	if updateErr != nil {
 		if errors.Is(updateErr, gorm.ErrRecordNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Face tag not found during update"})
+			WriteAPIError(w, http.StatusNotFound, "FaceNotFound", "Face tag not found during update")
 		} else {
 			log.Printf("Error updating face %d: %v", faceID, err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to update face tag"})
+			WriteAPIError(w, http.StatusInternalServerError, "FaceUpdateError", "Failed to update face tag")
 		}
 		return
 	}
@@ -245,7 +245,7 @@ func (fh *FaceHandler) DeleteFace(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "face_id")
 	faceID, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid face ID format"})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidID", "Invalid face ID format")
 		return
 	}
 	// Delete embedding first (before the face row it references)
@@ -257,10 +257,10 @@ func (fh *FaceHandler) DeleteFace(w http.ResponseWriter, r *http.Request) {
 	err = fh.FaceRepo.Delete(uint(faceID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Face tag not found"})
+			WriteAPIError(w, http.StatusNotFound, "FaceNotFound", "Face tag not found")
 		} else {
 			log.Printf("Error deleting face %d: %v", faceID, err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to delete face tag"})
+			WriteAPIError(w, http.StatusInternalServerError, "FaceDeleteError", "Failed to delete face tag")
 		}
 		return
 	}
@@ -270,14 +270,14 @@ func (fh *FaceHandler) DeleteFace(w http.ResponseWriter, r *http.Request) {
 func (fh *FaceHandler) SearchFacesByPerson(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query().Get("query")
 	if strings.TrimSpace(query) == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Missing required query parameter: query"})
+		WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Missing required query parameter: query")
 		return
 	}
 
 	personIDs, err := fh.PersonRepo.FindPersonIDsByNameOrAlias(query)
 	if err != nil {
 		log.Printf("Error searching for person IDs with query '%s': %v", query, err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to search for people"})
+		WriteAPIError(w, http.StatusInternalServerError, "PersonSearchError", "Failed to search for people")
 		return
 	}
 	if len(personIDs) == 0 {
@@ -287,7 +287,7 @@ func (fh *FaceHandler) SearchFacesByPerson(w http.ResponseWriter, r *http.Reques
 	images, err := fh.PersonRepo.FindImagesByPersonIDs(personIDs)
 	if err != nil {
 		log.Printf("Error finding images for person IDs %v: %v", personIDs, err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to find images associated with person"})
+		WriteAPIError(w, http.StatusInternalServerError, "ImageListError", "Failed to find images associated with person")
 		return
 	}
 	if images == nil {
@@ -299,14 +299,14 @@ func (fh *FaceHandler) SearchFacesByPerson(w http.ResponseWriter, r *http.Reques
 // GetSimilarFaces finds faces similar to a given face ID
 func (fh *FaceHandler) GetSimilarFaces(w http.ResponseWriter, r *http.Request) {
 	if fh.FaceRecognitionService == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Face recognition service not available"})
+		WriteAPIError(w, http.StatusServiceUnavailable, "ServiceUnavailable", "Face recognition service not available")
 		return
 	}
 
 	idStr := chi.URLParam(r, "face_id")
 	faceID, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid face ID format"})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidID", "Invalid face ID format")
 		return
 	}
 
@@ -325,9 +325,9 @@ func (fh *FaceHandler) GetSimilarFaces(w http.ResponseWriter, r *http.Request) {
 
 		// Check if the error is due to missing face embedding
 		if strings.Contains(err.Error(), "failed to get target face embedding") {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Face does not have an embedding. Face recognition requires embeddings to be generated for faces."})
+			WriteAPIError(w, http.StatusNotFound, "FaceNoEmbedding", "Face does not have an embedding. Face recognition requires embeddings to be generated for faces.")
 		} else {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to find similar faces"})
+			WriteAPIError(w, http.StatusInternalServerError, "FaceSearchError", "Failed to find similar faces")
 		}
 		return
 	}
@@ -338,7 +338,7 @@ func (fh *FaceHandler) GetSimilarFaces(w http.ResponseWriter, r *http.Request) {
 // GetUntaggedFaces returns untagged faces with person suggestions
 func (fh *FaceHandler) GetUntaggedFaces(w http.ResponseWriter, r *http.Request) {
 	if fh.FaceRecognitionService == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Face recognition service not available"})
+		WriteAPIError(w, http.StatusServiceUnavailable, "ServiceUnavailable", "Face recognition service not available")
 		return
 	}
 
@@ -383,7 +383,7 @@ func (fh *FaceHandler) GetUntaggedFaces(w http.ResponseWriter, r *http.Request) 
 	untaggedFaces, err := fh.FaceRecognitionService.GetUntaggedFacesWithSuggestions(limit, filter)
 	if err != nil {
 		log.Printf("Error getting untagged faces with suggestions: %v", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to get untagged faces"})
+		WriteAPIError(w, http.StatusInternalServerError, "FaceListError", "Failed to get untagged faces")
 		return
 	}
 
@@ -425,14 +425,14 @@ func (fh *FaceHandler) GetUntaggedFaces(w http.ResponseWriter, r *http.Request) 
 // TagFace tags a face with a person and optionally auto-tags similar faces
 func (fh *FaceHandler) TagFace(w http.ResponseWriter, r *http.Request) {
 	if fh.FaceRecognitionService == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Face recognition service not available"})
+		WriteAPIError(w, http.StatusServiceUnavailable, "ServiceUnavailable", "Face recognition service not available")
 		return
 	}
 
 	idStr := chi.URLParam(r, "face_id")
 	faceID, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid face ID format"})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidID", "Invalid face ID format")
 		return
 	}
 
@@ -441,22 +441,22 @@ func (fh *FaceHandler) TagFace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body: " + err.Error()})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request body: "+err.Error())
 		return
 	}
 
 	if req.PersonID == 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "person_id is required and must be greater than 0"})
+		WriteAPIError(w, http.StatusBadRequest, "ValidationError", "person_id is required and must be greater than 0")
 		return
 	}
 
 	// Verify person exists
 	if _, err := fh.PersonRepo.GetByID(req.PersonID); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Person not found"})
+			WriteAPIError(w, http.StatusBadRequest, "PersonNotFound", "Person not found")
 		} else {
 			log.Printf("Error verifying person %d: %v", req.PersonID, err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to verify person"})
+			WriteAPIError(w, http.StatusInternalServerError, "PersonFetchError", "Failed to verify person")
 		}
 		return
 	}
@@ -468,9 +468,9 @@ func (fh *FaceHandler) TagFace(w http.ResponseWriter, r *http.Request) {
 
 		// Check if the error is due to missing face embedding
 		if strings.Contains(err.Error(), "failed to get target face embedding") {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Face does not have an embedding. Face recognition requires embeddings to be generated for faces."})
+			WriteAPIError(w, http.StatusNotFound, "FaceNoEmbedding", "Face does not have an embedding. Face recognition requires embeddings to be generated for faces.")
 		} else {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to tag face"})
+			WriteAPIError(w, http.StatusInternalServerError, "FaceUpdateError", "Failed to tag face")
 		}
 		return
 	}
@@ -481,14 +481,14 @@ func (fh *FaceHandler) TagFace(w http.ResponseWriter, r *http.Request) {
 // AutoTagFace automatically tags a face based on similar faces
 func (fh *FaceHandler) AutoTagFace(w http.ResponseWriter, r *http.Request) {
 	if fh.FaceRecognitionService == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Face recognition service not available"})
+		WriteAPIError(w, http.StatusServiceUnavailable, "ServiceUnavailable", "Face recognition service not available")
 		return
 	}
 
 	idStr := chi.URLParam(r, "face_id")
 	faceID, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid face ID format"})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidID", "Invalid face ID format")
 		return
 	}
 
@@ -499,15 +499,15 @@ func (fh *FaceHandler) AutoTagFace(w http.ResponseWriter, r *http.Request) {
 
 		// Check if the error is due to missing face embedding
 		if strings.Contains(err.Error(), "failed to get target face embedding") {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Face does not have an embedding. Face recognition requires embeddings to be generated for faces."})
+			WriteAPIError(w, http.StatusNotFound, "FaceNoEmbedding", "Face does not have an embedding. Face recognition requires embeddings to be generated for faces.")
 		} else {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to suggest person for face"})
+			WriteAPIError(w, http.StatusInternalServerError, "FaceSuggestError", "Failed to suggest person for face")
 		}
 		return
 	}
 
 	if personID == nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "No suitable person found for this face"})
+		WriteAPIError(w, http.StatusNotFound, "PersonNotFound", "No suitable person found for this face")
 		return
 	}
 
@@ -515,7 +515,7 @@ func (fh *FaceHandler) AutoTagFace(w http.ResponseWriter, r *http.Request) {
 	err = fh.FaceRecognitionService.TagFaceWithPerson(uint(faceID), *personID, false)
 	if err != nil {
 		log.Printf("Error auto-tagging face %d with person %d: %v", faceID, *personID, err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to auto-tag face"})
+		WriteAPIError(w, http.StatusInternalServerError, "FaceUpdateError", "Failed to auto-tag face")
 		return
 	}
 
@@ -534,24 +534,24 @@ func (fh *FaceHandler) AutoTagFace(w http.ResponseWriter, r *http.Request) {
 // SuggestFace returns the best person suggestion for a face without tagging it
 func (fh *FaceHandler) SuggestFace(w http.ResponseWriter, r *http.Request) {
 	if fh.FaceRecognitionService == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Face recognition service not available"})
+		WriteAPIError(w, http.StatusServiceUnavailable, "ServiceUnavailable", "Face recognition service not available")
 		return
 	}
 
 	idStr := chi.URLParam(r, "face_id")
 	faceID, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid face ID format"})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidID", "Invalid face ID format")
 		return
 	}
 
 	similarFaces, err := fh.FaceRecognitionService.FindSimilarFaces(uint(faceID), 10)
 	if err != nil {
 		if strings.Contains(err.Error(), "failed to get target face embedding") {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Face does not have an embedding"})
+			WriteAPIError(w, http.StatusNotFound, "FaceNoEmbedding", "Face does not have an embedding")
 		} else {
 			log.Printf("Error finding similar faces for suggest on face %d: %v", faceID, err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to compute suggestion"})
+			WriteAPIError(w, http.StatusInternalServerError, "FaceSuggestError", "Failed to compute suggestion")
 		}
 		return
 	}
@@ -601,9 +601,7 @@ func (fh *FaceHandler) SuggestFace(w http.ResponseWriter, r *http.Request) {
 // DebugFaces returns debug information about faces in the database
 func (fh *FaceHandler) DebugFaces(w http.ResponseWriter, r *http.Request) {
 	if fh.FaceRecognitionService == nil {
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"error": "Face recognition service not available",
-		})
+		WriteAPIError(w, http.StatusOK, "ServiceUnavailable", "Face recognition service not available")
 		return
 	}
 
@@ -611,9 +609,7 @@ func (fh *FaceHandler) DebugFaces(w http.ResponseWriter, r *http.Request) {
 	face485, err := fh.FaceRepo.GetByID(485)
 	if err != nil {
 		log.Printf("Error getting face 485: %v", err)
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"error": "Face 485 not found",
-		})
+		WriteAPIError(w, http.StatusOK, "FaceNotFound", "Face 485 not found")
 		return
 	}
 

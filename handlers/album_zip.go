@@ -18,23 +18,23 @@ func (ah *AlbumHandler) RequestAlbumZipGeneration(w http.ResponseWriter, r *http
 	album, err := ah.getAlbumByIdentifier(identifier)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Album not found"})
+			WriteAPIError(w, http.StatusNotFound, "AlbumNotFound", "Album not found")
 		} else {
 			log.Printf("Error finding album '%s' for zip request: %v", identifier, err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to find album"})
+			WriteAPIError(w, http.StatusInternalServerError, "AlbumFetchError", "Failed to find album")
 		}
 		return
 	}
 
 	if album.ZipStatus == database.StatusPending || album.ZipStatus == database.StatusProcessing {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "Album ZIP generation is already pending or processing."})
+		WriteAPIError(w, http.StatusConflict, "AlbumZipConflict", "Album ZIP generation is already pending or processing.")
 		return
 	}
 
 	err = ah.AlbumRepo.RequestZip(album.ID)
 	if err != nil {
 		log.Printf("Error marking album zip pending for ID %d: %v", album.ID, err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to request ZIP generation"})
+		WriteAPIError(w, http.StatusInternalServerError, "AlbumZipRequestError", "Failed to request ZIP generation")
 		return
 	}
 
@@ -63,21 +63,21 @@ func (ah *AlbumHandler) serveAlbumZip(w http.ResponseWriter, r *http.Request, id
 	album, err := ah.getAlbumByIdentifier(identifier)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			http.NotFound(w, r)
+			WriteAPIError(w, http.StatusNotFound, "AlbumNotFound", "Album not found")
 		} else {
 			log.Printf("Error finding album '%s' for zip download: %v", identifier, err)
-			http.Error(w, "Failed to find album", http.StatusInternalServerError)
+			WriteAPIError(w, http.StatusInternalServerError, "AlbumFetchError", "Failed to find album")
 		}
 		return
 	}
 
 	if album.ZipStatus != database.StatusDone || album.ZipPath == nil || *album.ZipPath == "" {
 		if album.ZipStatus == database.StatusPending || album.ZipStatus == database.StatusProcessing {
-			http.Error(w, "ZIP archive is currently being generated. Please try again later.", http.StatusAccepted)
+			WriteAPIError(w, http.StatusAccepted, "AlbumZipPending", "ZIP archive is currently being generated. Please try again later.")
 		} else if album.ZipStatus == database.StatusError && album.ZipError != nil {
-			http.Error(w, fmt.Sprintf("ZIP generation failed: %s", *album.ZipError), http.StatusConflict)
+			WriteAPIError(w, http.StatusConflict, "AlbumZipError", fmt.Sprintf("ZIP generation failed: %s", *album.ZipError))
 		} else {
-			http.Error(w, "ZIP archive not available for this album or not yet generated.", http.StatusNotFound)
+			WriteAPIError(w, http.StatusNotFound, "AlbumZipNotFound", "ZIP archive not available for this album or not yet generated.")
 		}
 		return
 	}

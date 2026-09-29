@@ -33,12 +33,12 @@ func (ph *PersonHandler) CreatePerson(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body: " + err.Error()})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request body: "+err.Error())
 		return
 	}
 
 	if strings.TrimSpace(req.PrimaryName) == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Missing required field: primary_name"})
+		WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Missing required field: primary_name")
 		return
 	}
 
@@ -50,7 +50,7 @@ func (ph *PersonHandler) CreatePerson(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// GORM might return a more specific error for unique constraints
 		log.Printf("Error creating person '%s': %v", req.PrimaryName, err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to create person"})
+		WriteAPIError(w, http.StatusInternalServerError, "PersonCreateError", "Failed to create person")
 		return
 	}
 
@@ -84,7 +84,7 @@ func (ph *PersonHandler) ListPeople(w http.ResponseWriter, r *http.Request) {
 	people, err := ph.PersonRepo.ListAll()
 	if err != nil {
 		log.Printf("Error listing people: %v", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve people"})
+		WriteAPIError(w, http.StatusInternalServerError, "PersonListError", "Failed to retrieve people")
 		return
 	}
 	if people == nil {
@@ -97,17 +97,17 @@ func (ph *PersonHandler) GetPerson(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "person_id")
 	personID, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid person ID format"})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidID", "Invalid person ID format")
 		return
 	}
 
 	person, err := ph.PersonRepo.GetByID(uint(personID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Person not found"})
+			WriteAPIError(w, http.StatusNotFound, "PersonNotFound", "Person not found")
 		} else {
 			log.Printf("Error getting person %d: %v", personID, err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve person"})
+			WriteAPIError(w, http.StatusInternalServerError, "PersonFetchError", "Failed to retrieve person")
 		}
 		return
 	}
@@ -119,7 +119,7 @@ func (ph *PersonHandler) UpdatePerson(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "person_id")
 	personID, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid person ID format"})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidID", "Invalid person ID format")
 		return
 	}
 
@@ -127,21 +127,21 @@ func (ph *PersonHandler) UpdatePerson(w http.ResponseWriter, r *http.Request) {
 		PrimaryName string `json:"primary_name"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body: " + err.Error()})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request body: "+err.Error())
 		return
 	}
 	if strings.TrimSpace(req.PrimaryName) == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Missing required field: primary_name"})
+		WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Missing required field: primary_name")
 		return
 	}
 
 	personToUpdate, err := ph.PersonRepo.GetByID(uint(personID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Person not found"})
+			WriteAPIError(w, http.StatusNotFound, "PersonNotFound", "Person not found")
 		} else {
 			log.Printf("Error finding person %d for update: %v", personID, err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to find person for update"})
+			WriteAPIError(w, http.StatusInternalServerError, "PersonFetchError", "Failed to find person for update")
 		}
 		return
 	}
@@ -151,7 +151,7 @@ func (ph *PersonHandler) UpdatePerson(w http.ResponseWriter, r *http.Request) {
 	err = ph.PersonRepo.Update(personToUpdate)
 	if err != nil {
 		log.Printf("Error updating person %d: %v", personID, err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to update person"})
+		WriteAPIError(w, http.StatusInternalServerError, "PersonUpdateError", "Failed to update person")
 		return
 	}
 
@@ -168,17 +168,17 @@ func (ph *PersonHandler) DeletePerson(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "person_id")
 	personID, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid person ID format"})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidID", "Invalid person ID format")
 		return
 	}
 
 	err = ph.PersonRepo.Delete(uint(personID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Person not found"})
+			WriteAPIError(w, http.StatusNotFound, "PersonNotFound", "Person not found")
 		} else {
 			log.Printf("Error deleting person %d: %v", personID, err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to delete person"})
+			WriteAPIError(w, http.StatusInternalServerError, "PersonDeleteError", "Failed to delete person")
 		}
 		return
 	}
@@ -189,14 +189,14 @@ func (ph *PersonHandler) ListAliases(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "person_id")
 	personID, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid person ID format"})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidID", "Invalid person ID format")
 		return
 	}
 
 	aliases, err := ph.PersonRepo.ListAliasesByPersonID(uint(personID))
 	if err != nil {
 		log.Printf("Error listing aliases for person %d: %v", personID, err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to list aliases"})
+		WriteAPIError(w, http.StatusInternalServerError, "AliasListError", "Failed to list aliases")
 		return
 	}
 
@@ -207,17 +207,17 @@ func (ph *PersonHandler) AddAlias(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "person_id")
 	personID, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid person ID format"})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidID", "Invalid person ID format")
 		return
 	}
 
 	_, err = ph.PersonRepo.GetByID(uint(personID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Person not found"})
+			WriteAPIError(w, http.StatusNotFound, "PersonNotFound", "Person not found")
 		} else {
 			log.Printf("Error checking person %d before adding alias: %v", personID, err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to verify person"})
+			WriteAPIError(w, http.StatusInternalServerError, "PersonFetchError", "Failed to verify person")
 		}
 		return
 	}
@@ -226,11 +226,11 @@ func (ph *PersonHandler) AddAlias(w http.ResponseWriter, r *http.Request) {
 		Name string `json:"name"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body: " + err.Error()})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request body: "+err.Error())
 		return
 	}
 	if strings.TrimSpace(req.Name) == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Missing required field: name"})
+		WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Missing required field: name")
 		return
 	}
 
@@ -241,10 +241,10 @@ func (ph *PersonHandler) AddAlias(w http.ResponseWriter, r *http.Request) {
 	err = ph.PersonRepo.AddAlias(&alias)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "unique") || strings.Contains(err.Error(), "UNIQUE constraint failed") {
-			writeJSON(w, http.StatusConflict, map[string]string{"error": "Alias already exists for this person"})
+			WriteAPIError(w, http.StatusConflict, "AliasConflict", "Alias already exists for this person")
 		} else {
 			log.Printf("Error adding alias '%s' to person %d: %v", req.Name, personID, err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to add alias"})
+			WriteAPIError(w, http.StatusInternalServerError, "AliasCreateError", "Failed to add alias")
 		}
 		return
 	}
@@ -272,7 +272,7 @@ func (ph *PersonHandler) SearchPeople(w http.ResponseWriter, r *http.Request) {
 	people, err := ph.PersonRepo.SearchByNameOrAlias(q, limit)
 	if err != nil {
 		log.Printf("Error searching people for '%s': %v", q, err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to search people"})
+		WriteAPIError(w, http.StatusInternalServerError, "PersonSearchError", "Failed to search people")
 		return
 	}
 	if people == nil {
@@ -285,17 +285,17 @@ func (ph *PersonHandler) DeleteAlias(w http.ResponseWriter, r *http.Request) {
 	aliasIdStr := chi.URLParam(r, "alias_id")
 	aliasID, err := strconv.ParseUint(aliasIdStr, 10, 64)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid alias ID format"})
+		WriteAPIError(w, http.StatusBadRequest, "InvalidID", "Invalid alias ID format")
 		return
 	}
 
 	err = ph.PersonRepo.DeleteAlias(uint(aliasID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Alias not found"})
+			WriteAPIError(w, http.StatusNotFound, "AliasNotFound", "Alias not found")
 		} else {
 			log.Printf("Error deleting alias %d: %v", aliasID, err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to delete alias"})
+			WriteAPIError(w, http.StatusInternalServerError, "AliasDeleteError", "Failed to delete alias")
 		}
 		return
 	}

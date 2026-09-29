@@ -40,7 +40,7 @@ func serveObject(w http.ResponseWriter, r *http.Request, store *media.Store, key
 			return
 		}
 		log.Printf("serveObject: failed to open %s: %v", key, err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		WriteAPIError(w, http.StatusInternalServerError, "ObjectOpenError", "Internal Server Error")
 		return
 	}
 	defer obj.Close()
@@ -66,7 +66,7 @@ func ObjectServer(store *media.Store, prefix string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		key, ok := wildcardKey(r)
 		if !ok {
-			http.Error(w, "Invalid asset path", http.StatusBadRequest)
+			WriteAPIError(w, http.StatusBadRequest, "InvalidPath", "Invalid asset path")
 			return
 		}
 		serveObject(w, r, store, prefix+key, immutableCacheControl, "")

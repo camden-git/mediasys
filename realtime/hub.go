@@ -4,10 +4,45 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strconv"
 	"sync"
 
 	"github.com/gorilla/websocket"
 )
+
+// apiErrorResponse mirrors handlers.APIErrorResponse so the websocket upgrade
+// path (which cannot import handlers without an import cycle) returns the
+// same standardized error shape as the rest of the API.
+type apiErrorResponse struct {
+	Errors []apiErrorDetail `json:"errors"`
+}
+
+type apiErrorDetail struct {
+	Code   string `json:"code"`
+	Status string `json:"status"`
+	Detail string `json:"detail"`
+}
+
+// writeUpgradeError writes a websocket handshake failure using the standard
+// API error response shape.
+func writeUpgradeError(w http.ResponseWriter, status int, reason error) {
+	detail := http.StatusText(status)
+	if reason != nil {
+		detail = reason.Error()
+	}
+	resp := apiErrorResponse{
+		Errors: []apiErrorDetail{
+			{
+				Code:   "WebSocketUpgradeError",
+				Status: strconv.Itoa(status),
+				Detail: detail,
+			},
+		},
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(resp)
+}
 
 // Event represents a message sent to websocket clients
 type Event struct {
@@ -87,6 +122,9 @@ func (h *Hub) Broadcast(event Event) {
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
+	Error: func(w http.ResponseWriter, r *http.Request, status int, reason error) {
+		writeUpgradeError(w, status, reason)
+	},
 }
 
 // ServeWS upgrades the connection and registers a client

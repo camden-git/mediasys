@@ -22,7 +22,7 @@ func (h *PermissionsHandler) ListDefinedPermissions(w http.ResponseWriter, r *ht
 	if err := json.NewEncoder(w).Encode(permissions.DefinedPermissionGroups); err != nil {
 		// Log the error internally
 		// log.Printf("Error encoding defined permissions: %v", err)
-		http.Error(w, "Failed to serve permission definitions", http.StatusInternalServerError)
+		WriteAPIError(w, http.StatusInternalServerError, "EncodingError", "Failed to serve permission definitions")
 	}
 }
 
@@ -31,6 +31,6 @@ func (h *PermissionsHandler) ListDefinedPermissionKeys(w http.ResponseWriter, r 
 	w.Header().Set("Content-Type", "application/json")
 	keys := permissions.GetAllPermissionKeys()
 	if err := json.NewEncoder(w).Encode(keys); err != nil {
-		http.Error(w, "Failed to serve permission keys", http.StatusInternalServerError)
+		WriteAPIError(w, http.StatusInternalServerError, "EncodingError", "Failed to serve permission keys")
 	}
 }
