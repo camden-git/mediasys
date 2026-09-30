@@ -41,6 +41,8 @@ export const BannerManager: React.FC<BannerManagerProps> = ({ banners, onAdd, on
 
     const handleDragLeave = (e: React.DragEvent) => {
         e.preventDefault();
+        // ignore leaves into child elements
+        if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
         setIsDragOver(false);
     };
 
@@ -101,6 +103,7 @@ export const BannerManager: React.FC<BannerManagerProps> = ({ banners, onAdd, on
                                     onClick={() => handleMove(idx, -1)}
                                     disabled={idx === 0 || isUploading}
                                     title='Move up'
+                                    aria-label={`Move banner ${idx + 1} up`}
                                 >
                                     <ChevronUpIcon className='size-4' />
                                 </Button>
@@ -110,6 +113,7 @@ export const BannerManager: React.FC<BannerManagerProps> = ({ banners, onAdd, on
                                     onClick={() => handleMove(idx, 1)}
                                     disabled={idx === banners.length - 1 || isUploading}
                                     title='Move down'
+                                    aria-label={`Move banner ${idx + 1} down`}
                                 >
                                     <ChevronDownIcon className='size-4' />
                                 </Button>
@@ -119,6 +123,7 @@ export const BannerManager: React.FC<BannerManagerProps> = ({ banners, onAdd, on
                                     onClick={() => onDelete(banner.id)}
                                     disabled={isUploading}
                                     title='Remove banner'
+                                    aria-label={`Remove banner ${idx + 1}`}
                                 >
                                     <TrashIcon className='size-4 text-red-500' />
                                 </Button>
