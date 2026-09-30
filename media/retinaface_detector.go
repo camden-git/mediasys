@@ -164,6 +164,29 @@ func (r *RetinaFaceDetector) Close() {
 	}
 }
 
+// letterbox scales img to fit the network input while keeping its aspect ratio,
+// anchored top-left and padded with the mean colour (which becomes zero after
+// mean subtraction). It returns the canvas and the applied scale factor.
+func (r *RetinaFaceDetector) letterbox(img gocv.Mat) (gocv.Mat, float32) {
+	scale := min(float32(r.InputSizeW)/float32(img.Cols()), float32(r.InputSizeH)/float32(img.Rows()))
+	newW := max(1, min(r.InputSizeW, int(float32(img.Cols())*scale+0.5)))
+	newH := max(1, min(r.InputSizeH, int(float32(img.Rows())*scale+0.5)))
+
+	interp := gocv.InterpolationLinear
+	if scale < 1 {
+		interp = gocv.InterpolationArea
+	}
+	resized := gocv.NewMat()
+	defer resized.Close()
+	gocv.Resize(img, &resized, image.Pt(newW, newH), 0, 0, interp)
+
+	canvas := gocv.NewMatWithSizeFromScalar(r.MeanVal, r.InputSizeH, r.InputSizeW, resized.Type())
+	roi := canvas.Region(image.Rect(0, 0, newW, newH))
+	resized.CopyTo(&roi)
+	roi.Close()
+	return canvas, scale
+}
+
 // DetectFaces runs face detection using RetinaFace
 func (r *RetinaFaceDetector) DetectFaces(img gocv.Mat) ([]DetectionResult, error) {
 	if r == nil || !r.Enabled {
@@ -176,7 +199,10 @@ func (r *RetinaFaceDetector) DetectFaces(img gocv.Mat) ([]DetectionResult, error
 	imgHeight := float32(img.Rows())
 	imgWidth := float32(img.Cols())
 
-	blob := gocv.BlobFromImage(img, 1.0, image.Pt(r.InputSizeW, r.InputSizeH), gocv.NewScalar(104.0, 117.0, 123.0, 0), false, false)
+	canvas, scale := r.letterbox(img)
+	defer canvas.Close()
+
+	blob := gocv.BlobFromImage(canvas, 1.0, image.Pt(r.InputSizeW, r.InputSizeH), r.MeanVal, false, false)
 	defer blob.Close()
 
 	r.Net.SetInput(blob, "")
@@ -231,14 +257,18 @@ func (r *RetinaFaceDetector) DetectFaces(img gocv.Mat) ([]DetectionResult, error
 		return nil, fmt.Errorf("retinaface: could not identify outputs (numPriors=%d, totals=%v, names=%v)", numPriors, totals, outputNames)
 	}
 
-	return r.parseRetinaFaceOutput(*boxesMat, *scoresMat, *landmarksMat, imgWidth, imgHeight)
+	return r.parseRetinaFaceOutput(*boxesMat, *scoresMat, *landmarksMat, imgWidth, imgHeight, scale)
 }
 
 // parseRetinaFaceOutput parses the RetinaFace model outputs (boxes, scores, landmarks)
-func (r *RetinaFaceDetector) parseRetinaFaceOutput(boxes, scores, landmarks gocv.Mat, imgWidth, imgHeight float32) ([]DetectionResult, error) {
+func (r *RetinaFaceDetector) parseRetinaFaceOutput(boxes, scores, landmarks gocv.Mat, imgWidth, imgHeight, scale float32) ([]DetectionResult, error) {
 	// Derive numDetections from total element count (Total() works; Size()[1] doesn't for 3D blobs).
 	// boxes has numPriors×4 elements → numDetections = Total()/4
 	numDetections := boxes.Total() / 4
+
+	// Predictions are normalised to the (letterboxed) network input, so
+	// multiplying by inverse maps them back to original image pixels.
+	inverse := float32(r.InputSizeW) / scale
 
 	priors := r.Priors
 	if len(priors) != numDetections {
@@ -267,10 +297,10 @@ func (r *RetinaFaceDetector) parseRetinaFaceOutput(boxes, scores, landmarks gocv
 			rawBox[j] = boxes2D.GetFloatAt(i, j)
 		}
 		decoded := DecodeBox(rawBox, priors[i], variances)
-		x1 := max(0, decoded[0]*imgWidth)
-		y1 := max(0, decoded[1]*imgHeight)
-		x2 := min(imgWidth, decoded[2]*imgWidth)
-		y2 := min(imgHeight, decoded[3]*imgHeight)
+		x1 := max(0, decoded[0]*inverse)
+		y1 := max(0, decoded[1]*inverse)
+		x2 := min(imgWidth, decoded[2]*inverse)
+		y2 := min(imgHeight, decoded[3]*inverse)
 		if x2 <= x1 || y2 <= y1 {
 			continue
 		}
@@ -283,8 +313,8 @@ func (r *RetinaFaceDetector) parseRetinaFaceOutput(boxes, scores, landmarks gocv
 		var pts []Point2D
 		for j := 0; j < 5; j++ {
 			pts = append(pts, Point2D{
-				X: decodedLM[j*2] * imgWidth,
-				Y: decodedLM[j*2+1] * imgHeight,
+				X: decodedLM[j*2] * inverse,
+				Y: decodedLM[j*2+1] * inverse,
 			})
 		}
 
