@@ -35,6 +35,25 @@ function chunkImagesBySize(images: FileInfo[], maxBytes: number): FileInfo[][] {
     return chunks;
 }
 
+const isImageFile = (file: FileInfo) => !file.is_dir && !!file.thumbnail_path;
+
+const MIME_BY_EXT: Record<string, string> = {
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    gif: 'image/gif',
+    webp: 'image/webp',
+    heic: 'image/heic',
+    heif: 'image/heif',
+    avif: 'image/avif',
+    tif: 'image/tiff',
+    tiff: 'image/tiff',
+};
+
+function mimeFromName(name: string): string {
+    return MIME_BY_EXT[name.split('.').pop()?.toLowerCase() ?? ''] ?? 'application/octet-stream';
+}
+
 const AlbumView: React.FC = () => {
     const routeParams = useParams<{ identifier: string; '*': string }>();
     const identifier = routeParams.identifier;
@@ -72,6 +91,9 @@ const AlbumView: React.FC = () => {
     const [currentChunkIndex, setCurrentChunkIndex] = useState(0);
     const [isSharing, setIsSharing] = useState(false);
     const [shareProgress, setShareProgress] = useState<ShareProgress>(null);
+    const [isPreparing, setIsPreparing] = useState(false);
+    const [isLoadingAll, setIsLoadingAll] = useState(false);
+    const [preparedFiles, setPreparedFiles] = useState<File[] | null>(null);
     const [layoutVersion, setLayoutVersion] = useState(0);
 
     const navigate = useNavigate();
@@ -103,7 +125,7 @@ const AlbumView: React.FC = () => {
         );
     };
 
-    const imageFiles = useMemo(() => activeFiles.filter((file) => !file.is_dir && file.thumbnail_path), [activeFiles]);
+    const imageFiles = useMemo(() => activeFiles.filter(isImageFile), [activeFiles]);
 
     const canLoadMore = !!hasNextPage;
 
@@ -306,33 +328,84 @@ const AlbumView: React.FC = () => {
         setDownloadModalOpen(false);
     };
 
-    const shareChunk = async (chunk: FileInfo[], chunkNumber: number, totalChunks: number) => {
-        setIsSharing(true);
-        setShareProgress(null);
-        try {
-            const files: File[] = [];
-            for (let i = 0; i < chunk.length; i++) {
-                const image = chunk[i];
-                setShareProgress({
-                    current: i + 1,
-                    total: chunk.length,
-                    size: chunk.reduce((sum, img) => sum + img.size, 0),
+    // Web Share needs a fresh user activation, so files are fetched ahead of the click
+    // and the click handler only calls navigator.share.
+    useEffect(() => {
+        if (!shareChunksDialogOpen) return;
+        const chunk = shareChunks[currentChunkIndex];
+        if (!chunk) return;
+        const controller = new AbortController();
+        setPreparedFiles(null);
+        setIsPreparing(true);
+        const size = chunk.reduce((sum, img) => sum + img.size, 0);
+        void (async () => {
+            try {
+                const files: File[] = [];
+                const usedNames = new Set<string>();
+                for (let i = 0; i < chunk.length; i++) {
+                    const image = chunk[i];
+                    setShareProgress({ current: i + 1, total: chunk.length, size });
+                    const response = await fetch(getOriginalImageUrl(image.path), { signal: controller.signal });
+                    if (!response.ok) throw new Error(`Failed to download ${image.name} (${response.status})`);
+                    const blob = await response.blob();
+                    let name = image.name;
+                    if (usedNames.has(name)) name = `${i + 1}-${name}`;
+                    usedNames.add(name);
+                    files.push(new File([blob], name, { type: blob.type || mimeFromName(name) }));
+                }
+                if (controller.signal.aborted) return;
+                setPreparedFiles(files);
+            } catch (error) {
+                if (controller.signal.aborted) return;
+                setShareChunksDialogOpen(false);
+                addFlash({
+                    key: 'album',
+                    type: 'error',
+                    title: 'Failed to prepare photos',
+                    message: (error as Error).message || 'Something went wrong while downloading the photos.',
                 });
-                const response = await fetch(getOriginalImageUrl(image.path));
-                const blob = await response.blob();
-                const file = new File([blob], `photo${i + 1}.jpg`, { type: 'image/jpeg' });
-                files.push(file);
+            } finally {
+                if (!controller.signal.aborted) {
+                    setIsPreparing(false);
+                    setShareProgress(null);
+                }
             }
+        })();
+        return () => controller.abort();
+    }, [shareChunksDialogOpen, shareChunks, currentChunkIndex, addFlash]);
+
+    const shareCurrentChunk = async () => {
+        if (!preparedFiles || isSharing) return;
+        const title = `${currentAlbum?.name} (Part ${currentChunkIndex + 1} of ${shareChunks.length})`;
+        if (!navigator.canShare?.({ files: preparedFiles })) {
+            setShareChunksDialogOpen(false);
+            addFlash({
+                key: 'album',
+                type: 'error',
+                title: 'Failed to share',
+                message: 'Your device cannot share these files. Please download the album zip instead.',
+            });
+            return;
+        }
+        setIsSharing(true);
+        try {
             await navigator.share({
-                files: files,
-                title: `${currentAlbum?.name} (Part ${chunkNumber} of ${totalChunks})`,
-                text: `Check out these photos from ${currentAlbum?.name}! (Part ${chunkNumber} of ${totalChunks})`,
+                files: preparedFiles,
+                title,
+                text: `Check out these photos from ${currentAlbum?.name}! (Part ${currentChunkIndex + 1} of ${shareChunks.length})`,
             });
         } catch (error) {
-            console.error('Error sharing images:', error);
+            if ((error as Error).name !== 'AbortError') {
+                setShareChunksDialogOpen(false);
+                addFlash({
+                    key: 'album',
+                    type: 'error',
+                    title: 'Failed to share',
+                    message: (error as Error).message || 'Something went wrong while sharing.',
+                });
+            }
         } finally {
             setIsSharing(false);
-            setShareProgress(null);
         }
     };
 
@@ -347,28 +420,41 @@ const AlbumView: React.FC = () => {
             });
             return;
         }
-        if (!currentAlbum || imageFiles.length === 0) return;
-        const chunks = chunkImagesBySize(imageFiles, MAX_SHARE_CHUNK_BYTES);
-        if (chunks.length === 0) return;
-        if (chunks.length === 1) {
-            await shareChunk(chunks[0], 1, 1);
-            return;
+        if (!currentAlbum || imageFiles.length === 0 || isLoadingAll) return;
+        setIsLoadingAll(true);
+        try {
+            // sharing the whole album means every page has to be loaded first
+            let images = imageFiles;
+            let more = canLoadMore;
+            while (more) {
+                const result = await fetchNextPage();
+                if (result.isError || !result.data) throw result.error ?? new Error('Failed to load all photos');
+                images = result.data.pages.flatMap((p) => p.files ?? []).filter(isImageFile);
+                more = !!result.hasNextPage;
+            }
+            const chunks = chunkImagesBySize(images, MAX_SHARE_CHUNK_BYTES);
+            if (chunks.length === 0) return;
+            setShareChunks(chunks);
+            setCurrentChunkIndex(0);
+            setShareChunksDialogOpen(true);
+        } catch (error) {
+            addFlash({
+                key: 'album',
+                type: 'error',
+                title: 'Failed to load photos',
+                message: (error as Error).message || 'Could not load the whole album to share.',
+            });
+        } finally {
+            setIsLoadingAll(false);
         }
-        setShareChunks(chunks);
-        setCurrentChunkIndex(0);
-        setShareChunksDialogOpen(true);
     };
 
-    const handleShareNextChunk = async () => {
+    const handleShareNextChunk = () => {
         if (currentChunkIndex < shareChunks.length - 1) {
             setCurrentChunkIndex(currentChunkIndex + 1);
         } else {
             setShareChunksDialogOpen(false);
         }
-    };
-
-    const handleShareCurrentChunk = async () => {
-        await shareChunk(shareChunks[currentChunkIndex], currentChunkIndex + 1, shareChunks.length);
     };
 
     const error = albumError
@@ -445,26 +531,23 @@ const AlbumView: React.FC = () => {
             <ShareChunksDialog
                 open={shareChunksDialogOpen}
                 onClose={setShareChunksDialogOpen}
-                images={imageFiles}
                 chunks={shareChunks}
                 currentIndex={currentChunkIndex}
                 isSharing={isSharing}
+                isPreparing={isPreparing}
+                ready={!!preparedFiles}
                 progress={shareProgress}
-                onShareCurrent={handleShareCurrentChunk}
+                onShareCurrent={shareCurrentChunk}
                 onNext={handleShareNextChunk}
             />
             {imageFiles.length > 0 && (
                 <button
                     onClick={handleShare}
-                    disabled={isSharing}
+                    disabled={isSharing || isLoadingAll}
                     className='inline-flex items-center gap-x-2 rounded-full bg-gray-950 px-3 py-0.5 text-sm/7 font-semibold text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-700 dark:hover:bg-gray-600'
                 >
                     <ShareIcon className='size-2 fill-white' />
-                    {isSharing
-                        ? shareProgress
-                            ? `Processing ${shareProgress.current}/${shareProgress.total} (${(shareProgress.size / (1024 * 1024)).toFixed(1)}MB)`
-                            : 'Sharing...'
-                        : 'Share'}
+                    {isLoadingAll ? 'Loading photos...' : 'Share'}
                 </button>
             )}
         </>
