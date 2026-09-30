@@ -453,43 +453,22 @@ func (fh *FaceHandler) GetUntaggedFaces(w http.ResponseWriter, r *http.Request) 
 		filter.GroupByImage = true
 	}
 
-	untaggedFaces, err := fh.FaceRecognitionService.GetUntaggedFacesWithSuggestions(limit, filter)
+	var albumID *uint
+	if v := q.Get("album_id"); v != "" {
+		id, err := strconv.ParseUint(v, 10, 64)
+		if err != nil || id == 0 {
+			WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Invalid album_id")
+			return
+		}
+		aid := uint(id)
+		albumID = &aid
+	}
+
+	untaggedFaces, err := fh.FaceRecognitionService.GetUntaggedFacesWithSuggestions(limit, filter, albumID)
 	if err != nil {
 		log.Printf("Error getting untagged faces with suggestions: %v", err)
 		WriteAPIError(w, http.StatusInternalServerError, "FaceListError", "Failed to get untagged faces")
 		return
-	}
-
-	// Enrich results with original image dimensions so the frontend can
-	// correctly normalise pixel-space bounding-box coordinates.
-	if fh.ImageRepo != nil && len(untaggedFaces) > 0 {
-		// Collect unique image paths
-		seen := make(map[string]bool)
-		var paths []string
-		for _, f := range untaggedFaces {
-			if p, ok := f["image_path"].(string); ok && !seen[p] {
-				seen[p] = true
-				paths = append(paths, p)
-			}
-		}
-
-		images, imgErr := fh.ImageRepo.GetImagesByPaths(paths)
-		if imgErr == nil {
-			dims := make(map[string][2]int, len(images))
-			for _, img := range images {
-				if img.Width != nil && img.Height != nil {
-					dims[img.OriginalPath] = [2]int{*img.Width, *img.Height}
-				}
-			}
-			for i, f := range untaggedFaces {
-				if p, ok := f["image_path"].(string); ok {
-					if d, found := dims[p]; found {
-						untaggedFaces[i]["image_width"] = d[0]
-						untaggedFaces[i]["image_height"] = d[1]
-					}
-				}
-			}
-		}
 	}
 
 	writeJSON(w, http.StatusOK, untaggedFaces)

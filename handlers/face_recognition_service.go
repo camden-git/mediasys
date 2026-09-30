@@ -33,6 +33,7 @@ type SimilarFaceResult struct {
 	FaceID     uint    `json:"face_id"`
 	PersonID   *uint   `json:"person_id,omitempty"`
 	PersonName *string `json:"person_name,omitempty"`
+	Confirmed  bool    `json:"confirmed"`
 	ImagePath  string  `json:"image_path"`
 	Similarity float32 `json:"similarity"`
 	X1         int     `json:"x1"`
@@ -50,68 +51,31 @@ func (s *FaceRecognitionService) FindSimilarFaces(faceID uint, limit int) ([]Sim
 	}
 
 	targetVector := targetEmbedding.GetEmbedding()
-	if targetVector == nil {
+	if len(targetVector) == 0 {
 		return nil, fmt.Errorf("target face has no valid embedding")
 	}
 
-	// Find similar embeddings (without threshold filtering, we'll do that in the service)
-	similarEmbeddings, err := s.embeddingRepo.FindSimilarFaces(targetVector, 0.0, limit*2) // Get more candidates
+	// threshold, model filter and limit are applied in SQL
+	similar, err := s.embeddingRepo.FindSimilarFaces(targetVector, targetEmbedding.EmbeddingModel, faceID, s.similarityThreshold, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find similar faces: %w", err)
 	}
 
-	// Convert to results and apply threshold filtering
-	var results []SimilarFaceResult
-	for _, embedding := range similarEmbeddings {
-		if embedding.FaceID == faceID {
-			continue // Skip the target face itself
-		}
-
-		embeddingVector := embedding.GetEmbedding()
-		if embeddingVector == nil {
-			continue
-		}
-
-		// Calculate similarity
-		similarity := s.CalculateSimilarity(targetVector, embeddingVector)
-
-		// Apply threshold filtering
-		if similarity < s.similarityThreshold {
-			continue
-		}
-
-		// Check if Face is loaded
-		if embedding.Face == nil {
-			log.Printf("Warning: Face data not loaded for embedding %d, skipping", embedding.FaceID)
-			continue
-		}
-
-		result := SimilarFaceResult{
-			FaceID:     embedding.FaceID,
-			ImagePath:  embedding.Face.ImagePath,
-			Similarity: similarity,
-			X1:         embedding.Face.X1,
-			Y1:         embedding.Face.Y1,
-			X2:         embedding.Face.X2,
-			Y2:         embedding.Face.Y2,
-		}
-
-		// Add person information if available
-		if embedding.Face.PersonID != nil {
-			result.PersonID = embedding.Face.PersonID
-			if embedding.Face.Person != nil {
-				result.PersonName = &embedding.Face.Person.PrimaryName
-			}
-		}
-
-		results = append(results, result)
-
-		// Limit results
-		if len(results) >= limit {
-			break
-		}
+	results := make([]SimilarFaceResult, 0, len(similar))
+	for _, sf := range similar {
+		results = append(results, SimilarFaceResult{
+			FaceID:     sf.FaceID,
+			PersonID:   sf.PersonID,
+			PersonName: sf.PersonName,
+			Confirmed:  sf.Confirmed,
+			ImagePath:  sf.ImagePath,
+			Similarity: sf.Similarity,
+			X1:         sf.X1,
+			Y1:         sf.Y1,
+			X2:         sf.X2,
+			Y2:         sf.Y2,
+		})
 	}
-
 	return results, nil
 }
 
@@ -132,6 +96,7 @@ type PersonSuggestion struct {
 
 // suggestPerson picks the person appearing most often among the votes, breaking
 // ties by the highest similarity. Untagged votes are ignored.
+// Callers must only pass votes from confirmed faces.
 func suggestPerson(votes []personVote) PersonSuggestion {
 	counts := make(map[uint]int)
 	similarities := make(map[uint]float32)
@@ -168,9 +133,12 @@ func (s *FaceRecognitionService) SuggestPerson(faceID uint) (PersonSuggestion, e
 		return PersonSuggestion{}, err
 	}
 
-	votes := make([]personVote, len(similarFaces))
-	for i, sf := range similarFaces {
-		votes[i] = personVote{PersonID: sf.PersonID, PersonName: sf.PersonName, Similarity: sf.Similarity}
+	// only human-confirmed tags vote; auto-tags must not reinforce themselves
+	votes := make([]personVote, 0, len(similarFaces))
+	for _, sf := range similarFaces {
+		if sf.Confirmed {
+			votes = append(votes, personVote{PersonID: sf.PersonID, PersonName: sf.PersonName, Similarity: sf.Similarity})
+		}
 	}
 	return suggestPerson(votes), nil
 }
@@ -215,95 +183,64 @@ func (s *FaceRecognitionService) TagFaceWithPerson(faceID uint, personID uint, c
 	return nil
 }
 
-// GetUntaggedFacesWithSuggestions returns untagged faces with person suggestions
-func (s *FaceRecognitionService) GetUntaggedFacesWithSuggestions(limit int, filter repository.UntaggedFaceFilter) ([]map[string]interface{}, error) {
-	// Query 1: untagged embeddings with Face preloaded (filtered + sorted at DB level)
-	untaggedEmbeddings, err := s.embeddingRepo.GetUntaggedEmbeddingsFiltered(filter)
+// untaggedNeighbours is how many nearest faces are considered per untagged face.
+const untaggedNeighbours = 20
+
+// GetUntaggedFacesWithSuggestions returns untagged faces with person suggestions. The page
+// is selected in SQL and all neighbours are fetched in one batched query. A non-nil albumID
+// restricts the faces to that album.
+func (s *FaceRecognitionService) GetUntaggedFacesWithSuggestions(limit int, filter repository.UntaggedFaceFilter, albumID *uint) ([]map[string]interface{}, error) {
+	faces, err := s.embeddingRepo.ListUntagged(filter, albumID, limit)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get untagged embeddings: %w", err)
+		return nil, fmt.Errorf("failed to get untagged faces: %w", err)
 	}
 
-	// Group-by-image: keep only the first (best) embedding per image path.
-	// The embeddings are already sorted by the requested criterion, so the first
-	// occurrence per image_path is the "best" one.
-	if filter.GroupByImage {
-		seen := make(map[string]bool, len(untaggedEmbeddings))
-		filtered := untaggedEmbeddings[:0]
-		for _, e := range untaggedEmbeddings {
-			if e.Face == nil {
-				continue
-			}
-			if !seen[e.Face.ImagePath] {
-				seen[e.Face.ImagePath] = true
-				filtered = append(filtered, e)
-			}
-		}
-		untaggedEmbeddings = filtered
+	ids := make([]uint, len(faces))
+	for i, f := range faces {
+		ids[i] = f.FaceID
+	}
+	neighbours, err := s.embeddingRepo.NeighborsForFaces(ids, s.similarityThreshold, untaggedNeighbours)
+	if err != nil {
+		return nil, err
+	}
+	bySource := make(map[uint][]repository.SimilarFace, len(faces))
+	for _, n := range neighbours {
+		bySource[n.SourceFaceID] = append(bySource[n.SourceFaceID], n)
 	}
 
-	var results []map[string]interface{}
-	for i, embedding := range untaggedEmbeddings {
-		if i >= limit {
-			break
-		}
-		targetVec := embedding.GetEmbedding()
-		if targetVec == nil || embedding.Face == nil {
-			continue
-		}
-
-		// Find similar faces via pgvector's HNSW index instead of scanning every
-		// embedding in memory. Over-fetch a little since the target face itself
-		// may be included in the results.
-		similarEmbeddings, err := s.embeddingRepo.FindSimilarFaces(targetVec, s.similarityThreshold, 21)
-		if err != nil {
-			return nil, fmt.Errorf("failed to find similar faces for face %d: %w", embedding.FaceID, err)
-		}
-
-		var similar []personVote
-		for _, other := range similarEmbeddings {
-			if other.FaceID == embedding.FaceID || other.Face == nil {
-				continue
+	results := make([]map[string]interface{}, 0, len(faces))
+	for _, f := range faces {
+		similar := bySource[f.FaceID]
+		// only confirmed neighbours vote for a person
+		var votes []personVote
+		for _, n := range similar {
+			if n.Confirmed {
+				votes = append(votes, personVote{PersonID: n.PersonID, PersonName: n.PersonName, Similarity: n.Similarity})
 			}
-			otherVec := other.GetEmbedding()
-			if otherVec == nil {
-				continue
-			}
-			sim := s.CalculateSimilarity(targetVec, otherVec)
-			var personID *uint
-			var personName *string
-			if other.Face.PersonID != nil {
-				personID = other.Face.PersonID
-				if other.Face.Person != nil {
-					name := other.Face.Person.PrimaryName
-					personName = &name
-				}
-			}
-			similar = append(similar, personVote{
-				PersonID:   personID,
-				PersonName: personName,
-				Similarity: sim,
-			})
 		}
+		suggestion := suggestPerson(votes)
 
-		// Vote for suggested person by count, breaking ties by similarity
-		suggestion := suggestPerson(similar)
-
-		results = append(results, map[string]interface{}{
-			"face_id":               embedding.FaceID,
-			"image_path":            embedding.Face.ImagePath,
-			"x1":                    embedding.Face.X1,
-			"y1":                    embedding.Face.Y1,
-			"x2":                    embedding.Face.X2,
-			"y2":                    embedding.Face.Y2,
-			"detection_confidence":  embedding.Face.DetectionConfidence,
-			"quality_score":         embedding.Face.QualityScore,
+		item := map[string]interface{}{
+			"face_id":               f.FaceID,
+			"image_path":            f.ImagePath,
+			"x1":                    f.X1,
+			"y1":                    f.Y1,
+			"x2":                    f.X2,
+			"y2":                    f.Y2,
+			"detection_confidence":  f.DetectionConfidence,
+			"quality_score":         f.QualityScore,
 			"similar_faces_count":   len(similar),
 			"suggested_person_id":   suggestion.PersonID,
 			"suggested_person_name": suggestion.PersonName,
 			"suggestion_count":      suggestion.Count,
-		})
+		}
+		// original dimensions let the frontend normalise pixel-space boxes
+		if f.ImageWidth != nil && f.ImageHeight != nil {
+			item["image_width"] = *f.ImageWidth
+			item["image_height"] = *f.ImageHeight
+		}
+		results = append(results, item)
 	}
-
 	return results, nil
 }
 

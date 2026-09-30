@@ -107,8 +107,9 @@ type UntaggedFaceFilter struct {
 type FaceEmbeddingRepositoryInterface interface {
 	GetByFaceID(faceID uint) (*models.FaceEmbedding, error)
 	DeleteByFaceID(faceID uint) error
-	GetUntaggedEmbeddingsFiltered(filter UntaggedFaceFilter) ([]models.FaceEmbedding, error)
-	FindSimilarFaces(targetEmbedding []float32, threshold float32, limit int) ([]models.FaceEmbedding, error)
+	ListUntagged(filter UntaggedFaceFilter, albumID *uint, limit int) ([]UntaggedFace, error)
+	FindSimilarFaces(targetEmbedding []float32, embeddingModel string, excludeFaceID uint, threshold float32, limit int) ([]SimilarFace, error)
+	NeighborsForFaces(faceIDs []uint, threshold float32, perFace int) ([]SimilarFace, error)
 }
 
 // UserRepository defines the methods for user data operations
