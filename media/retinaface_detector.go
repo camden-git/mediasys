@@ -496,6 +496,11 @@ func (r *RetinaFaceDetector) DetectFacesAndExtractEmbeddings(img gocv.Mat, recog
 				embedding, err = recognitionModel.ExtractEmbedding(faceRegion)
 				faceRegion.Close()
 			}
+			if errors.Is(err, ErrZeroEmbedding) {
+				// keep the detection but store no embedding for it
+				log.Printf("face %d: %v; skipping embedding", i, err)
+				continue
+			}
 			if err != nil {
 				return nil, fmt.Errorf("face %d: %w", i, err)
 			}

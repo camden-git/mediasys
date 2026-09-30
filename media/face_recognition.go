@@ -190,7 +190,7 @@ func (f *FaceRecognitionModel) embed(face gocv.Mat) ([]float32, error) {
 		return nil, fmt.Errorf("empty embedding from model output shape %v", output.Size())
 	}
 
-	return f.normalizeEmbedding(embedding), nil
+	return f.normalizeEmbedding(embedding)
 }
 
 // extractEmbeddingVector extracts the embedding vector from model output
@@ -217,10 +217,14 @@ func (f *FaceRecognitionModel) extractEmbeddingVector(output gocv.Mat) []float32
 	return embedding
 }
 
-// normalizeEmbedding normalizes the embedding vector to unit length
-func (f *FaceRecognitionModel) normalizeEmbedding(embedding []float32) []float32 {
+// ErrZeroEmbedding is returned when the model produces an all-zero vector, which cannot be
+// normalized and would yield NaN cosine distances in pgvector.
+var ErrZeroEmbedding = errors.New("model produced a zero embedding")
+
+// normalizeEmbedding normalizes the embedding vector to unit length.
+func (f *FaceRecognitionModel) normalizeEmbedding(embedding []float32) ([]float32, error) {
 	if len(embedding) == 0 {
-		return embedding
+		return nil, errors.New("empty embedding")
 	}
 
 	// Calculate L2 norm
@@ -230,8 +234,8 @@ func (f *FaceRecognitionModel) normalizeEmbedding(embedding []float32) []float32
 	}
 	norm = float32(math.Sqrt(float64(norm)))
 
-	if norm == 0 {
-		return embedding
+	if norm == 0 || math.IsNaN(float64(norm)) || math.IsInf(float64(norm), 0) {
+		return nil, ErrZeroEmbedding
 	}
 
 	// Normalize
@@ -240,5 +244,5 @@ func (f *FaceRecognitionModel) normalizeEmbedding(embedding []float32) []float32
 		normalized[i] = val / norm
 	}
 
-	return normalized
+	return normalized, nil
 }
