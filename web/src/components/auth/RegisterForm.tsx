@@ -10,6 +10,8 @@ import FlashMessageRender from '../elements/FlashMessageRender.tsx';
 import { useFlash } from '../../hooks/useFlash';
 import { Formik, Form } from 'formik';
 import * as Yup from 'yup';
+import { withRateLimitMessage } from '../../lib/helpers';
+import { useDocumentTitle } from '../../hooks/useDocumentTitle';
 
 export const RegisterForm: React.FC = () => {
     const [isRegistering, setIsRegistering] = useState(false);
@@ -28,12 +30,14 @@ export const RegisterForm: React.FC = () => {
     const validationSchema = Yup.object().shape({
         first_name: Yup.string().required('First name is required.'),
         last_name: Yup.string().required('Last name is required.'),
-        username: Yup.string().required('Email is required.'),
-        password: Yup.string().required('Password is required.'),
+        username: Yup.string().required('A username or email is required.'),
+        password: Yup.string().min(8, 'Password must be at least 8 characters.').required('Password is required.'),
         invite_code: Yup.string()
             .matches(/^\d{6}$/, 'Invite code must be a 6-digit PIN.')
             .required('Invite code is required.'),
     });
+
+    useDocumentTitle('Create account');
 
     if (registrationSuccess) {
         return (
@@ -65,7 +69,7 @@ export const RegisterForm: React.FC = () => {
                     });
                     setRegistrationSuccess(true);
                 } catch (err: any) {
-                    clearAndAddHttpError({ error: err, key: 'auth:register' });
+                    clearAndAddHttpError({ error: withRateLimitMessage(err), key: 'auth:register' });
                 } finally {
                     setIsRegistering(false);
                     setSubmitting(false);
@@ -92,14 +96,16 @@ export const RegisterForm: React.FC = () => {
                     />
                     <FormikFieldComponent
                         name='username'
-                        label='Email'
+                        label='Username or email'
                         type='text'
+                        autoComplete='username'
                         disabled={isRegistering || isSubmitting}
                     />
                     <FormikFieldComponent
                         name='password'
                         label='Password'
                         type='password'
+                        autoComplete='new-password'
                         disabled={isRegistering || isSubmitting}
                     />
                     <FormikFieldComponent

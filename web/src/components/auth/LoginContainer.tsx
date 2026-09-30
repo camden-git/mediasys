@@ -1,10 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile';
 import { useAuthStore } from '../../store/useAuthStore';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Heading } from '../elements/Heading.tsx';
 import FormikFieldComponent from '../elements/FormikField.tsx';
-import { Checkbox, CheckboxField } from '../elements/Checkbox.tsx';
 import { Strong, Text, TextLink } from '../elements/Text.tsx';
 import { Button } from '../elements/Button.tsx';
 import { Logo } from '../elements/Logo.tsx';
@@ -12,6 +11,8 @@ import FlashMessageRender from '../elements/FlashMessageRender.tsx';
 import { useFlash } from '../../hooks/useFlash';
 import { Formik, Form } from 'formik';
 import * as Yup from 'yup';
+import { safeRedirectPath, withRateLimitMessage } from '../../lib/helpers';
+import { useDocumentTitle } from '../../hooks/useDocumentTitle';
 
 export const LoginContainer: React.FC = () => {
     const [isLoading, setIsLoading] = useState(false);
@@ -22,6 +23,8 @@ export const LoginContainer: React.FC = () => {
     const login = useAuthStore((s) => s.login);
     const isAuthenticated = useAuthStore((s) => s.isAuthenticated());
     const navigate = useNavigate();
+    const location = useLocation();
+    const redirectTo = safeRedirectPath((location.state as { from?: unknown } | null)?.from, '/admin');
     const { clearFlashes, clearAndAddHttpError } = useFlash();
 
     const validationSchema = Yup.object().shape({
@@ -31,9 +34,11 @@ export const LoginContainer: React.FC = () => {
 
     useEffect(() => {
         if (isAuthenticated) {
-            navigate('/admin');
+            navigate(redirectTo, { replace: true });
         }
-    }, [isAuthenticated, navigate]);
+    }, [isAuthenticated, navigate, redirectTo]);
+
+    useDocumentTitle('Sign in');
 
     // Token is captured via component callbacks
 
@@ -47,7 +52,7 @@ export const LoginContainer: React.FC = () => {
                 try {
                     await login({ ...values, turnstile_token: siteKey ? (turnstileToken ?? undefined) : undefined });
                 } catch (err: any) {
-                    clearAndAddHttpError({ error: err, key: 'auth:login' });
+                    clearAndAddHttpError({ error: withRateLimitMessage(err), key: 'auth:login' });
                     // Turnstile tokens are single-use; get a fresh one for the retry
                     setTurnstileToken(null);
                     turnstileRef.current?.reset();
@@ -65,14 +70,16 @@ export const LoginContainer: React.FC = () => {
 
                     <FormikFieldComponent
                         name='username'
-                        label='Email'
+                        label='Username or email'
                         type='text'
+                        autoComplete='username'
                         disabled={isLoading || isSubmitting}
                     />
                     <FormikFieldComponent
                         name='password'
                         label='Password'
                         type='password'
+                        autoComplete='current-password'
                         disabled={isLoading || isSubmitting}
                     />
 
@@ -88,19 +95,6 @@ export const LoginContainer: React.FC = () => {
                         />
                     ) : null}
 
-                    <div className='flex items-center justify-between'>
-                        <CheckboxField>
-                            <Checkbox name='remember' />
-                            <span className='text-base/6 text-zinc-950 select-none sm:text-sm/6 dark:text-white'>
-                                Remember me
-                            </span>
-                        </CheckboxField>
-                        <Text>
-                            <TextLink to='#'>
-                                <Strong>Forgot password?</Strong>
-                            </TextLink>
-                        </Text>
-                    </div>
                     <Button
                         type='submit'
                         disabled={isLoading || isSubmitting || (!!siteKey && !turnstileToken)}
