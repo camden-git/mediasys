@@ -86,6 +86,7 @@ export interface Album {
     folder_path: string;
     banners?: string[];
     zip_path?: string;
+    zip_ready?: boolean;
     zip_size?: number;
     zip_status: string;
     zip_last_generated_at?: number;

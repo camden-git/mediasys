@@ -27,6 +27,9 @@ interface PhotoPageLayoutProps {
     canPrev: boolean;
     canNext: boolean;
     emptyMessage?: string;
+    loadMoreError?: string | null;
+    onRetryLoadMore?: () => void;
+    onLayoutComplete?: () => void;
 }
 
 const PhotoPageLayout: React.FC<PhotoPageLayoutProps> = ({
@@ -50,6 +53,9 @@ const PhotoPageLayout: React.FC<PhotoPageLayoutProps> = ({
     canPrev,
     canNext,
     emptyMessage = 'No photos here yet.',
+    loadMoreError,
+    onRetryLoadMore,
+    onLayoutComplete,
 }) => {
     const [activeIdx, setActiveIdx] = useState(0);
 
@@ -123,10 +129,28 @@ const PhotoPageLayout: React.FC<PhotoPageLayoutProps> = ({
                                 targetRowHeight={280}
                                 boxSpacing={4}
                                 onImageClick={onImageClick}
+                                onLayoutComplete={onLayoutComplete}
                             />
                         )}
 
-                        {hasMore && images.length > 0 && <div ref={sentinelRef} className='h-1 w-full' />}
+                        {loadMoreError && (
+                            <div className='flex items-center justify-center gap-3 px-8 py-4 text-sm text-red-600 dark:text-red-400'>
+                                <span>{loadMoreError}</span>
+                                {onRetryLoadMore && (
+                                    <button
+                                        type='button'
+                                        onClick={onRetryLoadMore}
+                                        className='rounded-full bg-gray-950/10 px-3 py-0.5 font-semibold text-gray-950 hover:bg-gray-950/20 dark:bg-white/10 dark:text-white dark:hover:bg-white/20'
+                                    >
+                                        Retry
+                                    </button>
+                                )}
+                            </div>
+                        )}
+
+                        {hasMore && images.length > 0 && !loadMoreError && (
+                            <div ref={sentinelRef} className='h-1 w-full' />
+                        )}
 
                         <ImageLightbox
                             image={selectedImage}

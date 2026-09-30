@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { getAlbumContentsWithRating, getAlbumDownloadUrl, getBannerUrl, getOriginalImageUrl } from '../../api.ts';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { getAlbumDownloadUrl, getBannerUrl, getOriginalImageUrl } from '../../api.ts';
 import { FileInfo } from '../../types.ts';
 import { CameraIcon, MapPinIcon, PhotoIcon, ArrowDownIcon, ShareIcon, SparklesIcon } from '@heroicons/react/16/solid';
 import { useFlash } from '../../hooks/useFlash.ts';
@@ -8,7 +8,7 @@ import FlashMessageRender from '../elements/FlashMessageRender.tsx';
 import DownloadDialog from './DownloadDialog.tsx';
 import ShareChunksDialog from './ShareChunksDialog.tsx';
 import PhotoPageLayout from './PhotoPageLayout.tsx';
-import { usePublicAlbumDetail, usePublicAlbumContents } from '../../api/query/usePublicAlbum';
+import { usePublicAlbumDetail, usePublicAlbumContents, usePublicAlbumHighlights } from '../../api/query/usePublicAlbum';
 
 // max payload size for a single Web Share operation
 const MAX_SHARE_CHUNK_BYTES = 40 * 1024 * 1024;
@@ -40,12 +40,28 @@ const AlbumView: React.FC = () => {
     const identifier = routeParams.identifier;
     const imagePathFromUrl = routeParams['*'] || null;
 
-    const { data: currentAlbum, isLoading, error: albumError } = usePublicAlbumDetail(identifier);
-    const { data: contentsData, fetchNextPage, hasNextPage, isFetchingNextPage } = usePublicAlbumContents(identifier);
+    const [searchParams] = useSearchParams();
+    const highlightsMode = searchParams.get('highlights') === '1';
+    // preserved on every in-album navigation so lightbox open/close keeps highlights mode
+    const search = highlightsMode ? '?highlights=1' : '';
 
-    const allFiles = useMemo(() => contentsData?.pages.flatMap((p) => p.files ?? []) ?? [], [contentsData]);
+    const { data: currentAlbum, isLoading: albumLoading, error: albumError } = usePublicAlbumDetail(identifier);
+    const contentsQuery = usePublicAlbumContents(identifier, !highlightsMode);
+    const highlightsQuery = usePublicAlbumHighlights(identifier, highlightsMode);
+    const listQuery = highlightsMode ? highlightsQuery : contentsQuery;
+    const {
+        data: listData,
+        fetchNextPage,
+        hasNextPage,
+        isFetchingNextPage,
+        isLoading: listLoading,
+        isError: listIsError,
+        error: listError,
+        isFetchNextPageError,
+    } = listQuery;
 
-    const directoryListingMeta = contentsData?.pages[contentsData.pages.length - 1];
+    const activeFiles = useMemo(() => listData?.pages.flatMap((p) => p.files ?? []) ?? [], [listData]);
+    const listMeta = listData?.pages[listData.pages.length - 1];
 
     const { addFlash } = useFlash();
 
@@ -56,13 +72,9 @@ const AlbumView: React.FC = () => {
     const [currentChunkIndex, setCurrentChunkIndex] = useState(0);
     const [isSharing, setIsSharing] = useState(false);
     const [shareProgress, setShareProgress] = useState<ShareProgress>(null);
+    const [layoutVersion, setLayoutVersion] = useState(0);
 
     const navigate = useNavigate();
-
-    // Highlights mode: ?highlights=1 in URL enables min_rating=4 filter
-    const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
-    const [highlightsMode, setHighlightsMode] = useState(searchParams.get('highlights') === '1');
-    const [highlightsListing, setHighlightsListing] = useState<typeof directoryListingMeta | null>(null);
 
     const folderPrefix = currentAlbum?.folder_path ? currentAlbum.folder_path.replace(/\/?$/, '/') : null;
 
@@ -84,47 +96,32 @@ const AlbumView: React.FC = () => {
     const prefillCountRef = useRef(0);
     const pendingAdvanceRef = useRef(false);
 
-    // Fetch highlights when toggled on
-    useEffect(() => {
-        if (!highlightsMode || !currentAlbum) {
-            setHighlightsListing(null);
-            return;
-        }
-        const controller = new AbortController();
-        (async () => {
-            try {
-                const data = await getAlbumContentsWithRating(
-                    currentAlbum.slug ?? String(currentAlbum.id),
-                    { offset: 0, limit: 200, min_rating: 4 },
-                    controller.signal,
-                );
-                setHighlightsListing(data);
-            } catch {
-                // ignore abort
-            }
-        })();
-        return () => controller.abort();
-    }, [highlightsMode, currentAlbum]);
-
     const handleToggleHighlights = () => {
-        const next = !highlightsMode;
-        setHighlightsMode(next);
-        const base = `/album/${identifier}`;
-        navigate(next ? `${base}?highlights=1` : base, { replace: true });
+        navigate(
+            { pathname: `/album/${identifier}`, search: highlightsMode ? '' : '?highlights=1' },
+            { replace: true },
+        );
     };
 
-    const activeFiles = highlightsMode ? (highlightsListing?.files ?? []) : allFiles;
     const imageFiles = useMemo(() => activeFiles.filter((file) => !file.is_dir && file.thumbnail_path), [activeFiles]);
 
-    const canLoadMore = useMemo(() => {
-        if (highlightsMode) return false;
-        return !!hasNextPage;
-    }, [hasNextPage, highlightsMode]);
+    const canLoadMore = !!hasNextPage;
 
-    const loadMore = useCallback(async () => {
-        if (isFetchingNextPage || !canLoadMore) return;
-        await fetchNextPage();
-    }, [fetchNextPage, isFetchingNextPage, canLoadMore]);
+    // auto-loading stops after a failed page fetch; user actions (force) retry
+    const loadMore = useCallback(
+        async (force = false): Promise<boolean> => {
+            if (isFetchingNextPage || !canLoadMore) return false;
+            if (isFetchNextPageError && !force) return false;
+            const result = await fetchNextPage();
+            return !result.isError;
+        },
+        [fetchNextPage, isFetchingNextPage, canLoadMore, isFetchNextPageError],
+    );
+
+    const loadMoreRef = useRef(loadMore);
+    useEffect(() => {
+        loadMoreRef.current = loadMore;
+    });
 
     useEffect(() => {
         const onScroll = () => {
@@ -140,8 +137,21 @@ const AlbumView: React.FC = () => {
     useEffect(() => {
         prefillCountRef.current = 0;
         hasUserScrolledRef.current = false;
+        pendingAdvanceRef.current = false;
         setSelectedImage(null);
     }, [currentAlbum?.id, currentAlbum?.slug]);
+
+    // surface failed next-page loads (initial load errors are shown by the layout)
+    useEffect(() => {
+        if (!isFetchNextPageError) return;
+        pendingAdvanceRef.current = false;
+        addFlash({
+            key: 'album',
+            type: 'error',
+            title: 'Failed to load more photos',
+            message: (listError as Error | null)?.message ?? 'Something went wrong while loading more photos.',
+        });
+    }, [isFetchNextPageError, listError, addFlash]);
 
     // URL → state: seek to image from URL
     useEffect(() => {
@@ -160,93 +170,114 @@ const AlbumView: React.FC = () => {
             return;
         }
 
+        // wait for the listing (and folder prefix) before deciding the image doesn't exist
+        if (listLoading || listIsError || !listData || !currentAlbum) return;
+
         if (canLoadMore) {
             void loadMore();
-        } else if (contentsData) {
-            navigate(`/album/${identifier}`, { replace: true });
+        } else {
+            navigate({ pathname: `/album/${identifier}`, search }, { replace: true });
         }
     }, [
         imagePathFromUrl,
         imageFiles,
         selectedImage,
         canLoadMore,
-        contentsData,
+        listData,
+        listLoading,
+        listIsError,
+        currentAlbum,
         loadMore,
         navigate,
         identifier,
+        search,
         normalizePath,
     ]);
 
+    const showSentinel = canLoadMore && imageFiles.length > 0 && !isFetchNextPageError;
     useEffect(() => {
-        if (!sentinelRef.current) return;
+        if (!showSentinel || !sentinelRef.current) return;
         const el = sentinelRef.current;
         const observer = new IntersectionObserver(
             (entries) => {
                 const entry = entries[0];
                 if (entry.isIntersecting && hasUserScrolledRef.current) {
-                    void loadMore();
+                    void loadMoreRef.current();
                 }
             },
             { rootMargin: '0px 0px 300px 0px', threshold: 0.01 },
         );
         observer.observe(el);
         return () => observer.disconnect();
-    }, [loadMore]);
+    }, [showSentinel]);
 
-    // if page content doesn't fill the viewport, prefetch at most once without requiring scroll
+    // if page content doesn't fill the viewport, prefetch at most once without requiring scroll.
+    // Runs after the grid reports a committed layout so scrollHeight is meaningful.
     useEffect(() => {
-        if (!canLoadMore) return;
+        if (layoutVersion === 0 || !canLoadMore) return;
         const docEl = document.documentElement;
         const viewportH = window.innerHeight || 0;
         const contentH = docEl.scrollHeight || 0;
         if (contentH <= viewportH + 40 && prefillCountRef.current < 1) {
             prefillCountRef.current += 1;
-            void loadMore();
+            void loadMoreRef.current();
         }
-    }, [imageFiles.length, canLoadMore, loadMore]);
+    }, [layoutVersion, canLoadMore]);
+
+    const handleLayoutComplete = useCallback(() => setLayoutVersion((v) => v + 1), []);
 
     const handleImageClick = useCallback(
         (image: FileInfo) => {
             setSelectedImage(image);
-            navigate(`/album/${identifier}/image/${encodeImagePath(image.path)}`, { replace: false });
+            navigate({ pathname: `/album/${identifier}/image/${encodeImagePath(image.path)}`, search });
         },
-        [navigate, identifier, encodeImagePath],
+        [navigate, identifier, encodeImagePath, search],
     );
 
     const handleCloseLightbox = useCallback(() => {
+        pendingAdvanceRef.current = false;
         setSelectedImage(null);
-        navigate(`/album/${identifier}`, { replace: true });
-    }, [navigate, identifier]);
+        navigate({ pathname: `/album/${identifier}`, search }, { replace: true });
+    }, [navigate, identifier, search]);
 
     const selectedIndex = useMemo(() => {
         if (!selectedImage) return -1;
         return imageFiles.findIndex((f) => f.path === selectedImage.path);
     }, [selectedImage, imageFiles]);
 
-    const totalImageCount =
-        (highlightsMode ? highlightsListing?.total : directoryListingMeta?.total) ?? imageFiles.length;
+    // server total also counts entries the client filters out, so only trust it while more pages remain
+    const totalImageCount = canLoadMore ? Math.max(listMeta?.total ?? 0, imageFiles.length) : imageFiles.length;
     const canPrev = selectedIndex > 0;
-    const canNext = selectedIndex >= 0 && selectedIndex < totalImageCount - 1;
+    const canNext = selectedIndex >= 0 && (selectedIndex < imageFiles.length - 1 || canLoadMore);
+
+    const goToImage = useCallback(
+        (image: FileInfo) => {
+            setSelectedImage(image);
+            navigate(
+                { pathname: `/album/${identifier}/image/${encodeImagePath(image.path)}`, search },
+                { replace: true },
+            );
+        },
+        [navigate, identifier, encodeImagePath, search],
+    );
 
     const handlePrevImage = useCallback(() => {
+        pendingAdvanceRef.current = false;
         if (!canPrev) return;
         const prev = imageFiles[selectedIndex - 1];
-        if (prev) {
-            setSelectedImage(prev);
-            navigate(`/album/${identifier}/image/${encodeImagePath(prev.path)}`, { replace: true });
-        }
-    }, [canPrev, imageFiles, selectedIndex, navigate, identifier, encodeImagePath]);
+        if (prev) goToImage(prev);
+    }, [canPrev, imageFiles, selectedIndex, goToImage]);
 
     const handleNextImage = useCallback(() => {
         if (selectedIndex < imageFiles.length - 1) {
-            const next = imageFiles[selectedIndex + 1];
-            setSelectedImage(next);
-            navigate(`/album/${identifier}/image/${encodeImagePath(next.path)}`, { replace: true });
+            goToImage(imageFiles[selectedIndex + 1]);
         } else if (canLoadMore) {
             pendingAdvanceRef.current = true;
-            void loadMore();
+            void loadMore(true).then((ok) => {
+                if (!ok) pendingAdvanceRef.current = false;
+            });
         }
-    }, [selectedIndex, imageFiles, canLoadMore, loadMore, navigate, identifier, encodeImagePath]);
+    }, [selectedIndex, imageFiles, canLoadMore, loadMore, goToImage]);
 
     // Proactive preload: fetch next page when within 20 images of end
     useEffect(() => {
@@ -258,18 +289,17 @@ const AlbumView: React.FC = () => {
 
     // Flush pending advance when new images arrive
     useEffect(() => {
-        if (pendingAdvanceRef.current && imageFiles.length > selectedIndex + 1) {
+        if (pendingAdvanceRef.current && selectedImage && imageFiles.length > selectedIndex + 1) {
             pendingAdvanceRef.current = false;
-            const nextImage = imageFiles[selectedIndex + 1];
-            setSelectedImage(nextImage);
-            navigate(`/album/${identifier}/image/${encodeImagePath(nextImage.path)}`, { replace: true });
+            goToImage(imageFiles[selectedIndex + 1]);
         }
-    }, [imageFiles.length, selectedIndex, imageFiles, navigate, identifier, encodeImagePath]);
+    }, [imageFiles, selectedIndex, selectedImage, goToImage]);
 
     const handleDownloadZip = () => {
-        if (!currentAlbum?.zip_path) return;
+        const zipId = currentAlbum?.slug || identifier;
+        if (!currentAlbum?.zip_ready || !zipId) return;
         const link = document.createElement('a');
-        link.href = getAlbumDownloadUrl(currentAlbum?.slug);
+        link.href = getAlbumDownloadUrl(zipId);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -341,28 +371,34 @@ const AlbumView: React.FC = () => {
         await shareChunk(shareChunks[currentChunkIndex], currentChunkIndex + 1, shareChunks.length);
     };
 
-    const error = albumError ? (albumError as Error).message : null;
+    const error = albumError
+        ? (albumError as Error).message
+        : listIsError && !isFetchNextPageError
+          ? ((listError as Error | null)?.message ?? 'Failed to load photos')
+          : null;
+    const loadMoreError = isFetchNextPageError ? 'Failed to load more photos.' : null;
+    const photoCountLabel = `${totalImageCount} ${totalImageCount === 1 ? 'photo' : 'photos'}`;
+    const artistNames = (currentAlbum?.artists ?? [])
+        .map((u) => (u.first_name || u.last_name ? `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim() : u.username))
+        .filter(Boolean)
+        .join(', ');
 
     const albumMetadata = (
         <>
             <div className='flex items-center gap-1.5'>
                 <PhotoIcon className='size-4 text-gray-950/40' />
-                {(highlightsMode ? highlightsListing?.total : directoryListingMeta?.total) ?? imageFiles.length} photos
+                {photoCountLabel}
                 {highlightsMode && <span className='text-yellow-500'> (highlights)</span>}
             </div>
-            <span className='hidden text-gray-950/25 sm:inline dark:text-white/25'>&middot;</span>
-            <div className='flex items-center gap-1.5'>
-                <CameraIcon className='size-4 text-gray-950/40' />
-                {currentAlbum?.artists && currentAlbum.artists.length > 0
-                    ? currentAlbum.artists
-                          .map((u) =>
-                              u.first_name || u.last_name
-                                  ? `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim()
-                                  : u.username,
-                          )
-                          .join(', ')
-                    : ''}
-            </div>
+            {artistNames && (
+                <>
+                    <span className='hidden text-gray-950/25 sm:inline dark:text-white/25'>&middot;</span>
+                    <div className='flex items-center gap-1.5'>
+                        <CameraIcon className='size-4 text-gray-950/40' />
+                        {artistNames}
+                    </div>
+                </>
+            )}
             {currentAlbum?.location && (
                 <>
                     <span className='hidden text-gray-950/25 sm:inline dark:text-white/25'>&middot;</span>
@@ -388,7 +424,7 @@ const AlbumView: React.FC = () => {
                 <SparklesIcon className='size-2' />
                 Highlights
             </button>
-            {currentAlbum?.zip_size && (
+            {currentAlbum?.zip_ready && (
                 <>
                     <button
                         onClick={() => setDownloadModalOpen(true)}
@@ -444,8 +480,11 @@ const AlbumView: React.FC = () => {
                 metadata={albumMetadata}
                 actions={albumActions}
                 images={imageFiles}
-                isLoading={isLoading}
+                isLoading={albumLoading || listLoading}
                 error={error}
+                loadMoreError={loadMoreError}
+                onRetryLoadMore={() => void loadMore(true)}
+                onLayoutComplete={handleLayoutComplete}
                 hasMore={canLoadMore}
                 sentinelRef={sentinelRef}
                 selectedImage={selectedImage}

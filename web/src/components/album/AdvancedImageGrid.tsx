@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { FileInfo } from '../../types.ts';
 import useResizeObserver from '../../hooks/useResizeObserver.ts';
 import { computeLayout, ProcessedRow, LayoutOptions } from '../../lib/galleryLayout.ts';
@@ -12,6 +12,7 @@ interface AdvancedImageGridProps {
     maxRowHeightRatio?: number | null;
     debounceDelay?: number;
     onImageClick: (image: FileInfo) => void;
+    onLayoutComplete?: () => void;
 }
 
 const AdvancedImageGrid: React.FC<AdvancedImageGridProps> = ({
@@ -22,6 +23,7 @@ const AdvancedImageGrid: React.FC<AdvancedImageGridProps> = ({
     maxRowHeightRatio = null,
     debounceDelay = 250,
     onImageClick,
+    onLayoutComplete,
 }) => {
     const [, containerSize, gridRef] = useResizeObserver<HTMLDivElement>();
     const [processedLayout, setProcessedLayout] = useState<ProcessedRow[]>([]);
@@ -52,6 +54,15 @@ const AdvancedImageGrid: React.FC<AdvancedImageGridProps> = ({
             setProcessedLayout([]);
         }
     }, [images, width, targetRowHeight, boxSpacing, stretchLastRow, maxRowHeightRatio]);
+
+    // notify after rows have been committed to the DOM
+    const onLayoutCompleteRef = useRef(onLayoutComplete);
+    useEffect(() => {
+        onLayoutCompleteRef.current = onLayoutComplete;
+    });
+    useEffect(() => {
+        if (processedLayout.length > 0) onLayoutCompleteRef.current?.();
+    }, [processedLayout]);
 
     return (
         <div ref={gridRef} className='advanced-image-grid w-full'>
