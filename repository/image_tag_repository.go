@@ -5,6 +5,7 @@ import (
 
 	"github.com/camden-git/mediasysbackend/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type GormImageTagRepository struct {
@@ -42,9 +43,7 @@ func (r *GormImageTagRepository) AddManualTag(imagePath, key, value string) erro
 		Source:    "manual",
 		CreatedAt: time.Now(),
 	}
-	// INSERT OR IGNORE equivalent: use Clauses to skip on conflict
-	return r.db.Where(models.ImageTag{ImagePath: imagePath, TagKey: key, TagValue: value, Source: "manual"}).
-		FirstOrCreate(&tag).Error
+	return r.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&tag).Error
 }
 
 func (r *GormImageTagRepository) RemoveManualTag(imagePath, key, value string) error {
@@ -53,7 +52,7 @@ func (r *GormImageTagRepository) RemoveManualTag(imagePath, key, value string) e
 }
 
 // ApplyAlbumDefaultTags copies album_default_tags for an album to image_tags with source="album_default",
-// skipping duplicates (INSERT OR IGNORE behaviour).
+// skipping duplicates, in a single ON CONFLICT DO NOTHING insert.
 func (r *GormImageTagRepository) ApplyAlbumDefaultTags(imagePath string, albumID uint) error {
 	defaults, err := r.GetAlbumDefaultTags(albumID)
 	if err != nil {
@@ -62,26 +61,18 @@ func (r *GormImageTagRepository) ApplyAlbumDefaultTags(imagePath string, albumID
 	if len(defaults) == 0 {
 		return nil
 	}
-	return r.db.Transaction(func(tx *gorm.DB) error {
-		for _, d := range defaults {
-			tag := models.ImageTag{
-				ImagePath: imagePath,
-				TagKey:    d.TagKey,
-				TagValue:  d.TagValue,
-				Source:    "album_default",
-				CreatedAt: time.Now(),
-			}
-			if err := tx.Where(models.ImageTag{
-				ImagePath: imagePath,
-				TagKey:    d.TagKey,
-				TagValue:  d.TagValue,
-				Source:    "album_default",
-			}).FirstOrCreate(&tag).Error; err != nil {
-				return err
-			}
+	now := time.Now()
+	tags := make([]models.ImageTag, len(defaults))
+	for i, d := range defaults {
+		tags[i] = models.ImageTag{
+			ImagePath: imagePath,
+			TagKey:    d.TagKey,
+			TagValue:  d.TagValue,
+			Source:    "album_default",
+			CreatedAt: now,
 		}
-		return nil
-	})
+	}
+	return r.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&tags).Error
 }
 
 func (r *GormImageTagRepository) GetAlbumDefaultTags(albumID uint) ([]models.AlbumDefaultTag, error) {
