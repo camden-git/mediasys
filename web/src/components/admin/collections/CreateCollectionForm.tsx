@@ -26,40 +26,72 @@ const CreateCollectionForm: React.FC<CreateCollectionFormProps> = ({ isOpen, onC
     const [filterMatch, setFilterMatch] = useState<'all' | 'any'>('all');
     const [filters, setFilters] = useState<Array<{ tag_key: string; tag_value: string; negate: boolean }>>([]);
     const [isLoading, setIsLoading] = useState(false);
-    const { clearFlashes, clearAndAddHttpError } = useFlash();
+    // Creating and setting filters are two requests. Once the collection exists, a retry must only
+    // redo the filters instead of creating a duplicate (which would fail on the slug).
+    const [createdId, setCreatedId] = useState<number | null>(null);
+    const { clearFlashes, clearAndAddHttpError, addFlash } = useFlash();
+
+    const resetForm = () => {
+        setName('');
+        setSlug('');
+        setDescription('');
+        setFilterMatch('all');
+        setFilters([]);
+        setIsPublic(true);
+        setCreatedId(null);
+    };
+
+    const handleClose = () => {
+        clearFlashes('create-collection');
+        if (createdId !== null) {
+            // the collection exists even though the filters failed; let the list pick it up
+            onCreated();
+            resetForm();
+        }
+        onClose();
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         clearFlashes('create-collection');
         setIsLoading(true);
+        let id = createdId;
         try {
-            const created = await createCollection({
-                name,
-                slug,
-                description: description || undefined,
-                is_public: isPublic,
-                filter_match: filterMatch,
-            });
+            if (id === null) {
+                const created = await createCollection({
+                    name,
+                    slug,
+                    description: description || undefined,
+                    is_public: isPublic,
+                    filter_match: filterMatch,
+                });
+                id = created.id;
+                setCreatedId(id);
+            }
             if (filters.length > 0) {
-                await setCollectionFilters(created.id, filters);
+                await setCollectionFilters(id, filters);
             }
             onCreated();
             onClose();
-            setName('');
-            setSlug('');
-            setDescription('');
-            setFilterMatch('all');
-            setFilters([]);
-            setIsPublic(true);
+            resetForm();
         } catch (error: any) {
             clearAndAddHttpError({ error, key: 'create-collection' });
+            if (id !== null) {
+                addFlash({
+                    key: 'create-collection',
+                    type: 'error',
+                    message: 'The collection was created, but its filters could not be saved. Submit again to retry.',
+                });
+            }
         } finally {
             setIsLoading(false);
         }
     };
 
+    const detailsLocked = isLoading || createdId !== null;
+
     return (
-        <Dialog open={isOpen} onClose={onClose}>
+        <Dialog open={isOpen} onClose={handleClose}>
             <form onSubmit={handleSubmit}>
                 <DialogTitle>Create Collection</DialogTitle>
                 <DialogDescription>
@@ -75,7 +107,7 @@ const CreateCollectionForm: React.FC<CreateCollectionFormProps> = ({ isOpen, onC
                                 required
                                 value={name}
                                 onChange={(e) => setName(e.target.value)}
-                                disabled={isLoading}
+                                disabled={detailsLocked}
                             />
                         </Field>
                         <Field>
@@ -85,7 +117,7 @@ const CreateCollectionForm: React.FC<CreateCollectionFormProps> = ({ isOpen, onC
                                 required
                                 value={slug}
                                 onChange={(e) => setSlug(e.target.value)}
-                                disabled={isLoading}
+                                disabled={detailsLocked}
                                 className='font-mono'
                             />
                         </Field>
@@ -129,11 +161,11 @@ const CreateCollectionForm: React.FC<CreateCollectionFormProps> = ({ isOpen, onC
                     </FieldGroup>
                 </DialogBody>
                 <DialogActions>
-                    <Button plain onClick={onClose} type='button'>
+                    <Button plain onClick={handleClose} type='button'>
                         Cancel
                     </Button>
                     <Button type='submit' disabled={isLoading}>
-                        {isLoading ? 'Creating...' : 'Create Collection'}
+                        {isLoading ? 'Creating...' : createdId !== null ? 'Retry Saving Filters' : 'Create Collection'}
                     </Button>
                 </DialogActions>
             </form>

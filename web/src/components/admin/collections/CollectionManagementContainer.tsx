@@ -95,7 +95,12 @@ const CollectionManagementContainer: React.FC = () => {
                 isOpen={!!collectionForEdit}
                 onClose={() => setCollectionForEdit(null)}
                 onUpdated={() => handleChanged('Collection updated successfully!')}
-                collection={collectionForEdit ?? undefined}
+                onRefresh={() => void fetchCollections()}
+                collection={
+                    (collectionForEdit && collections.find((c) => c.id === collectionForEdit.id)) ??
+                    collectionForEdit ??
+                    undefined
+                }
             />
 
             {collections.length === 0 ? (

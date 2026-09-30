@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Dialog, DialogActions, DialogBody, DialogDescription, DialogTitle } from '../../elements/Dialog';
 import { Button } from '../../elements/Button';
 import { Field, Fieldset, FieldGroup, Label, Description, Legend } from '../../elements/Fieldset';
@@ -28,12 +28,20 @@ interface EditCollectionFormProps {
     isOpen: boolean;
     onClose: () => void;
     onUpdated: () => void;
+    // silently refetch the collection list (banner changes are saved immediately, outside the form)
+    onRefresh?: () => void;
     collection?: AdminCollectionResponse;
 }
 
 const invalidateCollections = () => void queryClient.invalidateQueries({ queryKey: queryKeys.collections.all() });
 
-const EditCollectionForm: React.FC<EditCollectionFormProps> = ({ isOpen, onClose, onUpdated, collection }) => {
+const EditCollectionForm: React.FC<EditCollectionFormProps> = ({
+    isOpen,
+    onClose,
+    onUpdated,
+    onRefresh,
+    collection,
+}) => {
     const [name, setName] = useState('');
     const [slug, setSlug] = useState('');
     const [description, setDescription] = useState('');
@@ -46,8 +54,15 @@ const EditCollectionForm: React.FC<EditCollectionFormProps> = ({ isOpen, onClose
     const [banners, setBanners] = useState<CollectionBanner[]>([]);
     const { clearFlashes, clearAndAddHttpError, addFlash } = useFlash();
 
+    // JSON of the details payload last saved successfully, so a retry after a failed filters
+    // request doesn't repeat the update
+    const savedDetailsRef = useRef<string | null>(null);
+    const collectionId = collection?.id;
+
+    // Reset the editable fields when the dialog opens for a collection
     useEffect(() => {
-        if (collection) {
+        savedDetailsRef.current = null;
+        if (collection && isOpen) {
             setName(collection.name);
             setSlug(collection.slug);
             setDescription(collection.description ?? '');
@@ -58,10 +73,18 @@ const EditCollectionForm: React.FC<EditCollectionFormProps> = ({ isOpen, onClose
                 collection.filters?.map((f) => ({ tag_key: f.tag_key, tag_value: f.tag_value, negate: f.negate })) ??
                     [],
             );
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [collectionId, isOpen]);
+
+    // Banner state is saved outside the form, so keep it in sync with the latest data without
+    // touching what the user is typing
+    useEffect(() => {
+        if (collection && isOpen) {
             setInheritBanners(collection.inherit_banners_from_albums ?? false);
             setBanners(collection.banners ?? []);
         }
-    }, [collection]);
+    }, [collection, isOpen]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -69,15 +92,32 @@ const EditCollectionForm: React.FC<EditCollectionFormProps> = ({ isOpen, onClose
         clearFlashes('edit-collection');
         setIsLoading(true);
         try {
-            await updateCollection(collection.id, {
+            const details = {
                 name,
                 slug,
                 description: description || undefined,
                 is_public: isPublic,
                 filter_match: filterMatch,
                 sort_order: sortOrder,
-            });
-            await setCollectionFilters(collection.id, filters);
+            };
+            const detailsKey = JSON.stringify(details);
+            if (savedDetailsRef.current !== detailsKey) {
+                await updateCollection(collection.id, details);
+                savedDetailsRef.current = detailsKey;
+            }
+            try {
+                await setCollectionFilters(collection.id, filters);
+            } catch (error: any) {
+                // details are already saved; refresh the list and let the retry redo only the filters
+                onRefresh?.();
+                clearAndAddHttpError({ error, key: 'edit-collection' });
+                addFlash({
+                    key: 'edit-collection',
+                    type: 'error',
+                    message: 'Details were saved, but the tag filters were not. Save again to retry the filters.',
+                });
+                return;
+            }
             onUpdated();
             onClose();
         } catch (error: any) {
@@ -93,9 +133,10 @@ const EditCollectionForm: React.FC<EditCollectionFormProps> = ({ isOpen, onClose
         try {
             await setCollectionInheritBanners(collection.id, checked);
             invalidateCollections();
-        } catch {
+            onRefresh?.();
+        } catch (error: any) {
             setInheritBanners(!checked);
-            addFlash({ key: 'edit-collection', type: 'error', message: 'Failed to update inherit setting.' });
+            clearAndAddHttpError({ error, key: 'edit-collection' });
         }
     };
 
@@ -196,12 +237,9 @@ const EditCollectionForm: React.FC<EditCollectionFormProps> = ({ isOpen, onClose
                                                 const newBanner = await addCollectionBanner(collection.id, file);
                                                 setBanners((prev) => [...prev, newBanner]);
                                                 invalidateCollections();
-                                            } catch {
-                                                addFlash({
-                                                    key: 'edit-collection',
-                                                    type: 'error',
-                                                    message: 'Failed to upload banner.',
-                                                });
+                                                onRefresh?.();
+                                            } catch (error: any) {
+                                                clearAndAddHttpError({ error, key: 'edit-collection' });
                                             }
                                         }}
                                         onDelete={async (bannerId) => {
@@ -210,12 +248,9 @@ const EditCollectionForm: React.FC<EditCollectionFormProps> = ({ isOpen, onClose
                                                 await deleteCollectionBanner(collection.id, bannerId);
                                                 setBanners((prev) => prev.filter((b) => b.id !== bannerId));
                                                 invalidateCollections();
-                                            } catch {
-                                                addFlash({
-                                                    key: 'edit-collection',
-                                                    type: 'error',
-                                                    message: 'Failed to remove banner.',
-                                                });
+                                                onRefresh?.();
+                                            } catch (error: any) {
+                                                clearAndAddHttpError({ error, key: 'edit-collection' });
                                             }
                                         }}
                                         onReorder={async (ids) => {
@@ -223,16 +258,15 @@ const EditCollectionForm: React.FC<EditCollectionFormProps> = ({ isOpen, onClose
                                             const newOrder = ids
                                                 .map((id) => banners.find((b) => b.id === id))
                                                 .filter((b): b is CollectionBanner => b !== undefined);
+                                            const previous = banners;
                                             setBanners(newOrder);
                                             try {
                                                 await reorderCollectionBanners(collection.id, ids);
                                                 invalidateCollections();
-                                            } catch {
-                                                addFlash({
-                                                    key: 'edit-collection',
-                                                    type: 'error',
-                                                    message: 'Failed to reorder banners.',
-                                                });
+                                                onRefresh?.();
+                                            } catch (error: any) {
+                                                setBanners(previous);
+                                                clearAndAddHttpError({ error, key: 'edit-collection' });
                                             }
                                         }}
                                     />
