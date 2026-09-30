@@ -18,10 +18,16 @@ const immutableCacheControl = "public, max-age=31536000, immutable"
 
 // wildcardKey extracts and validates the "*" route segment as an object key suffix.
 func wildcardKey(r *http.Request) (string, bool) {
-	raw := chi.URLParam(r, "*")
-	decoded, err := url.PathUnescape(raw)
-	if err != nil {
-		return "", false
+	// chi matches on RawPath when it is set (the param is still escaped) and on
+	// the already-decoded Path otherwise, so decode exactly once, and only in
+	// the first case.
+	decoded := chi.URLParam(r, "*")
+	if r.URL.RawPath != "" {
+		var err error
+		decoded, err = url.PathUnescape(decoded)
+		if err != nil {
+			return "", false
+		}
 	}
 	clean := strings.TrimPrefix(path.Clean("/"+decoded), "/")
 	if clean == "" || strings.HasPrefix(clean, "..") {

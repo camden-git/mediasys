@@ -3,6 +3,8 @@ package e2e_test
 import (
 	"fmt"
 	"net/http"
+	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/camden-git/mediasysbackend/models"
@@ -54,5 +56,34 @@ func TestDeleteAlbumRemovesImagesAndRows(t *testing.T) {
 	}
 	if resp := doRequest(t, http.MethodDelete, fmt.Sprintf("/api/admin/albums/%d", album.ID), env.adminToken, nil, ""); resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected second delete 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestOriginalsServePercentInFilename(t *testing.T) {
+	env := requireShared(t)
+	s := randomSuffix()
+	album := createAlbum(t, env.adminToken, "Pct "+s, "pct-"+s, "")
+	imgPath := uploadImage(t, env.adminToken, album.ID, "100% fun.jpg")
+	if !strings.HasSuffix(imgPath, "100% fun.jpg") {
+		t.Fatalf("unexpected image path %q", imgPath)
+	}
+
+	standard := (&url.URL{Path: "/" + imgPath}).EscapedPath()
+	// forces RawPath to be set on the server side: every byte percent-encoded
+	var all strings.Builder
+	for _, b := range []byte(imgPath) {
+		if b == '/' {
+			all.WriteByte('/')
+			continue
+		}
+		fmt.Fprintf(&all, "%%%02X", b)
+	}
+	for name, escaped := range map[string]string{"standard": standard, "fully-encoded": "/" + all.String()} {
+		t.Run(name, func(t *testing.T) {
+			resp := doRequest(t, http.MethodGet, "/api/originals"+escaped, "", nil, "")
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("expected 200, got %d %s", resp.StatusCode, resp.Body)
+			}
+		})
 	}
 }
