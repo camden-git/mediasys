@@ -9,6 +9,9 @@ import (
 	"gorm.io/gorm"
 )
 
+// ErrGroupNotFound is returned when an operation references an album group that does not exist.
+var ErrGroupNotFound = errors.New("album group not found")
+
 // AlbumGroupRepository handles database operations for AlbumGroup entities
 type AlbumGroupRepository struct {
 	DB *gorm.DB
@@ -101,16 +104,32 @@ func (r *AlbumGroupRepository) Update(groupID uint, name, slug string, descripti
 	return nil
 }
 
-// Delete soft-deletes an album group
-func (r *AlbumGroupRepository) Delete(id uint) error {
-	result := r.DB.Delete(&models.AlbumGroup{}, id)
-	if result.Error != nil {
-		return fmt.Errorf("failed to delete album group %d: %w", id, result.Error)
+// Delete soft-deletes an album group and detaches its albums (a soft delete
+// does not fire the foreign key). It returns the group's banner object key, if
+// any, so the caller can remove the object.
+func (r *AlbumGroupRepository) Delete(id uint) (*string, error) {
+	var banner *string
+	err := r.DB.Transaction(func(tx *gorm.DB) error {
+		var group models.AlbumGroup
+		if err := tx.First(&group, id).Error; err != nil {
+			return err
+		}
+		banner = group.BannerImagePath
+		if err := tx.Model(&models.Album{}).Where("group_id = ?", id).Updates(map[string]interface{}{
+			"group_id":   gorm.Expr("NULL"),
+			"updated_at": time.Now().Unix(),
+		}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&group).Error
+	})
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
 	}
-	if result.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
+	if err != nil {
+		return nil, fmt.Errorf("failed to delete album group %d: %w", id, err)
 	}
-	return nil
+	return banner, nil
 }
 
 // SetBannerPath updates the banner image path for an album group
@@ -129,15 +148,30 @@ func (r *AlbumGroupRepository) SetBannerPath(groupID uint, bannerPath *string) e
 	return nil
 }
 
-// SetAlbumGroup assigns an album to a group (or clears it by passing nil)
+// SetAlbumGroup assigns an album to a group (or clears it by passing nil).
+// It returns gorm.ErrRecordNotFound if the album does not exist and
+// ErrGroupNotFound if the group does not.
 func (r *AlbumGroupRepository) SetAlbumGroup(albumID uint, groupID *uint) error {
-	now := time.Now().Unix()
-	result := r.DB.Model(&models.Album{}).Where("id = ?", albumID).Updates(map[string]interface{}{
-		"group_id":   groupID,
-		"updated_at": now,
+	err := r.DB.Transaction(func(tx *gorm.DB) error {
+		if groupID != nil {
+			var count int64
+			if err := tx.Model(&models.AlbumGroup{}).Where("id = ?", *groupID).Count(&count).Error; err != nil {
+				return err
+			}
+			if count == 0 {
+				return ErrGroupNotFound
+			}
+		}
+		return requireRowsAffected(tx.Model(&models.Album{}).Where("id = ?", albumID).Updates(map[string]interface{}{
+			"group_id":   groupID,
+			"updated_at": time.Now().Unix(),
+		}))
 	})
-	if result.Error != nil {
-		return fmt.Errorf("failed to set group for album %d: %w", albumID, result.Error)
+	if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, ErrGroupNotFound) {
+		return err
+	}
+	if err != nil {
+		return fmt.Errorf("failed to set group for album %d: %w", albumID, err)
 	}
 	return nil
 }

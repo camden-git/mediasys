@@ -2,6 +2,7 @@ package e2e_test
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -187,4 +188,72 @@ func TestBannerUploadBodyIsCapped(t *testing.T) {
 		t.Fatalf("expected 413, got %d %s", resp.StatusCode, resp.Body)
 	}
 	assertErrorShape(t, resp)
+}
+
+func TestAlbumGroupAssignmentAndDeletion(t *testing.T) {
+	env := requireShared(t)
+	s := randomSuffix()
+	album := createAlbum(t, env.adminToken, "GA "+s, "ga-"+s, "")
+
+	resp := doJSON(t, http.MethodPost, "/api/admin/groups", env.adminToken, map[string]any{"name": "G " + s, "slug": "g-" + s})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create group: %d %s", resp.StatusCode, resp.Body)
+	}
+	var group struct {
+		ID uint `json:"id"`
+	}
+	resp.decodeData(t, &group)
+
+	albumGroupURL := fmt.Sprintf("/api/admin/albums/%d/group", album.ID)
+
+	// unknown group / album
+	if resp := doJSON(t, http.MethodPut, albumGroupURL, env.adminToken, map[string]any{"group_id": 999999}); resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("unknown group: expected 404, got %d %s", resp.StatusCode, resp.Body)
+	}
+	if resp := doJSON(t, http.MethodPut, "/api/admin/albums/999999/group", env.adminToken, map[string]any{"group_id": group.ID}); resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("unknown album: expected 404, got %d %s", resp.StatusCode, resp.Body)
+	}
+
+	if resp := doJSON(t, http.MethodPut, albumGroupURL, env.adminToken, map[string]any{"group_id": group.ID}); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("assign: %d %s", resp.StatusCode, resp.Body)
+	}
+
+	// give the group a banner, then delete it
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	part, _ := mw.CreateFormFile("banner_image", "b.jpg")
+	_, _ = part.Write(generateJPEG(t, 64, 32))
+	_ = mw.Close()
+	resp = doRequest(t, http.MethodPut, fmt.Sprintf("/api/admin/groups/%d/banner", group.ID), env.adminToken, &buf, mw.FormDataContentType())
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("banner: %d %s", resp.StatusCode, resp.Body)
+	}
+	var withBanner struct {
+		BannerImagePath *string `json:"banner_image_path"`
+	}
+	resp.decodeData(t, &withBanner)
+	if withBanner.BannerImagePath == nil {
+		t.Fatalf("expected banner path in %s", resp.Body)
+	}
+	if _, err := env.app.Store.Stat(context.Background(), *withBanner.BannerImagePath); err != nil {
+		t.Fatalf("banner object should exist: %v", err)
+	}
+
+	if resp := doRequest(t, http.MethodDelete, fmt.Sprintf("/api/admin/groups/%d", group.ID), env.adminToken, nil, ""); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("delete group: %d %s", resp.StatusCode, resp.Body)
+	}
+	if resp := doRequest(t, http.MethodDelete, fmt.Sprintf("/api/admin/groups/%d", group.ID), env.adminToken, nil, ""); resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("second delete: expected 404, got %d", resp.StatusCode)
+	}
+
+	var a models.Album
+	if err := env.app.DB.First(&a, album.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if a.GroupID != nil {
+		t.Fatalf("expected album group_id cleared, got %d", *a.GroupID)
+	}
+	if _, err := env.app.Store.Stat(context.Background(), *withBanner.BannerImagePath); err == nil {
+		t.Fatal("expected group banner object to be deleted")
+	}
 }

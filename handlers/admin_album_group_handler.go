@@ -194,7 +194,8 @@ func (h *AdminAlbumGroupHandler) DeleteGroup(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if err := h.GroupRepo.Delete(uint(id)); err != nil {
+	bannerPath, err := h.GroupRepo.Delete(uint(id))
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			WriteAPIError(w, http.StatusNotFound, "GroupNotFound", "Album group not found")
 		} else {
@@ -202,6 +203,11 @@ func (h *AdminAlbumGroupHandler) DeleteGroup(w http.ResponseWriter, r *http.Requ
 			WriteAPIError(w, http.StatusInternalServerError, "GroupDeleteError", "Failed to delete album group")
 		}
 		return
+	}
+	if bannerPath != nil {
+		if err := h.Store.Delete(r.Context(), *bannerPath); err != nil {
+			log.Printf("Error deleting banner object of album group %d: %v", id, err)
+		}
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -256,6 +262,13 @@ func (h *AdminAlbumGroupHandler) UploadGroupBanner(w http.ResponseWriter, r *htt
 	}
 
 	if dbErr := h.GroupRepo.SetBannerPath(uint(id), &savedRelPath); dbErr != nil {
+		if err := h.Store.Delete(r.Context(), savedRelPath); err != nil {
+			log.Printf("Error deleting orphaned banner object %s: %v", savedRelPath, err)
+		}
+		if errors.Is(dbErr, gorm.ErrRecordNotFound) {
+			WriteAPIError(w, http.StatusNotFound, "GroupNotFound", "Album group not found")
+			return
+		}
 		log.Printf("Error saving banner path for group %d: %v", id, dbErr)
 		WriteAPIError(w, http.StatusInternalServerError, "BannerSaveError", "Failed to save banner information")
 		return
@@ -293,6 +306,14 @@ func (h *AdminAlbumGroupHandler) SetAlbumGroup(w http.ResponseWriter, r *http.Re
 	}
 
 	if err := h.GroupRepo.SetAlbumGroup(uint(albumID), req.GroupID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			WriteAPIError(w, http.StatusNotFound, "AlbumNotFound", "Album not found")
+			return
+		}
+		if errors.Is(err, repository.ErrGroupNotFound) {
+			WriteAPIError(w, http.StatusNotFound, "GroupNotFound", "Album group not found")
+			return
+		}
 		log.Printf("Error setting group for album %d: %v", albumID, err)
 		WriteAPIError(w, http.StatusInternalServerError, "SetGroupError", "Failed to update album group assignment")
 		return

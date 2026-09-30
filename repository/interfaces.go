@@ -13,8 +13,10 @@ type AlbumGroupRepositoryInterface interface {
 	ListAll() ([]models.AlbumGroup, error)
 	ListAllAdmin() ([]models.AlbumGroup, error)
 	Update(groupID uint, name, slug string, description *string, isHidden bool) error
-	Delete(id uint) error
+	// Delete soft-deletes the group, detaches its albums and returns its banner object key.
+	Delete(id uint) (*string, error)
 	SetBannerPath(groupID uint, bannerPath *string) error
+	// SetAlbumGroup returns gorm.ErrRecordNotFound for a missing album and ErrGroupNotFound for a missing group.
 	SetAlbumGroup(albumID uint, groupID *uint) error
 }
 
