@@ -4,7 +4,8 @@
 # Override for GPU builds, e.g. --build-arg OPENCV_IMAGE=<cuda-enabled opencv image>.
 ARG OPENCV_IMAGE=ghcr.io/hybridgroup/opencv:4.11.0
 ARG GO_IMAGE=golang:1.25-bookworm
-ARG RUNTIME_IMAGE=debian:bullseye-slim
+# bullseye (the OpenCV image's distro) is EOL; bookworm's newer glibc runs binaries built on it
+ARG RUNTIME_IMAGE=debian:bookworm-slim
 
 FROM ${GO_IMAGE} AS go
 
@@ -27,16 +28,22 @@ RUN --mount=type=cache,target=/root/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     go build -ldflags "-s -w" -o /out/mediasys .
 
-# collect every shared library the binary (and wget, for the healthcheck) links against
+# collect every shared library the binary (and wget, for the healthcheck) links against,
+# except glibc itself: the runtime image ships its own (newer) copy, and mixing
+# versions of libc/libm/ld.so would break it
 RUN mkdir -p /deps/usr/bin && cp /usr/bin/wget /deps/usr/bin/ && \
     for bin in /out/mediasys /usr/bin/wget; do \
-      ldd "$bin" | awk '/=> \// {print $3}' | xargs -I{} cp --parents -L {} /deps; \
-    done
+      ldd "$bin" | awk '/=> \// {print $3}' \
+        | grep -Ev '/(libc|libm|libdl|libpthread|librt|libutil|libresolv|libmvec|libnss_[a-z]+|ld-linux[^/]*)\.so' \
+        | xargs -I{} cp --parents -L {} /deps; \
+    done && \
+    # bookworm has a merged /usr, so /lib is a symlink there and can't be a COPY target
+    if [ -d /deps/lib ]; then mkdir -p /deps/usr/lib && cp -a /deps/lib/. /deps/usr/lib/ && rm -rf /deps/lib; fi
 
 # --- runtime -----------------------------------------------------------------
 FROM ${RUNTIME_IMAGE}
 
-# bullseye's apt mirrors are archived, so copy what we need from the builder instead
+# copy the OpenCV runtime libraries from the builder rather than installing them
 COPY --from=builder /etc/ssl/certs /etc/ssl/certs
 COPY --from=builder /deps/ /
 COPY --from=builder /out/mediasys /app/mediasys
