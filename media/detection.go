@@ -11,6 +11,9 @@ import (
 	"gocv.io/x/gocv"
 )
 
+// dnnConfThreshold is the minimum confidence for the legacy Caffe detector.
+const dnnConfThreshold = 0.2
+
 type DNNFaceDetector struct {
 	Net     gocv.Net
 	Enabled bool
@@ -91,7 +94,7 @@ func NewDNNFaceDetector(configPath, modelPath string) *DNNFaceDetector {
 		InputSizeH:    300,
 		ScaleFactor:   1.0,
 		MeanVal:       gocv.NewScalar(104.0, 177.0, 123.0, 0),
-		ConfThreshold: 0.2,
+		ConfThreshold: dnnConfThreshold,
 	}
 }
 
@@ -156,7 +159,7 @@ func (d *DNNFaceDetector) DetectFaces(img gocv.Mat) ([]DetectionResult, error) {
 			xMax = min(imgWidth, xMax)
 			yMax = min(imgHeight, yMax)
 
-			if xMax > xMin && yMax > yMin {
+			if xMax-xMin >= minFaceBoxPx && yMax-yMin >= minFaceBoxPx {
 				results = append(results, DetectionResult{
 					X:          int(xMin),
 					Y:          int(yMin),
