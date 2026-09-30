@@ -656,7 +656,7 @@ const OverviewContainer: React.FC = () => {
                     {/* Upload zone */}
                     <Can permission={['album.edit.general', 'album.photo.upload']} albumId={album.id}>
                         <div className='mt-4'>
-                            <UploadZone onFiles={handleFiles} disabled={isUploading} />
+                            <UploadZone onFiles={handleFiles} onError={setActionError} disabled={isUploading} />
                         </div>
                     </Can>
                     {actionError && (

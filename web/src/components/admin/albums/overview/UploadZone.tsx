@@ -5,7 +5,12 @@ import { Button } from '../../../elements/Button.tsx';
 export interface UploadZoneProps {
     disabled?: boolean;
     onFiles: (files: Array<{ file: File; relativePath: string }>) => void;
+    // called when dropped files/folders can't be read; nothing is uploaded in that case
+    onError?: (message: string) => void;
 }
+
+// Keep in sync with supportedImageExtensions in media/image_utils.go (the backend rejects anything else).
+const ACCEPTED_EXTENSIONS = '.jpg,.jpeg,.png,.gif,.bmp,.tif,.tiff,.webp';
 
 async function traverseEntry(
     entry: FileSystemEntry,
@@ -38,7 +43,7 @@ async function traverseEntry(
     }
 }
 
-const UploadZone: React.FC<UploadZoneProps> = ({ disabled, onFiles }) => {
+const UploadZone: React.FC<UploadZoneProps> = ({ disabled, onFiles, onError }) => {
     const [isDragOver, setIsDragOver] = React.useState(false);
     const fileInputRef = React.useRef<HTMLInputElement>(null);
     const folderInputRef = React.useRef<HTMLInputElement>(null);
@@ -90,6 +95,10 @@ const UploadZone: React.FC<UploadZoneProps> = ({ disabled, onFiles }) => {
             }
         } catch (err) {
             console.error('Failed to read dropped files', err);
+            onError?.(
+                'Could not read some of the dropped files or folders, so nothing was uploaded. Please try again.',
+            );
+            return;
         }
 
         if (collected.length > 0) onFiles(collected);
@@ -136,7 +145,14 @@ const UploadZone: React.FC<UploadZoneProps> = ({ disabled, onFiles }) => {
             </div>
 
             {/* Individual files */}
-            <input ref={fileInputRef} type='file' multiple className='hidden' onChange={handleFileInputChange} />
+            <input
+                ref={fileInputRef}
+                type='file'
+                multiple
+                accept={ACCEPTED_EXTENSIONS}
+                className='hidden'
+                onChange={handleFileInputChange}
+            />
             {/* Folder selection */}
             <input
                 ref={folderInputRef}
