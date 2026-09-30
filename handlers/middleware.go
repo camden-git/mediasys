@@ -21,6 +21,21 @@ const (
 	UserContextKey ContextKey = "user"
 )
 
+// parseAuthClaims verifies a token's signature, algorithm and expiry and returns its claims.
+func parseAuthClaims(tokenString string) (*authClaims, error) {
+	claims := &authClaims{}
+	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+		return jwtKey, nil // jwtKey is defined in auth.go and set from config.Config.JWTSecret via SetJWTSecret
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}), jwt.WithExpirationRequired())
+	if err != nil {
+		return nil, err
+	}
+	if !token.Valid {
+		return nil, jwt.ErrTokenInvalidClaims
+	}
+	return claims, nil
+}
+
 // AuthMiddleware creates a middleware handler for JWT authentication.
 // It verifies the token and, if valid, fetches the user and adds them to the request context.
 func AuthMiddleware(userRepo repository.UserRepository, next http.Handler) http.Handler {
@@ -38,12 +53,8 @@ func AuthMiddleware(userRepo repository.UserRepository, next http.Handler) http.
 		}
 		tokenString := parts[1]
 
-		claims := &authClaims{}
-		token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-			return jwtKey, nil // jwtKey is defined in auth.go and set from config.Config.JWTSecret via SetJWTSecret
-		}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}), jwt.WithExpirationRequired())
-
-		if err != nil || !token.Valid {
+		claims, err := parseAuthClaims(tokenString)
+		if err != nil {
 			WriteAPIError(w, http.StatusUnauthorized, "InvalidToken", "Invalid or expired token")
 			return
 		}

@@ -384,11 +384,8 @@ func (h *AuthHandler) userFromBearerToken(r *http.Request) *models.User {
 		return nil
 	}
 
-	claims := &authClaims{}
-	token, err := jwt.ParseWithClaims(parts[1], claims, func(token *jwt.Token) (interface{}, error) {
-		return jwtKey, nil
-	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}), jwt.WithExpirationRequired())
-	if err != nil || !token.Valid {
+	claims, err := parseAuthClaims(parts[1])
+	if err != nil {
 		return nil
 	}
 
