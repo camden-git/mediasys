@@ -1,5 +1,5 @@
 import React, { Suspense, useEffect } from 'react';
-import { Routes, Route, BrowserRouter } from 'react-router-dom';
+import { Routes, Route, RouterProvider, createBrowserRouter } from 'react-router-dom';
 import { useAuthStore } from './store/useAuthStore';
 import ProgressBar from './components/elements/ProgressBar';
 
@@ -16,15 +16,9 @@ const PersonView = React.lazy(() => import('./components/people/PersonView'));
 const NotFound = React.lazy(() => import('./components/NotFound'));
 const CollectionRouter = React.lazy(() => import('./routes/CollectionRouter'));
 
-function App() {
-    const initializeAuth = useAuthStore((s) => s.initializeAuth);
-
-    useEffect(() => {
-        initializeAuth();
-    }, [initializeAuth]);
-
+function AppRoutes() {
     return (
-        <BrowserRouter>
+        <>
             <ProgressBar />
             <Suspense fallback={null}>
                 <Routes>
@@ -47,8 +41,21 @@ function App() {
                     <Route path='*' element={<NotFound />} />
                 </Routes>
             </Suspense>
-        </BrowserRouter>
+        </>
     );
+}
+
+// A data router (rather than <BrowserRouter>) is required for useBlocker, which guards unsaved changes.
+const router = createBrowserRouter([{ path: '*', element: <AppRoutes /> }]);
+
+function App() {
+    const initializeAuth = useAuthStore((s) => s.initializeAuth);
+
+    useEffect(() => {
+        initializeAuth();
+    }, [initializeAuth]);
+
+    return <RouterProvider router={router} />;
 }
 
 export default App;

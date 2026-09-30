@@ -1,4 +1,5 @@
 import { Fragment, useEffect } from 'react';
+import { useBlocker } from 'react-router-dom';
 import { Transition } from '@headlessui/react';
 import { Button } from './Button';
 
@@ -18,8 +19,25 @@ export function UnsavedChangesBar({ isDirty, isSubmitting, onDiscard }: UnsavedC
         return () => window.removeEventListener('beforeunload', handler);
     }, [isDirty]);
 
+    // block in-app navigation (links, back/forward) while there are unsaved changes
+    const shouldBlock = isDirty && !isSubmitting;
+    const blocker = useBlocker(
+        ({ currentLocation, nextLocation }) =>
+            shouldBlock &&
+            (currentLocation.pathname !== nextLocation.pathname || currentLocation.search !== nextLocation.search),
+    );
+
+    useEffect(() => {
+        if (blocker.state !== 'blocked') return;
+        if (window.confirm('You have unsaved changes. Leave this page and discard them?')) {
+            blocker.proceed();
+        } else {
+            blocker.reset();
+        }
+    }, [blocker]);
+
     const saveButton = (
-        <Button type='submit' disabled={isSubmitting}>
+        <Button type='submit' disabled={isSubmitting || !isDirty}>
             {isSubmitting ? (
                 <span className='flex items-center gap-2'>
                     <svg
