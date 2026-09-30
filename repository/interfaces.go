@@ -33,7 +33,9 @@ type AlbumRepositoryInterface interface {
 	SetZipResult(albumID uint, zipPath *string, zipSize *int64, taskErr error) error
 	ListPendingZips() ([]models.Album, error)
 	UpdateSortOrder(albumID uint, sortOrder string) error
-	DeleteCascade(albumID uint) error
+	// DeleteCascade removes the album with its images, banners, tags and permissions in one
+	// transaction and returns the object keys to delete from storage.
+	DeleteCascade(albumID uint) ([]string, error)
 	GetBanners(albumID uint) ([]models.AlbumBanner, error)
 	AddBanner(banner *models.AlbumBanner) error
 	DeleteBanner(bannerID uint, albumID uint) error
@@ -80,7 +82,6 @@ type ImageRepositoryInterface interface {
 	GetImagesByAlbumIDs(albumIDs []uint, minRating *int, offset, limit int) ([]models.Image, int, error)
 	GetDistinctUploaderIDsByAlbum(albumID uint) ([]uint, error)
 	DeleteImages(paths []string) ([]string, error)
-	DeleteByAlbum(albumID uint) ([]string, error)
 }
 
 // FaceRepositoryInterface defines the methods for face data operations

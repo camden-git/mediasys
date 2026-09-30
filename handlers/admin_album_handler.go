@@ -387,30 +387,18 @@ func (h *AdminAlbumHandler) DeleteAlbum(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	existingBanners, _ := h.AlbumRepo.GetBanners(album.ID)
-
-	imageKeys, err := h.ImageRepo.DeleteByAlbum(album.ID)
+	keys, err := h.AlbumRepo.DeleteCascade(album.ID)
 	if err != nil {
-		log.Printf("Error deleting images of album %d: %v", album.ID, err)
-		WriteAPIError(w, http.StatusInternalServerError, "AlbumDeleteError", "Failed to delete album images")
-		return
-	}
-
-	err = h.AlbumRepo.DeleteCascade(album.ID)
-	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			WriteAPIError(w, http.StatusNotFound, "AlbumNotFound", "Album not found")
+			return
+		}
 		log.Printf("Error deleting album %d: %v", album.ID, err)
 		WriteAPIError(w, http.StatusInternalServerError, "AlbumDeleteError", "Failed to delete album")
 		return
 	}
 
-	// best-effort object cleanup
-	keys := imageKeys
-	for _, b := range existingBanners {
-		keys = append(keys, b.ImagePath)
-	}
-	if album.ZipPath != nil {
-		keys = append(keys, *album.ZipPath)
-	}
+	// the rows are gone; remove the objects in the background (failures are logged by the store)
 	go h.Store.DeleteKeys(context.Background(), keys)
 
 	w.WriteHeader(http.StatusNoContent)

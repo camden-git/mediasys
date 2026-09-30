@@ -434,15 +434,6 @@ func (r *ImageRepository) DeleteImages(paths []string) ([]string, error) {
 	return ImageObjectKeys(imgs), nil
 }
 
-// DeleteByAlbum hard-deletes every image in an album. See DeleteImages.
-func (r *ImageRepository) DeleteByAlbum(albumID uint) ([]string, error) {
-	var paths []string
-	if err := r.DB.Unscoped().Model(&models.Image{}).Where("album_id = ?", albumID).Pluck("original_path", &paths).Error; err != nil {
-		return nil, err
-	}
-	return r.DeleteImages(paths)
-}
-
 // ImageObjectKeys lists the original and generated object keys of the given images.
 func ImageObjectKeys(imgs []models.Image) []string {
 	keys := make([]string, 0, len(imgs)*3)

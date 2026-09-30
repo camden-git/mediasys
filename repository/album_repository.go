@@ -10,6 +10,7 @@ import (
 	"github.com/camden-git/mediasysbackend/database"
 	"github.com/camden-git/mediasysbackend/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // AlbumRepository handles database operations for Album entities
@@ -309,11 +310,48 @@ func (r *AlbumRepository) UpdateSortOrder(albumID uint, sortOrder string) error 
 	return nil
 }
 
-// DeleteCascade removes an album and its related banners, default tags, and
-// user/role album permissions in a single transaction, then hard-deletes the
-// album itself.
-func (r *AlbumRepository) DeleteCascade(albumID uint) error {
-	return r.DB.Transaction(func(tx *gorm.DB) error {
+// DeleteCascade removes an album together with its images (and their faces,
+// embeddings and tags), banners, default tags and user/role album permissions
+// in a single transaction, then hard-deletes the album itself. It returns every
+// object key that belonged to the album so the caller can remove the objects
+// from storage once the transaction has committed.
+func (r *AlbumRepository) DeleteCascade(albumID uint) ([]string, error) {
+	var keys []string
+	err := r.DB.Transaction(func(tx *gorm.DB) error {
+		var album models.Album
+		if err := tx.Unscoped().Clauses(clause.Locking{Strength: "UPDATE"}).First(&album, albumID).Error; err != nil {
+			return err
+		}
+
+		var imgs []models.Image
+		if err := tx.Unscoped().Where("album_id = ?", albumID).Find(&imgs).Error; err != nil {
+			return err
+		}
+		if len(imgs) > 0 {
+			paths := make([]string, len(imgs))
+			for i, img := range imgs {
+				paths[i] = img.OriginalPath
+			}
+			if err := deleteImageRelations(tx, paths, true); err != nil {
+				return err
+			}
+			if err := tx.Unscoped().Where("album_id = ?", albumID).Delete(&models.Image{}).Error; err != nil {
+				return err
+			}
+			keys = ImageObjectKeys(imgs)
+		}
+
+		var banners []models.AlbumBanner
+		if err := tx.Where("album_id = ?", albumID).Find(&banners).Error; err != nil {
+			return err
+		}
+		for _, b := range banners {
+			keys = append(keys, b.ImagePath)
+		}
+		if album.ZipPath != nil {
+			keys = append(keys, *album.ZipPath)
+		}
+
 		for _, m := range []any{&models.AlbumBanner{}, &models.AlbumDefaultTag{}, &models.UserAlbumPermission{}, &models.RoleAlbumPermission{}} {
 			if err := tx.Where("album_id = ?", albumID).Delete(m).Error; err != nil {
 				return err
@@ -321,6 +359,10 @@ func (r *AlbumRepository) DeleteCascade(albumID uint) error {
 		}
 		return tx.Unscoped().Delete(&models.Album{}, albumID).Error
 	})
+	if err != nil {
+		return nil, err
+	}
+	return keys, nil
 }
 
 // ListPendingZips returns albums whose archive was requested but never finished
