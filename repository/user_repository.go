@@ -18,6 +18,9 @@ var ErrSetupAlreadyCompleted = errors.New("setup already completed")
 // does not exist, is inactive or expired, or has no uses left.
 var ErrInviteCodeInvalid = errors.New("invite code is invalid, expired, or exhausted")
 
+// firstAdminLockKey is the Postgres advisory lock key that serializes first-admin creation.
+const firstAdminLockKey int64 = 0x6d65646961737973 // "mediasys"
+
 type GormUserRepository struct {
 	db *gorm.DB
 }
@@ -195,6 +198,11 @@ func (r *GormUserRepository) CountAll() (int64, error) {
 // bootstrapping the very first administrator during initial setup.
 func (r *GormUserRepository) CreateFirstAdmin(user *models.User, roleName string) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
+		// serialize concurrent setups so the count check below cannot race
+		if err := tx.Exec("SELECT pg_advisory_xact_lock(?)", firstAdminLockKey).Error; err != nil {
+			return fmt.Errorf("failed to acquire setup lock: %w", err)
+		}
+
 		var count int64
 		if err := tx.Model(&models.User{}).Count(&count).Error; err != nil {
 			return fmt.Errorf("failed to count existing users: %w", err)
