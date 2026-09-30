@@ -1,17 +1,21 @@
-mediasysbackend
-cli
-.env
+# built binaries
+/mediasys
+/mediasysbackend
+/cli
+
+# local environment (keep the example)
+/.env*
+!/.env.example
 *.db
 *.db*
 
-generated_thumbnails/*
-generated_thumbnails
-test
-test/*
-data
-data/*
-DNN_models/*
-face_models/*
+# runtime data and local model files
+/generated_thumbnails/
+/test/
+/data/
+/DNN_models/
+/face_models/
+/ml-models/
 
 .idea/
-ml-models/
+.claude/
