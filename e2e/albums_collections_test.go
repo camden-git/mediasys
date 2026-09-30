@@ -257,3 +257,39 @@ func TestAlbumGroupAssignmentAndDeletion(t *testing.T) {
 		t.Fatal("expected group banner object to be deleted")
 	}
 }
+
+func TestImageTagsUsePerAlbumPermission(t *testing.T) {
+	env := requireShared(t)
+	s := randomSuffix()
+	albumA := createAlbum(t, env.adminToken, "Tag A "+s, "tag-a-"+s, "")
+	albumB := createAlbum(t, env.adminToken, "Tag B "+s, "tag-b-"+s, "")
+	pathA := uploadImage(t, env.adminToken, albumA.ID, "a.jpg")
+	pathB := uploadImage(t, env.adminToken, albumB.ID, "b.jpg")
+
+	username := "tagger_" + s
+	userID := createUser(t, env.adminToken, username, "test-password-"+s)
+	grantAlbumPermission(t, env.adminToken, albumA.ID, userID, []string{"album.photo.editmeta"})
+	token, err := login(env.server.URL, username, "test-password-"+s)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tagURL := func(p string) string { return "/api/admin/images/tags?path=" + url.QueryEscape(p) }
+	body := map[string]any{"tag_key": "event", "tag_value": "wedding"}
+
+	if resp := doJSON(t, http.MethodPost, tagURL(pathA), token, body); resp.StatusCode != http.StatusCreated {
+		t.Fatalf("tag own album image: expected 201, got %d %s", resp.StatusCode, resp.Body)
+	}
+	if resp := doJSON(t, http.MethodPost, tagURL(pathB), token, body); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("tag other album image: expected 403, got %d %s", resp.StatusCode, resp.Body)
+	}
+	if resp := doRequest(t, http.MethodGet, tagURL(pathB), token, nil, ""); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("read other album tags: expected 403, got %d", resp.StatusCode)
+	}
+	if resp := doJSON(t, http.MethodPost, tagURL("nope/missing.jpg"), env.adminToken, body); resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("missing image: expected 404, got %d %s", resp.StatusCode, resp.Body)
+	}
+	if resp := doJSON(t, http.MethodPost, tagURL(pathB), env.adminToken, body); resp.StatusCode != http.StatusCreated {
+		t.Fatalf("admin tag: expected 201, got %d %s", resp.StatusCode, resp.Body)
+	}
+}

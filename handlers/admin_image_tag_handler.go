@@ -5,12 +5,13 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/camden-git/mediasysbackend/models"
 	"github.com/camden-git/mediasysbackend/repository"
 	"github.com/go-chi/chi/v5"
 	"gorm.io/gorm"
-	"strconv"
 )
 
 // AdminImageTagHandler handles image tag and album default tag endpoints.
@@ -20,14 +21,46 @@ type AdminImageTagHandler struct {
 	ImageRepo repository.ImageRepositoryInterface
 }
 
+// authorizeImage resolves the image referenced by the "path" query param and
+// checks that the caller may edit the image's album: either the global
+// album.edit.general permission or album.photo.editmeta on that album. It writes
+// the error response itself and returns false on failure.
+func (h *AdminImageTagHandler) authorizeImage(w http.ResponseWriter, r *http.Request) (*models.Image, bool) {
+	imagePath := strings.TrimPrefix(r.URL.Query().Get("path"), "/")
+	if imagePath == "" {
+		WriteAPIError(w, http.StatusBadRequest, "MissingPath", "Query param 'path' is required")
+		return nil, false
+	}
+	user, ok := r.Context().Value(UserContextKey).(*models.User)
+	if !ok || user == nil {
+		WriteAPIError(w, http.StatusInternalServerError, "ContextUserMissing", "User not found in context")
+		return nil, false
+	}
+	img, err := h.ImageRepo.GetByPath(imagePath)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			WriteAPIError(w, http.StatusNotFound, "ImageNotFound", "Image not found")
+		} else {
+			log.Printf("Error loading image %s for tags: %v", imagePath, err)
+			WriteAPIError(w, http.StatusInternalServerError, "ImageFetchError", "Failed to retrieve image")
+		}
+		return nil, false
+	}
+	if !user.HasGlobalPermission("album.edit.general") && !user.HasAlbumPermission(img.AlbumID, "album.photo.editmeta") {
+		WriteAPIError(w, http.StatusForbidden, "Forbidden", "Forbidden: requires global permission 'album.edit.general' or album permission 'album.photo.editmeta'")
+		return nil, false
+	}
+	return img, true
+}
+
 // GetImageTags returns all tags for an image path.
 // GET /api/admin/images/tags?path=...
 func (h *AdminImageTagHandler) GetImageTags(w http.ResponseWriter, r *http.Request) {
-	path := r.URL.Query().Get("path")
-	if path == "" {
-		WriteAPIError(w, http.StatusBadRequest, "MissingPath", "Query param 'path' is required")
+	img, ok := h.authorizeImage(w, r)
+	if !ok {
 		return
 	}
+	path := img.OriginalPath
 	tags, err := h.TagRepo.GetTagsByImagePath(path)
 	if err != nil {
 		log.Printf("Error getting tags for %s: %v", path, err)
@@ -40,11 +73,11 @@ func (h *AdminImageTagHandler) GetImageTags(w http.ResponseWriter, r *http.Reque
 // AddManualTag adds a manual tag to an image.
 // POST /api/admin/images/tags?path=...
 func (h *AdminImageTagHandler) AddManualTag(w http.ResponseWriter, r *http.Request) {
-	path := r.URL.Query().Get("path")
-	if path == "" {
-		WriteAPIError(w, http.StatusBadRequest, "MissingPath", "Query param 'path' is required")
+	img, ok := h.authorizeImage(w, r)
+	if !ok {
 		return
 	}
+	path := img.OriginalPath
 	var req struct {
 		TagKey   string `json:"tag_key"`
 		TagValue string `json:"tag_value"`
@@ -69,11 +102,11 @@ func (h *AdminImageTagHandler) AddManualTag(w http.ResponseWriter, r *http.Reque
 // RemoveManualTag removes a manual tag from an image.
 // DELETE /api/admin/images/tags?path=...
 func (h *AdminImageTagHandler) RemoveManualTag(w http.ResponseWriter, r *http.Request) {
-	path := r.URL.Query().Get("path")
-	if path == "" {
-		WriteAPIError(w, http.StatusBadRequest, "MissingPath", "Query param 'path' is required")
+	img, ok := h.authorizeImage(w, r)
+	if !ok {
 		return
 	}
+	path := img.OriginalPath
 	var req struct {
 		TagKey   string `json:"tag_key"`
 		TagValue string `json:"tag_value"`

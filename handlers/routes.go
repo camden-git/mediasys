@@ -320,19 +320,13 @@ func RegisterRoutes(r chi.Router, deps AppDependencies) {
 				})
 			})
 
-			// image tag management routes
+			// image tag management routes (the handler checks the image's album permission)
 			r.Route("/images", func(r chi.Router) {
-				r.With(func(next http.Handler) http.Handler {
-					return RequireGlobalPermission("album.edit.general", next)
-				}).Get("/tags", deps.AdminImageTagHandler.GetImageTags)
+				r.With(RequireAnyGlobalPermissionOrAlbumAccess([]string{"album.edit.general"})).Get("/tags", deps.AdminImageTagHandler.GetImageTags)
 
-				r.With(func(next http.Handler) http.Handler {
-					return RequireGlobalPermission("album.edit.general", next)
-				}).Post("/tags", deps.AdminImageTagHandler.AddManualTag)
+				r.With(RequireAnyGlobalPermissionOrAlbumAccess([]string{"album.edit.general"})).Post("/tags", deps.AdminImageTagHandler.AddManualTag)
 
-				r.With(func(next http.Handler) http.Handler {
-					return RequireGlobalPermission("album.edit.general", next)
-				}).Delete("/tags", deps.AdminImageTagHandler.RemoveManualTag)
+				r.With(RequireAnyGlobalPermissionOrAlbumAccess([]string{"album.edit.general"})).Delete("/tags", deps.AdminImageTagHandler.RemoveManualTag)
 			})
 
 			// collection management routes
