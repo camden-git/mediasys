@@ -9,12 +9,14 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/camden-git/mediasysbackend/config"
 	"github.com/camden-git/mediasysbackend/models"
 	"github.com/camden-git/mediasysbackend/repository"
 	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // jwtKey holds the JWT signing secret. It must be initialized via SetJWTSecret
@@ -43,10 +45,19 @@ type AuthHandler struct {
 	UserRepo       repository.UserRepository
 	InviteCodeRepo repository.InviteCodeRepository
 	Cfg            config.Config
+
+	loginLimiter    *ipRateLimiter
+	registerLimiter *ipRateLimiter
 }
 
 func NewAuthHandler(userRepo repository.UserRepository, inviteCodeRepo repository.InviteCodeRepository, cfg config.Config) *AuthHandler {
-	return &AuthHandler{UserRepo: userRepo, InviteCodeRepo: inviteCodeRepo, Cfg: cfg}
+	return &AuthHandler{
+		UserRepo:        userRepo,
+		InviteCodeRepo:  inviteCodeRepo,
+		Cfg:             cfg,
+		loginLimiter:    newIPRateLimiter(10, 2*time.Second),
+		registerLimiter: newIPRateLimiter(5, 10*time.Second),
+	}
 }
 
 type LoginPayload struct {
@@ -61,7 +72,24 @@ type LoginResponse struct {
 	ExpiresAt time.Time   `json:"expires_at"`
 }
 
+var (
+	dummyHashOnce sync.Once
+	dummyHash     []byte
+)
+
+// compareDummyPassword runs a bcrypt comparison against a throwaway hash.
+func compareDummyPassword(password string) {
+	dummyHashOnce.Do(func() {
+		dummyHash, _ = bcrypt.GenerateFromPassword([]byte("dummy-password-for-timing"), bcrypt.DefaultCost)
+	})
+	_ = bcrypt.CompareHashAndPassword(dummyHash, []byte(password))
+}
+
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
+	if rateLimited(w, r, h.loginLimiter) {
+		return
+	}
+
 	var payload LoginPayload
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		WriteAPIError(w, http.StatusBadRequest, "InvalidPayloadException", "Invalid request payload")
@@ -89,6 +117,8 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	user, err := h.UserRepo.GetByUsername(payload.Username)
 	if err != nil {
+		// burn a bcrypt comparison so unknown usernames take as long as wrong passwords
+		compareDummyPassword(payload.Password)
 		WriteAPIError(w, http.StatusUnauthorized, "DisplayException", "No account matching those credentials could be found.")
 		return
 	}
@@ -126,6 +156,8 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+var turnstileClient = &http.Client{Timeout: 10 * time.Second}
+
 // verifyTurnstile verifies a Cloudflare Turnstile token using the secret key
 func verifyTurnstile(secret, responseToken, remoteIP string) (bool, error) {
 	form := url.Values{}
@@ -135,7 +167,7 @@ func verifyTurnstile(secret, responseToken, remoteIP string) (bool, error) {
 		form.Set("remoteip", remoteIP)
 	}
 
-	resp, err := http.PostForm("https://challenges.cloudflare.com/turnstile/v0/siteverify", form)
+	resp, err := turnstileClient.PostForm("https://challenges.cloudflare.com/turnstile/v0/siteverify", form)
 	if err != nil {
 		return false, err
 	}
@@ -155,31 +187,6 @@ func verifyTurnstile(secret, responseToken, remoteIP string) (bool, error) {
 		log.Printf("Turnstile verification failed: error-codes=%v", parsed.ErrorCodes)
 	}
 	return parsed.Success, nil
-}
-
-// getClientIP attempts to determine the client's IP address, respecting common proxy headers
-func getClientIP(r *http.Request) string {
-	// Try CF-Connecting-IP first (Cloudflare)
-	if ip := strings.TrimSpace(r.Header.Get("CF-Connecting-IP")); ip != "" {
-		return ip
-	}
-	// Then X-Forwarded-For (first IP)
-	if xff := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); xff != "" {
-		parts := strings.Split(xff, ",")
-		if len(parts) > 0 {
-			return strings.TrimSpace(parts[0])
-		}
-	}
-	// Then X-Real-IP
-	if ip := strings.TrimSpace(r.Header.Get("X-Real-IP")); ip != "" {
-		return ip
-	}
-	// Fallback to RemoteAddr (strip port if present)
-	hostPort := strings.TrimSpace(r.RemoteAddr)
-	if idx := strings.LastIndex(hostPort, ":"); idx != -1 {
-		return hostPort[:idx]
-	}
-	return hostPort
 }
 
 const (
@@ -219,6 +226,10 @@ type RegisterPayload struct {
 
 // Register handles new user registration using an invitation code
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
+	if rateLimited(w, r, h.registerLimiter) {
+		return
+	}
+
 	var payload RegisterPayload
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		WriteAPIError(w, http.StatusBadRequest, "InvalidPayloadException", "Invalid request payload: "+err.Error())
