@@ -97,10 +97,10 @@ func TestAlbumUploadAndProcessing(t *testing.T) {
 	}
 
 	var processed fileInfo
-	pollUntil(t, 30*time.Second, 500*time.Millisecond, "image thumbnail/metadata processing to finish", func() bool {
+	pollUntil(t, processingTimeout(), 500*time.Millisecond, "image thumbnail/metadata processing to finish", func() bool {
 		listResp := doRequest(t, http.MethodGet, fmt.Sprintf("/api/admin/albums/%d/images", album.ID), env.adminToken, nil, "")
 		if listResp.StatusCode != http.StatusOK {
-			return false
+			t.Fatalf("listing images: unexpected status %d: %s", listResp.StatusCode, listResp.Body)
 		}
 		var listing directoryListing
 		listResp.decodeData(t, &listing)

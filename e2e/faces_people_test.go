@@ -29,10 +29,10 @@ func uploadImage(t *testing.T, token string, albumID uint, filename string) stri
 		t.Fatalf("upload failed: %d %s", resp.StatusCode, resp.Body)
 	}
 	var path string
-	pollUntil(t, 30*time.Second, 250*time.Millisecond, "uploaded image to be listed", func() bool {
+	pollUntil(t, processingTimeout(), 250*time.Millisecond, "uploaded image to be listed", func() bool {
 		listResp := doRequest(t, http.MethodGet, fmt.Sprintf("/api/admin/albums/%d/images", albumID), token, nil, "")
 		if listResp.StatusCode != http.StatusOK {
-			return false
+			t.Fatalf("listing images: unexpected status %d: %s", listResp.StatusCode, listResp.Body)
 		}
 		var listing directoryListing
 		listResp.decodeData(t, &listing)

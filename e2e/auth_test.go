@@ -102,7 +102,7 @@ func TestErrorResponseShape(t *testing.T) {
 		assertErrorShape(t, resp)
 	})
 
-	t.Run("forbidden", func(t *testing.T) {
+	t.Run("validation error", func(t *testing.T) {
 		resp := doJSON(t, http.MethodPost, "/api/admin/albums", env.adminToken, map[string]any{})
 		// missing name/slug -> validation error, still standard shape
 		if resp.StatusCode != http.StatusBadRequest {

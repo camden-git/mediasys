@@ -243,6 +243,21 @@ func requireShared(t *testing.T) *sharedEnvT {
 	return shared
 }
 
+// processingTimeout is how long tests wait for background image processing
+// (thumbnails, metadata). Override with E2E_PROCESSING_TIMEOUT (a Go duration,
+// e.g. 90s); the default is 30s locally and 2m when CI=true.
+func processingTimeout() time.Duration {
+	if v := os.Getenv("E2E_PROCESSING_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			return d
+		}
+	}
+	if os.Getenv("CI") == "true" {
+		return 2 * time.Minute
+	}
+	return 30 * time.Second
+}
+
 // pollUntil polls fn every interval until it returns true, or fails the test
 // once timeout elapses.
 func pollUntil(t *testing.T, timeout, interval time.Duration, msg string, fn func() bool) {
