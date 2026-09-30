@@ -85,9 +85,17 @@ func (s *Store) ensureBucket(ctx context.Context, region string) error {
 	return s.client.MakeBucket(ctx, s.bucket, minio.MakeBucketOptions{Region: region})
 }
 
+// unknownSizePartSize is the multipart part size used for streams of unknown length.
+const unknownSizePartSize = 16 << 20
+
 // Put uploads data under key. size may be -1 when unknown. Returns the stored size.
 func (s *Store) Put(ctx context.Context, key string, data io.Reader, size int64, contentType string) (int64, error) {
-	info, err := s.client.PutObject(ctx, s.bucket, key, data, size, minio.PutObjectOptions{ContentType: contentType})
+	opts := minio.PutObjectOptions{ContentType: contentType}
+	if size < 0 {
+		// without a part size minio sizes buffers for the maximum object (~537MiB)
+		opts.PartSize = unknownSizePartSize
+	}
+	info, err := s.client.PutObject(ctx, s.bucket, key, data, size, opts)
 	if err != nil {
 		return 0, fmt.Errorf("failed to put object %s: %w", key, err)
 	}
