@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/camden-git/mediasysbackend/models"
 	"github.com/camden-git/mediasysbackend/permissions"
@@ -168,11 +169,18 @@ func (h *AdminUserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	for _, pKey := range payload.GlobalPermissions {
-		if !permissions.IsValidPermissionKey(pKey) {
-			WriteAPIError(w, http.StatusBadRequest, "ValidationError", fmt.Sprintf("Invalid global permission key: %s", pKey))
-			return
-		}
+	if strings.TrimSpace(payload.Username) == "" {
+		WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Username cannot be empty")
+		return
+	}
+	if msg := passwordPolicyError(payload.Password); msg != "" {
+		WriteAPIError(w, http.StatusBadRequest, "ValidationError", msg)
+		return
+	}
+
+	if msg := globalPermissionKeyError(payload.GlobalPermissions); msg != "" {
+		WriteAPIError(w, http.StatusBadRequest, "ValidationError", msg)
+		return
 	}
 
 	caller, ok := requestUser(w, r)
@@ -219,7 +227,7 @@ func (h *AdminUserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.UserRepo.Create(user); err != nil {
-		WriteAPIError(w, http.StatusInternalServerError, "UserCreateError", "Failed to create user: "+err.Error())
+		writeUserPersistenceError(w, err, "Failed to create user")
 		return
 	}
 
@@ -282,9 +290,17 @@ func (h *AdminUserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if payload.Username != nil {
+		if strings.TrimSpace(*payload.Username) == "" {
+			WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Username cannot be empty")
+			return
+		}
 		user.Username = *payload.Username
 	}
 	if payload.Password != nil && *payload.Password != "" {
+		if msg := passwordPolicyError(*payload.Password); msg != "" {
+			WriteAPIError(w, http.StatusBadRequest, "ValidationError", msg)
+			return
+		}
 		if err := user.SetPassword(*payload.Password); err != nil {
 			WriteAPIError(w, http.StatusInternalServerError, "HashingError", "Failed to set new password: "+err.Error())
 			return
@@ -292,11 +308,9 @@ func (h *AdminUserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		user.TokenVersion++
 	}
 	if payload.GlobalPermissions != nil {
-		for _, pKey := range *payload.GlobalPermissions {
-			if !permissions.IsValidPermissionKey(pKey) {
-				WriteAPIError(w, http.StatusBadRequest, "ValidationError", fmt.Sprintf("Invalid global permission key: %s", pKey))
-				return
-			}
+		if msg := globalPermissionKeyError(*payload.GlobalPermissions); msg != "" {
+			WriteAPIError(w, http.StatusBadRequest, "ValidationError", msg)
+			return
 		}
 		if msg := globalGrantDenial(caller, *payload.GlobalPermissions, user.GlobalPermissions); msg != "" {
 			WriteAPIError(w, http.StatusForbidden, "ForbiddenPermissionGrant", msg)
@@ -360,7 +374,7 @@ func (h *AdminUserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		updateErr = h.UserRepo.Update(user)
 	}
 	if updateErr != nil {
-		WriteAPIError(w, http.StatusInternalServerError, "UserUpdateError", "Failed to update user: "+updateErr.Error())
+		writeUserPersistenceError(w, updateErr, "Failed to update user")
 		return
 	}
 
@@ -373,6 +387,20 @@ func (h *AdminUserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	userAlbumPerms, _ := h.UserRepo.GetUserAlbumPermissions(updatedUser.ID)
 
 	WriteAPIResponse(w, http.StatusOK, toUserResponseDTO(updatedUser, userAlbumPerms))
+}
+
+// globalPermissionKeyError returns a message if any key is unknown or not global-scoped, or "" if all are valid.
+func globalPermissionKeyError(keys []string) string {
+	for _, key := range keys {
+		def, ok := permissions.GetPermissionDefinition(key)
+		if !ok {
+			return fmt.Sprintf("Invalid global permission key: %s", key)
+		}
+		if def.Scope != permissions.ScopeGlobal {
+			return fmt.Sprintf("Permission %s is not global-scoped", key)
+		}
+	}
+	return ""
 }
 
 // roleSetDifference returns the roles in a whose IDs are not present in b.
@@ -476,13 +504,3 @@ func (h *AdminUserHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusNoContent)
 }
-
-// TODO: Add handlers for managing user's album-specific permissions
-// e.g., POST /api/admin/users/{id}/album-permissions
-// Body: { "album_id": 123, "permissions": ["album.photo.upload", "album.photo.delete"] }
-// This would use UserRepo.CreateUserAlbumPermission or UpdateUserAlbumPermission
-
-// TODO: Add handlers for managing user's roles more granularly if needed
-// e.g., POST /api/admin/users/{id}/roles/{role_id} (Add role)
-// DELETE /api/admin/users/{id}/roles/{role_id} (Remove role)
-// The current UpdateUser replaces all roles, which is often simpler for UIs.

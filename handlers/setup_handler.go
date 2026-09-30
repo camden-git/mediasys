@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"reflect"
 	"sort"
+	"strings"
 
 	"github.com/camden-git/mediasysbackend/models"
 	"github.com/camden-git/mediasysbackend/permissions"
@@ -107,8 +108,12 @@ func (h *SetupHandler) CreateFirstAdmin(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if payload.Username == "" || payload.Password == "" {
+	if strings.TrimSpace(payload.Username) == "" || payload.Password == "" {
 		WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Username and password are required")
+		return
+	}
+	if msg := passwordPolicyError(payload.Password); msg != "" {
+		WriteAPIError(w, http.StatusBadRequest, "ValidationError", msg)
 		return
 	}
 
