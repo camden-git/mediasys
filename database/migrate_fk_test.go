@@ -18,7 +18,7 @@ import (
 func TestForeignKeyDeleteBehavior(t *testing.T) {
 	adminURL := os.Getenv("TEST_DATABASE_URL")
 	if adminURL == "" {
-		t.Skip("TEST_DATABASE_URL not set; skipping foreign key test")
+		skipOrFailMissingEnv(t, "TEST_DATABASE_URL not set; skipping foreign key test")
 	}
 	ctx := context.Background()
 

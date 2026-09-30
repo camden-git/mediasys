@@ -19,7 +19,7 @@ import (
 func TestMigrationsUpgradeAutoMigrateDatabase(t *testing.T) {
 	adminURL := os.Getenv("TEST_DATABASE_URL")
 	if adminURL == "" {
-		t.Skip("TEST_DATABASE_URL not set; skipping upgrade test")
+		skipOrFailMissingEnv(t, "TEST_DATABASE_URL not set; skipping upgrade test")
 	}
 	ctx := context.Background()
 

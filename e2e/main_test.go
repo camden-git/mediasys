@@ -227,11 +227,14 @@ func emptyAndDeleteBucket(ctx context.Context, bucket string) {
 	}
 }
 
-// requireShared skips the test if the environment isn't configured for e2e
+// requireShared skips (fails when CI=true) the test if the environment isn't configured for e2e
 // tests, and otherwise returns the shared server/app built by TestMain.
 func requireShared(t *testing.T) *sharedEnvT {
 	t.Helper()
 	if !envReady() {
+		if os.Getenv("CI") == "true" {
+			t.Fatal("TEST_DATABASE_URL and TEST_S3_* env vars are required when CI=true")
+		}
 		t.Skip("TEST_DATABASE_URL and TEST_S3_* env vars not set; skipping e2e tests (see e2e/main_test.go doc comment)")
 	}
 	if shared == nil {

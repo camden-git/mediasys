@@ -43,7 +43,7 @@ import (
 func TestMigrationsMatchGORMSchema(t *testing.T) {
 	adminURL := os.Getenv("TEST_DATABASE_URL")
 	if adminURL == "" {
-		t.Skip("TEST_DATABASE_URL not set; skipping schema comparison test (see doc comment for how to run it)")
+		skipOrFailMissingEnv(t, "TEST_DATABASE_URL not set; skipping schema comparison test (see doc comment for how to run it)")
 	}
 
 	ctx := context.Background()
@@ -310,4 +310,14 @@ func missingFrom(have, want []string) string {
 		}
 	}
 	return diff
+}
+
+// skipOrFailMissingEnv skips the test locally, but fails it when CI=true so a
+// misconfigured pipeline can't silently stop running these tests.
+func skipOrFailMissingEnv(t *testing.T, msg string) {
+	t.Helper()
+	if os.Getenv("CI") == "true" {
+		t.Fatal(msg + " (required when CI=true)")
+	}
+	t.Skip(msg)
 }
