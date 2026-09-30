@@ -3,7 +3,6 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
-	"image"
 	"log"
 	"net/http"
 	"strconv"
@@ -13,7 +12,6 @@ import (
 	"github.com/camden-git/mediasysbackend/media"
 	"github.com/camden-git/mediasysbackend/models"
 	"github.com/camden-git/mediasysbackend/repository"
-	"github.com/disintegration/imaging"
 	"github.com/go-chi/chi/v5"
 	"gorm.io/gorm" // For gorm.ErrRecordNotFound
 )
@@ -427,7 +425,7 @@ func (ph *PersonHandler) SetKeyPhoto(w http.ResponseWriter, r *http.Request) {
 	WriteAPIResponse(w, http.StatusOK, updatedPerson)
 }
 
-// ServeKeyPhoto serves a 128×128 JPEG thumbnail cropped from the person's key photo face.
+// ServeKeyPhoto serves the cached JPEG crop (max 256px) of the person's key photo face.
 // GET /api/people/{person_id}/key-photo.jpg
 func (ph *PersonHandler) ServeKeyPhoto(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "person_id")
@@ -437,7 +435,7 @@ func (ph *PersonHandler) ServeKeyPhoto(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	person, err := ph.PersonRepo.GetByID(uint(personID))
+	person, err := ph.PersonRepo.GetBasic(uint(personID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			WriteAPIError(w, http.StatusNotFound, "PersonNotFound", "person not found")
@@ -469,67 +467,5 @@ func (ph *PersonHandler) ServeKeyPhoto(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	img, err := ph.ImageRepo.GetByPath(face.ImagePath)
-	if err != nil {
-		WriteAPIError(w, http.StatusNotFound, "ImageNotFound", "key photo image not found")
-		return
-	}
-	obj, _, err := ph.Store.Get(r.Context(), img.ObjectKey)
-	if err != nil {
-		log.Printf("ServeKeyPhoto: failed to open image %s: %v", img.ObjectKey, err)
-		WriteAPIError(w, http.StatusInternalServerError, "ImageOpenError", "could not open image")
-		return
-	}
-	defer obj.Close()
-	src, err := imaging.Decode(obj, imaging.AutoOrientation(true))
-	if err != nil {
-		log.Printf("ServeKeyPhoto: failed to decode image %s: %v", img.ObjectKey, err)
-		WriteAPIError(w, http.StatusInternalServerError, "ImageOpenError", "could not open image")
-		return
-	}
-
-	// Compute padded square crop centered on face bounding box
-	cx := (face.X1 + face.X2) / 2
-	cy := (face.Y1 + face.Y2) / 2
-	faceW := face.X2 - face.X1
-	faceH := face.Y2 - face.Y1
-	side := faceW
-	if faceH > side {
-		side = faceH
-	}
-	// Add 20% padding on each side
-	paddedSide := int(float64(side) * 1.4)
-	if paddedSide < 1 {
-		paddedSide = 1
-	}
-	x1 := cx - paddedSide/2
-	y1 := cy - paddedSide/2
-	x2 := x1 + paddedSide
-	y2 := y1 + paddedSide
-
-	// Clamp to image bounds
-	imgW := src.Bounds().Dx()
-	imgH := src.Bounds().Dy()
-	if x1 < 0 {
-		x1 = 0
-	}
-	if y1 < 0 {
-		y1 = 0
-	}
-	if x2 > imgW {
-		x2 = imgW
-	}
-	if y2 > imgH {
-		y2 = imgH
-	}
-
-	crop := imaging.Crop(src, image.Rect(x1, y1, x2, y2))
-	thumb := imaging.Fill(crop, 128, 128, imaging.Center, imaging.Lanczos)
-
-	w.Header().Set("Content-Type", "image/jpeg")
-	w.Header().Set("Cache-Control", "public, max-age=604800")
-
-	if err := imaging.Encode(w, thumb, imaging.JPEG, imaging.JPEGQuality(85)); err != nil {
-		log.Printf("ServeKeyPhoto: encode error: %v", err)
-	}
+	serveFaceThumbnail(w, r, ph.Store, ph.ImageRepo, face)
 }

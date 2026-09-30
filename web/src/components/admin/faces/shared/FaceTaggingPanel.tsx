@@ -208,7 +208,10 @@ const FaceTaggingPanel: React.FC<FaceTaggingPanelProps> = ({ face, onTagged, onD
                                 <Avatar
                                     src={
                                         (opt as Person).key_photo_face_id
-                                            ? getPersonKeyPhotoUrl((opt as Person).id)
+                                            ? getPersonKeyPhotoUrl(
+                                                  (opt as Person).id,
+                                                  (opt as Person).key_photo_face_id ?? 0,
+                                              )
                                             : undefined
                                     }
                                     initials={(opt as Person).primary_name[0]?.toUpperCase()}

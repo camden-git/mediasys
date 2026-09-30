@@ -165,7 +165,7 @@ const PersonAdminView: React.FC = () => {
                     <div className='flex-shrink-0'>
                         {person.key_photo_face_id ? (
                             <img
-                                src={getPersonKeyPhotoUrl(person.id)}
+                                src={getPersonKeyPhotoUrl(person.id, person.key_photo_face_id)}
                                 alt={`${person.primary_name} key photo`}
                                 className='h-24 w-24 rounded object-cover ring-2 ring-zinc-300 dark:ring-zinc-600'
                             />

@@ -273,9 +273,9 @@ export const getPersonAliases = async (personId: number, signal?: AbortSignal): 
     return (await response.json()) as Alias[];
 };
 
-/** Returns the URL for a person's 128×128 key photo thumbnail. */
-export const getPersonKeyPhotoUrl = (personId: number): string => {
-    return `${import.meta.env.VITE_BACKEND_URL}/people/${personId}/key-photo.jpg`;
+/** Returns the URL for a person's key photo thumbnail; the face id busts caches when the key photo changes. */
+export const getPersonKeyPhotoUrl = (personId: number, keyPhotoFaceId: number): string => {
+    return `${import.meta.env.VITE_BACKEND_URL}/people/${personId}/key-photo.jpg?v=${keyPhotoFaceId}`;
 };
 
 /** Sets (or clears) the key photo for a person. Pass null to clear. */

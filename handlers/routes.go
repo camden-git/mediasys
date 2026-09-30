@@ -457,6 +457,7 @@ func RegisterRoutes(r chi.Router, deps AppDependencies) {
 			r.Use(credentialedCORS) // at router level so OPTIONS preflight is answered
 			r.With(requireFaceManage).Get("/untagged", deps.FaceHandler.GetUntaggedFaces)
 			r.Route("/{face_id}", func(r chi.Router) {
+				r.Get("/thumbnail.jpg", deps.FaceHandler.ServeFaceThumbnail)
 				r.With(requireFaceManage).Get("/", deps.FaceHandler.GetFace)
 				r.With(requireFaceManage).Put("/", deps.FaceHandler.UpdateFace)
 				r.With(requireFaceManage).Delete("/", deps.FaceHandler.DeleteFace)

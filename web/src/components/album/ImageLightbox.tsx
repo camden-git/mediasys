@@ -66,7 +66,7 @@ const FaceBubble: React.FC<FaceBubbleProps> = ({ face }) => {
     const hue = hueFromId(face.person.id);
     const bg = `hsl(${hue}, 55%, 40%)`;
     const initials = personInitials(face.person.primary_name);
-    const hasKeyPhoto = !!face.person.key_photo_face_id;
+    const keyPhotoFaceId = face.person.key_photo_face_id;
     return (
         <div className='flex flex-col items-center gap-0.5'>
             <div
@@ -74,9 +74,9 @@ const FaceBubble: React.FC<FaceBubbleProps> = ({ face }) => {
                 style={{ backgroundColor: bg }}
                 title={face.person.primary_name}
             >
-                {hasKeyPhoto ? (
+                {keyPhotoFaceId ? (
                     <img
-                        src={getPersonKeyPhotoUrl(face.person.id)}
+                        src={getPersonKeyPhotoUrl(face.person.id, keyPhotoFaceId)}
                         alt={face.person.primary_name}
                         className='h-9 w-9 rounded object-cover'
                         onError={(e) => {

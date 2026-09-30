@@ -112,7 +112,7 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 
 		AlbumHandler:        &handlers.AlbumHandler{AlbumRepo: albumRepo, ImageRepo: imageRepo, UserRepo: userRepo, ThumbGen: imageProcessor, Store: mediaStore},
 		PersonHandler:       &handlers.PersonHandler{PersonRepo: personRepo, FaceRepo: faceRepo, ImageRepo: imageRepo, Store: mediaStore, Cfg: cfg},
-		FaceHandler:         &handlers.FaceHandler{FaceRepo: faceRepo, EmbeddingRepo: faceEmbeddingRepo, PersonRepo: personRepo, ImageRepo: imageRepo, Cfg: cfg, FaceRecognitionService: faceRecognitionService},
+		FaceHandler:         &handlers.FaceHandler{FaceRepo: faceRepo, EmbeddingRepo: faceEmbeddingRepo, PersonRepo: personRepo, ImageRepo: imageRepo, Store: mediaStore, Cfg: cfg, FaceRecognitionService: faceRecognitionService},
 		ImagePreviewHandler: &handlers.ImagePreviewHandler{FaceRepo: faceRepo, ImageRepo: imageRepo, Store: mediaStore, Cfg: cfg},
 		DebugHandler:        &handlers.DebugHandler{Cfg: cfg, ImageRepo: imageRepo, ImageProcessor: imageProcessor},
 

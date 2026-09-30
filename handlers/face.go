@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/camden-git/mediasysbackend/config"
+	"github.com/camden-git/mediasysbackend/media"
 	"github.com/camden-git/mediasysbackend/models"
 	"github.com/camden-git/mediasysbackend/repository"
 	"github.com/go-chi/chi/v5"
@@ -24,6 +25,7 @@ type FaceHandler struct {
 	EmbeddingRepo          repository.FaceEmbeddingRepositoryInterface
 	PersonRepo             repository.PersonRepositoryInterface
 	ImageRepo              repository.ImageRepositoryInterface
+	Store                  *media.Store
 	Cfg                    config.Config
 	FaceRecognitionService *FaceRecognitionService
 }
@@ -276,7 +278,29 @@ func (fh *FaceHandler) DeleteFace(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	deleteFaceThumbnails(fh.Store, uint(faceID))
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// ServeFaceThumbnail serves a small cached JPEG crop of a face.
+// GET /api/faces/{face_id}/thumbnail.jpg
+func (fh *FaceHandler) ServeFaceThumbnail(w http.ResponseWriter, r *http.Request) {
+	faceID, err := strconv.ParseUint(chi.URLParam(r, "face_id"), 10, 64)
+	if err != nil {
+		WriteAPIError(w, http.StatusBadRequest, "InvalidID", "Invalid face ID format")
+		return
+	}
+	face, err := fh.FaceRepo.GetByID(uint(faceID))
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			WriteAPIError(w, http.StatusNotFound, "FaceNotFound", "Face tag not found")
+		} else {
+			log.Printf("Error getting face %d for thumbnail: %v", faceID, err)
+			WriteAPIError(w, http.StatusInternalServerError, "FaceFetchError", "Failed to retrieve face tag")
+		}
+		return
+	}
+	serveFaceThumbnail(w, r, fh.Store, fh.ImageRepo, face)
 }
 
 func (fh *FaceHandler) SearchFacesByPerson(w http.ResponseWriter, r *http.Request) {
