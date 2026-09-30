@@ -1,6 +1,7 @@
 import React from 'react';
 import { useAlbumData } from '../../../../store/albumContextHooks';
-import { getBannerUrl } from '../../../../api.ts';
+import { getBannerUrl, getPreviewImageUrl } from '../../../../api.ts';
+import { Can } from '../../../elements/Can';
 import { Heading } from '../../../elements/Heading.tsx';
 import { CameraIcon, MapPinIcon, PhotoIcon } from '@heroicons/react/16/solid';
 import { deleteAlbumImage, listAlbumImages, uploadAlbumImagesBatched } from '../../../../api/admin/albums';
@@ -74,80 +75,25 @@ const OverviewContainer: React.FC = () => {
     }, []);
 
     React.useEffect(() => {
-        try {
-            const base = apiUrl && apiUrl.startsWith('http') ? new URL(apiUrl) : new URL(window.location.href);
-            const wsProtocol = base.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${wsProtocol}//${base.host}/api/ws`;
-            // Send the auth token as a WebSocket subprotocol rather than a query
-            // parameter so it never ends up in server access logs.
-            const ws = authToken ? new WebSocket(wsUrl, ['bearer', authToken]) : new WebSocket(wsUrl);
-            ws.onmessage = (e) => {
-                try {
-                    const data = JSON.parse(e.data);
-                    if (!data || (data.type !== 'upload' && data.type !== 'task')) return;
-                    const rel = String(data.path || '');
-                    // Ignore events for other albums
-                    if (!rel.startsWith(album.folder_path + '/')) return;
-                    setItems((prev) => {
-                        const next = { ...prev };
-                        const current = { ...(next[rel] || { path: rel, tasks: {} }) };
-                        current.tasks = { ...current.tasks };
-                        if (data.type === 'upload') {
-                            if (data.status === 'uploading') {
-                                current.uploading = true;
-                                current.currentTask = 'upload';
-                            }
-                            if (data.status === 'uploaded') {
-                                current.uploading = false;
-                                current.uploaded = true;
-                                if (current.currentTask === 'upload') current.currentTask = undefined;
-                            }
-                            if (data.status === 'error') current.error = data.error || 'upload error';
-                        } else if (data.type === 'task') {
-                            const task = String(data.task || '');
-                            // Ignore tasks that aren't part of the tracked set (e.g. preview)
-                            if (!REQUIRED_TASKS.includes(task)) return prev;
-                            // Stamp processing start on the first task event
-                            if (processingStartRef.current === null) {
-                                processingStartRef.current = Date.now();
-                            }
-                            if (data.status === 'processing') {
-                                current.tasks[task] = 'processing';
-                                current.currentTask = task;
-                            }
-                            if (data.status === 'done') {
-                                current.tasks[task] = 'done';
-                                if (current.currentTask === task) current.currentTask = undefined;
-                            }
-                            if (data.status === 'error') {
-                                current.tasks[task] = 'error';
-                                if (current.currentTask === task) current.currentTask = undefined;
-                            }
-                        }
-                        next[rel] = current;
-                        return next;
-                    });
-                } catch (err) {
-                    if ((import.meta as any).env.DEV) console.warn('Failed to parse websocket message', err);
-                }
-            };
-            return () => ws.close();
-        } catch (err) {
-            if ((import.meta as any).env.DEV) console.warn('Invalid websocket base URL', apiUrl, err);
-        }
-    }, [apiUrl, authToken, album.folder_path]);
+        return () => {
+            if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+        };
+    }, []);
 
     const [listing, setListing] = React.useState<{ path: string; files: FileInfo[] } | null>(null);
     const [isLoadingImages, setIsLoadingImages] = React.useState(false);
-    type ViewMode = 'cascading' | 'grid' | 'table';
-    const [viewMode, setViewMode] = React.useState<ViewMode>('cascading');
-    const [scale, setScale] = React.useState<number>(180);
+    const [imagesError, setImagesError] = React.useState<string | null>(null);
+    const [actionError, setActionError] = React.useState<string | null>(null);
+    const [deleting, setDeleting] = React.useState<Set<string>>(new Set());
 
     const fetchImages = React.useCallback(async () => {
         setIsLoadingImages(true);
         try {
             const res = await listAlbumImages(album.id);
             setListing({ path: res.path, files: res.files.filter((f) => !f.is_dir) });
+            setImagesError(null);
+        } catch (err) {
+            setImagesError(err instanceof Error ? err.message : 'Failed to load images');
         } finally {
             setIsLoadingImages(false);
         }
@@ -156,6 +102,124 @@ const OverviewContainer: React.FC = () => {
     React.useEffect(() => {
         fetchImages();
     }, [fetchImages]);
+
+    // Progress events arrive in bursts (three tasks per file); buffer them and apply a whole
+    // batch in one state update instead of cloning the item map once per message.
+    const pendingEventsRef = React.useRef<any[]>([]);
+    const flushTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const applyEvents = React.useCallback((events: any[]) => {
+        setItems((prev) => {
+            let next: Record<string, ItemState> | null = null;
+            for (const data of events) {
+                const rel = String(data.path || '');
+                const base = (next ?? prev)[rel];
+                const current: ItemState = { ...(base || { path: rel, tasks: {} }) };
+                current.tasks = { ...current.tasks };
+                if (data.type === 'upload') {
+                    if (data.status === 'uploading') {
+                        current.uploading = true;
+                        current.currentTask = 'upload';
+                    }
+                    if (data.status === 'uploaded') {
+                        current.uploading = false;
+                        current.uploaded = true;
+                        if (current.currentTask === 'upload') current.currentTask = undefined;
+                    }
+                    if (data.status === 'error') current.error = data.error || 'upload error';
+                } else if (data.type === 'task') {
+                    const task = String(data.task || '');
+                    // Ignore tasks that aren't part of the tracked set (e.g. preview)
+                    if (!REQUIRED_TASKS.includes(task)) continue;
+                    // Stamp processing start on the first task event
+                    if (processingStartRef.current === null) {
+                        processingStartRef.current = Date.now();
+                    }
+                    if (data.status === 'processing') {
+                        current.tasks[task] = 'processing';
+                        current.currentTask = task;
+                    }
+                    if (data.status === 'done') {
+                        current.tasks[task] = 'done';
+                        if (current.currentTask === task) current.currentTask = undefined;
+                    }
+                    if (data.status === 'error') {
+                        current.tasks[task] = 'error';
+                        if (current.currentTask === task) current.currentTask = undefined;
+                    }
+                }
+                if (!next) next = { ...prev };
+                next[rel] = current;
+            }
+            return next ?? prev;
+        });
+    }, []);
+
+    React.useEffect(() => {
+        let closed = false;
+        let ws: WebSocket | null = null;
+        let retryTimer: ReturnType<typeof setTimeout> | null = null;
+        let attempt = 0;
+
+        const flush = () => {
+            flushTimerRef.current = null;
+            const events = pendingEventsRef.current;
+            pendingEventsRef.current = [];
+            if (events.length > 0) applyEvents(events);
+        };
+
+        const connect = () => {
+            try {
+                const base = apiUrl && apiUrl.startsWith('http') ? new URL(apiUrl) : new URL(window.location.href);
+                const wsProtocol = base.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${wsProtocol}//${base.host}/api/ws`;
+                // Send the auth token as a WebSocket subprotocol rather than a query
+                // parameter so it never ends up in server access logs.
+                const socket = authToken ? new WebSocket(wsUrl, ['bearer', authToken]) : new WebSocket(wsUrl);
+                ws = socket;
+                socket.onopen = () => {
+                    // events may have been missed while disconnected
+                    if (attempt > 0) fetchImages();
+                    attempt = 0;
+                };
+                socket.onmessage = (e) => {
+                    try {
+                        const data = JSON.parse(e.data);
+                        if (!data || (data.type !== 'upload' && data.type !== 'task')) return;
+                        const rel = String(data.path || '');
+                        // Ignore events for other albums
+                        if (!rel.startsWith(album.folder_path + '/')) return;
+                        pendingEventsRef.current.push(data);
+                        if (flushTimerRef.current === null) flushTimerRef.current = setTimeout(flush, 200);
+                    } catch (err) {
+                        if ((import.meta as any).env.DEV) console.warn('Failed to parse websocket message', err);
+                    }
+                };
+                socket.onclose = () => {
+                    if (closed) return;
+                    const delay = Math.min(30000, 1000 * 2 ** attempt);
+                    attempt += 1;
+                    retryTimer = setTimeout(connect, delay);
+                };
+            } catch (err) {
+                if ((import.meta as any).env.DEV) console.warn('Invalid websocket base URL', apiUrl, err);
+            }
+        };
+        connect();
+
+        return () => {
+            closed = true;
+            if (retryTimer) clearTimeout(retryTimer);
+            if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
+            flushTimerRef.current = null;
+            pendingEventsRef.current = [];
+            ws?.close();
+        };
+    }, [apiUrl, authToken, album.folder_path, applyEvents, fetchImages]);
+
+    type ViewMode = 'cascading' | 'grid' | 'table';
+    const [viewMode, setViewMode] = React.useState<ViewMode>('cascading');
+    const [scale, setScale] = React.useState<number>(180);
 
     // Auto-refresh when items reach completion
     React.useEffect(() => {
@@ -187,6 +251,7 @@ const OverviewContainer: React.FC = () => {
         const controller = new AbortController();
         abortControllerRef.current = controller;
         setIsUploading(true);
+        setActionError(null);
         try {
             const result = await uploadAlbumImagesBatched(album.id, files, {
                 concurrency: 3,
@@ -198,14 +263,27 @@ const OverviewContainer: React.FC = () => {
                     const next = { ...prev };
                     for (const f of result.failed) {
                         const key = album.folder_path + '/' + (f.path || '');
-                        next[key] = { ...(next[key] || { path: key, tasks: {} }), error: f.error };
+                        next[key] = { ...(next[key] || { path: key, tasks: {} }), uploading: false, error: f.error };
                     }
                     return next;
                 });
             }
-        } catch {
-            // aborted or unrecoverable — per-batch failures already surfaced above
+        } catch (err) {
+            if (!controller.signal.aborted) {
+                setActionError(err instanceof Error ? err.message : 'Upload failed');
+            }
         } finally {
+            if (controller.signal.aborted) {
+                // Files that never finished uploading would otherwise stay "Uploading"/"Queued" forever
+                setItems((prev) => {
+                    const next: Record<string, ItemState> = {};
+                    for (const [key, it] of Object.entries(prev)) {
+                        const unfinished = !it.uploaded && !it.error;
+                        next[key] = unfinished ? { ...it, uploading: false, error: 'Upload cancelled' } : it;
+                    }
+                    return next;
+                });
+            }
             setIsUploading(false);
             abortControllerRef.current = null;
             invalidatePublicAlbums();
@@ -213,10 +291,24 @@ const OverviewContainer: React.FC = () => {
     };
 
     const handleDeleteImage = async (image: FileInfo) => {
+        if (deleting.has(image.path)) return;
+        if (!window.confirm(`Delete "${image.name}"? This cannot be undone.`)) return;
         const fullPath = image.path.startsWith('/') ? image.path.slice(1) : image.path;
-        await deleteAlbumImage(album.id, fullPath);
-        invalidatePublicAlbums();
-        await fetchImages();
+        setActionError(null);
+        setDeleting((prev) => new Set(prev).add(image.path));
+        try {
+            await deleteAlbumImage(album.id, fullPath);
+            invalidatePublicAlbums();
+            await fetchImages();
+        } catch (err) {
+            setActionError(err instanceof Error ? err.message : 'Failed to delete image');
+        } finally {
+            setDeleting((prev) => {
+                const next = new Set(prev);
+                next.delete(image.path);
+                return next;
+            });
+        }
     };
 
     const handleClearCompleted = () => {
@@ -279,12 +371,29 @@ const OverviewContainer: React.FC = () => {
     );
 
     const renderContent = () => {
-        if (isLoadingImages) return <div className='py-6 text-sm text-gray-500'>Loading images…</div>;
+        if (imagesError && !listing) {
+            return (
+                <div className='flex items-center gap-3 py-6 text-sm text-red-600'>
+                    <span>Failed to load images: {imagesError}</span>
+                    <button type='button' className='underline' onClick={fetchImages}>
+                        Retry
+                    </button>
+                </div>
+            );
+        }
+        if (isLoadingImages && !listing) return <div className='py-6 text-sm text-gray-500'>Loading images…</div>;
         const images = listing?.files ?? [];
         if (images.length === 0) return <div className='py-6 text-sm text-gray-500'>No photos in this album yet.</div>;
 
         if (viewMode === 'cascading') {
-            return <AdvancedImageGrid images={images} targetRowHeight={scale} boxSpacing={6} onImageClick={() => {}} />;
+            return (
+                <AdvancedImageGrid
+                    images={images}
+                    targetRowHeight={scale}
+                    boxSpacing={6}
+                    onImageClick={(img) => window.open(getPreviewImageUrl(img.path), '_blank', 'noopener')}
+                />
+            );
         }
 
         if (viewMode === 'grid') {
@@ -305,13 +414,18 @@ const OverviewContainer: React.FC = () => {
                                     style={{ height: `${tile}px`, backgroundImage }}
                                 />
                                 <div className='pointer-events-none absolute inset-0 bg-black/0 transition group-hover:bg-black/20' />
-                                <button
-                                    onClick={() => handleDeleteImage(img)}
-                                    className='absolute top-2 right-2 hidden rounded bg-white/90 p-1 text-red-600 shadow group-hover:block'
-                                    title={`Delete ${img.name}`}
-                                >
-                                    <TrashIcon className='h-4 w-4' />
-                                </button>
+                                <Can permission={['album.edit.general', 'album.photo.delete']} albumId={album.id}>
+                                    <button
+                                        type='button'
+                                        onClick={() => handleDeleteImage(img)}
+                                        disabled={deleting.has(img.path)}
+                                        aria-label={`Delete ${img.name}`}
+                                        className='absolute top-2 right-2 rounded bg-white/90 p-1 text-red-600 opacity-0 shadow group-focus-within:opacity-100 group-hover:opacity-100 focus:opacity-100 disabled:opacity-50 [@media(hover:none)]:opacity-100'
+                                        title={`Delete ${img.name}`}
+                                    >
+                                        <TrashIcon className='h-4 w-4' />
+                                    </button>
+                                </Can>
                                 <div className='truncate px-2 py-1 text-xs text-gray-700'>{img.name}</div>
                             </div>
                         );
@@ -354,12 +468,17 @@ const OverviewContainer: React.FC = () => {
                                 <TableCell>{(img.size / 1024).toFixed(0)} KB</TableCell>
                                 <TableCell>{new Date(img.mod_time * 1000).toLocaleString()}</TableCell>
                                 <TableCell>
-                                    <button
-                                        onClick={() => handleDeleteImage(img)}
-                                        className='inline-flex items-center gap-1 rounded border px-2 py-1 text-xs text-red-600 hover:bg-red-50'
-                                    >
-                                        <TrashIcon className='h-4 w-4' /> Delete
-                                    </button>
+                                    <Can permission={['album.edit.general', 'album.photo.delete']} albumId={album.id}>
+                                        <button
+                                            type='button'
+                                            onClick={() => handleDeleteImage(img)}
+                                            disabled={deleting.has(img.path)}
+                                            aria-label={`Delete ${img.name}`}
+                                            className='inline-flex items-center gap-1 rounded border px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50'
+                                        >
+                                            <TrashIcon className='h-4 w-4' /> Delete
+                                        </button>
+                                    </Can>
                                 </TableCell>
                             </TableRow>
                         );
@@ -387,7 +506,17 @@ const OverviewContainer: React.FC = () => {
     };
 
     // Progress panel helpers
-    const itemList = Object.values(items);
+    const itemList = React.useMemo(() => Object.values(items), [items]);
+    // Sorting only depends on the items, not on the once-a-second ETA tick
+    const sortedItems = React.useMemo(() => {
+        const isDone = (it: ItemState) => Object.values(it.tasks).filter((s) => s === 'done').length === TOTAL_TASKS;
+        return [...itemList].sort((a, b) => {
+            const aDone = isDone(a);
+            const bDone = isDone(b);
+            if (aDone !== bDone) return Number(aDone) - Number(bDone);
+            return a.path.localeCompare(b.path);
+        });
+    }, [itemList]);
     const hasItems = itemList.length > 0;
     const totalFiles = itemList.length;
     const processedFiles = itemList.filter((it) => {
@@ -492,6 +621,9 @@ const OverviewContainer: React.FC = () => {
                         <div className='mt-6 flex flex-wrap items-center gap-x-4 gap-y-3 text-sm/7 font-semibold text-gray-950 sm:gap-3'>
                             <div className='flex items-center gap-1.5'>
                                 <PhotoIcon className='size-4 text-gray-950/40' />
+                                {listing
+                                    ? `${listing.files.length} photo${listing.files.length === 1 ? '' : 's'}`
+                                    : '—'}
                             </div>
                             <span className='hidden text-gray-950/25 sm:inline dark:text-white/25'>&middot;</span>
                             {album.artists && album.artists.length > 0 && (
@@ -521,9 +653,19 @@ const OverviewContainer: React.FC = () => {
                     </div>
 
                     {/* Upload zone */}
-                    <div className='mt-4'>
-                        <UploadZone onFiles={handleFiles} disabled={isUploading} />
-                    </div>
+                    <Can permission={['album.edit.general', 'album.photo.upload']} albumId={album.id}>
+                        <div className='mt-4'>
+                            <UploadZone onFiles={handleFiles} disabled={isUploading} />
+                        </div>
+                    </Can>
+                    {actionError && (
+                        <div
+                            role='alert'
+                            className='mt-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700'
+                        >
+                            {actionError}
+                        </div>
+                    )}
 
                     {/* Progress panel — only shown when items exist */}
                     {hasItems && (
@@ -572,39 +714,30 @@ const OverviewContainer: React.FC = () => {
 
                             {/* Per-file rows */}
                             <div className='max-h-64 divide-y overflow-auto'>
-                                {itemList
-                                    .sort((a, b) => {
-                                        const aDone =
-                                            Object.values(a.tasks).filter((s) => s === 'done').length === TOTAL_TASKS;
-                                        const bDone =
-                                            Object.values(b.tasks).filter((s) => s === 'done').length === TOTAL_TASKS;
-                                        if (aDone !== bDone) return Number(aDone) - Number(bDone);
-                                        return a.path.localeCompare(b.path);
-                                    })
-                                    .map((it) => {
-                                        const pct = getFilePct(it);
-                                        const hasError = Boolean(it.error) || Object.values(it.tasks).includes('error');
-                                        const displayName = it.path.replace(album.folder_path + '/', '');
-                                        return (
-                                            <div key={it.path} className='flex items-center gap-3 px-4 py-2.5'>
-                                                {getBadge(it)}
-                                                <div className='min-w-0 flex-1'>
+                                {sortedItems.map((it) => {
+                                    const pct = getFilePct(it);
+                                    const hasError = Boolean(it.error) || Object.values(it.tasks).includes('error');
+                                    const displayName = it.path.replace(album.folder_path + '/', '');
+                                    return (
+                                        <div key={it.path} className='flex items-center gap-3 px-4 py-2.5'>
+                                            {getBadge(it)}
+                                            <div className='min-w-0 flex-1'>
+                                                <div
+                                                    className='mb-1 truncate text-xs text-gray-700'
+                                                    title={displayName}
+                                                >
+                                                    {displayName}
+                                                </div>
+                                                <div className='h-1.5 w-full overflow-hidden rounded-full bg-gray-100'>
                                                     <div
-                                                        className='mb-1 truncate text-xs text-gray-700'
-                                                        title={displayName}
-                                                    >
-                                                        {displayName}
-                                                    </div>
-                                                    <div className='h-1.5 w-full overflow-hidden rounded-full bg-gray-100'>
-                                                        <div
-                                                            className={`h-full rounded-full transition-all ${hasError ? 'bg-red-400' : 'bg-blue-500'}`}
-                                                            style={{ width: `${pct}%` }}
-                                                        />
-                                                    </div>
+                                                        className={`h-full rounded-full transition-all ${hasError ? 'bg-red-400' : 'bg-blue-500'}`}
+                                                        style={{ width: `${pct}%` }}
+                                                    />
                                                 </div>
                                             </div>
-                                        );
-                                    })}
+                                        </div>
+                                    );
+                                })}
                             </div>
                         </div>
                     )}
