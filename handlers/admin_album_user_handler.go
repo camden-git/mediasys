@@ -32,9 +32,21 @@ type RolePermissionContribution struct {
 	AlbumSpecific []string `json:"album_specific,omitempty"`
 }
 
+// AlbumUserSummary is the minimal user view exposed to album-scoped member managers.
+type AlbumUserSummary struct {
+	ID        uint   `json:"id"`
+	Username  string `json:"username"`
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+}
+
+func toAlbumUserSummary(u models.User) AlbumUserSummary {
+	return AlbumUserSummary{ID: u.ID, Username: u.Username, FirstName: u.FirstName, LastName: u.LastName}
+}
+
 // AlbumUserPermissionResponse represents a user with their album permissions
 type AlbumUserPermissionResponse struct {
-	User                 models.User                  `json:"user"`
+	User                 AlbumUserSummary             `json:"user"`
 	Permissions          []string                     `json:"permissions"`
 	DirectPermissions    []string                     `json:"direct_permissions,omitempty"`
 	InheritedPermissions []string                     `json:"inherited_permissions,omitempty"`
@@ -176,7 +188,7 @@ func (h *AdminAlbumUserHandler) GetAlbumUsers(w http.ResponseWriter, r *http.Req
 		inheritedPerms := computeInheritedPermissions(effectivePerms, directPermSlice)
 
 		response = append(response, AlbumUserPermissionResponse{
-			User:                 user,
+			User:                 toAlbumUserSummary(user),
 			Permissions:          effectivePerms,
 			DirectPermissions:    directPermSlice,
 			InheritedPermissions: inheritedPerms,
@@ -187,22 +199,25 @@ func (h *AdminAlbumUserHandler) GetAlbumUsers(w http.ResponseWriter, r *http.Req
 
 	// include users who inherit album access exclusively via roles or global album permissions
 	allUsers, err := h.UserRepo.ListAll()
-	if err == nil {
-		for _, user := range allUsers {
-			if _, alreadyAdded := seenUserIDs[user.ID]; alreadyAdded {
-				continue
-			}
-			effectivePerms := user.GetAlbumPermissions(uint(albumID))
-			if len(effectivePerms) == 0 {
-				continue
-			}
-			response = append(response, AlbumUserPermissionResponse{
-				User:                 user,
-				Permissions:          effectivePerms,
-				InheritedPermissions: computeInheritedPermissions(effectivePerms, nil),
-				RoleContributions:    buildRoleContributions(user, uint(albumID)),
-			})
+	if err != nil {
+		WriteAPIError(w, http.StatusInternalServerError, "AlbumUserListError", "Failed to retrieve album users")
+		return
+	}
+	sort.Slice(allUsers, func(i, j int) bool { return allUsers[i].ID < allUsers[j].ID })
+	for _, user := range allUsers {
+		if _, alreadyAdded := seenUserIDs[user.ID]; alreadyAdded {
+			continue
 		}
+		effectivePerms := user.GetAlbumPermissions(uint(albumID))
+		if len(effectivePerms) == 0 {
+			continue
+		}
+		response = append(response, AlbumUserPermissionResponse{
+			User:                 toAlbumUserSummary(user),
+			Permissions:          effectivePerms,
+			InheritedPermissions: computeInheritedPermissions(effectivePerms, nil),
+			RoleContributions:    buildRoleContributions(user, uint(albumID)),
+		})
 	}
 
 	writeJSON(w, http.StatusOK, response)
@@ -232,7 +247,11 @@ func (h *AdminAlbumUserHandler) GetAvailableUsers(w http.ResponseWriter, r *http
 		return
 	}
 
-	writeJSON(w, http.StatusOK, users)
+	summaries := make([]AlbumUserSummary, 0, len(users))
+	for _, user := range users {
+		summaries = append(summaries, toAlbumUserSummary(user))
+	}
+	writeJSON(w, http.StatusOK, summaries)
 }
 
 // AddUserToAlbum adds a user to an album with specific permissions
@@ -293,6 +312,10 @@ func (h *AdminAlbumUserHandler) AddUserToAlbum(w http.ResponseWriter, r *http.Re
 	}
 
 	if err := h.UserRepo.CreateUserAlbumPermission(userAlbumPerm); err != nil {
+		if repository.IsUniqueViolation(err) {
+			WriteAPIError(w, http.StatusConflict, "AlbumUserConflict", "User already has permissions for this album")
+			return
+		}
 		WriteAPIError(w, http.StatusInternalServerError, "AlbumUserCreateError", "Failed to add user to album: "+err.Error())
 		return
 	}
