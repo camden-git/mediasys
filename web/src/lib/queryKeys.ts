@@ -43,6 +43,9 @@ export const queryKeys = {
         detail: (slug: string) => [...queryKeys.collections.all(), slug] as const,
         photos: (slug: string) => [...queryKeys.collections.all(), slug, 'photos'] as const,
     },
+    meta: {
+        all: () => ['meta'] as const,
+    },
     publicAlbum: {
         all: () => ['public-album'] as const,
         detail: (id: string) => [...queryKeys.publicAlbum.all(), id] as const,

@@ -96,6 +96,8 @@ func RegisterRoutes(r chi.Router, deps AppDependencies) {
 	}).Handler
 
 	r.Route("/api", func(r chi.Router) {
+		r.Get("/meta", MetaHandler(cfg))
+
 		// authentication routes
 		r.Route("/auth", func(r chi.Router) {
 			r.Use(credentialedCORS)

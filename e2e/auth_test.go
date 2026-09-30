@@ -168,3 +168,24 @@ func TestEmptyListsSerializeAsArrays(t *testing.T) {
 		}
 	}
 }
+
+// TestMeta verifies the public /api/meta endpoint reports server feature flags without
+// authentication. e2e runs with FACE_RECOGNITION_ENABLED=false.
+func TestMeta(t *testing.T) {
+	requireShared(t)
+
+	resp := doRequest(t, http.MethodGet, "/api/meta", "", nil, "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, resp.Body)
+	}
+	var meta struct {
+		FaceRecognitionEnabled *bool `json:"face_recognition_enabled"`
+	}
+	resp.decodeData(t, &meta)
+	if meta.FaceRecognitionEnabled == nil {
+		t.Fatalf("face_recognition_enabled missing from response: %s", resp.Body)
+	}
+	if *meta.FaceRecognitionEnabled {
+		t.Fatal("expected face_recognition_enabled=false in the e2e environment")
+	}
+}

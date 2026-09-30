@@ -6,6 +6,7 @@ import LoadingSpinner from '../../elements/LoadingSpinner';
 import { UntaggedFaceResult } from '../../../types';
 import { getUntaggedFaces, UntaggedFaceParams } from '../../../api/faces';
 import { errorMessage, isAbortError } from '../../../api/errors';
+import { useServerMeta } from '../../../api/query/useServerMeta';
 import FaceThumbnail from './shared/FaceThumbnail';
 import FaceLightboxModal from './shared/FaceLightboxModal';
 
@@ -19,6 +20,7 @@ const DEFAULT_FILTERS: UntaggedFaceParams = {
 const REFILL_THRESHOLD = 20;
 
 const FaceTaggingContainer: React.FC = () => {
+    const { faceRecognitionEnabled } = useServerMeta();
     const [faces, setFaces] = useState<UntaggedFaceResult[]>([]);
     const [loading, setLoading] = useState(true);
     const [fetching, setFetching] = useState(false);
@@ -226,12 +228,31 @@ const FaceTaggingContainer: React.FC = () => {
                 </button>
             </div>
 
+            {!faceRecognitionEnabled && (
+                <div className='mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200'>
+                    Face recognition is disabled on this server, so new photos are not scanned for faces.
+                </div>
+            )}
+
             {error && <p className='mb-4 text-sm text-red-600'>{error}</p>}
 
             {displayFaces.length === 0 ? (
-                <div className='flex flex-col items-center justify-center rounded-lg border border-dashed border-zinc-300 p-16 text-center'>
-                    <Heading level={4}>All caught up!</Heading>
-                    <Text className='mt-2 text-sm text-zinc-500'>No untagged faces remaining.</Text>
+                <div className='flex flex-col items-center justify-center rounded-lg border border-dashed border-zinc-300 p-16 text-center dark:border-zinc-700'>
+                    {faceRecognitionEnabled ? (
+                        <>
+                            <Heading level={4}>All caught up!</Heading>
+                            <Text className='mt-2 text-sm text-zinc-500 dark:text-zinc-400'>
+                                No untagged faces remaining.
+                            </Text>
+                        </>
+                    ) : (
+                        <>
+                            <Heading level={4}>Face recognition is disabled on this server</Heading>
+                            <Text className='mt-2 text-sm text-zinc-500 dark:text-zinc-400'>
+                                Set FACE_RECOGNITION_ENABLED=true and restart to detect and tag faces.
+                            </Text>
+                        </>
+                    )}
                 </div>
             ) : (
                 <>

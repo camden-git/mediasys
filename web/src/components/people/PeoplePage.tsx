@@ -3,12 +3,14 @@ import { Link } from 'react-router-dom';
 import { Person } from '../../types.ts';
 import { getPeople } from '../../api/people';
 import { errorMessage, isAbortError } from '../../api/errors';
+import { useServerMeta } from '../../api/query/useServerMeta';
 import { useDocumentTitle } from '../../hooks/useDocumentTitle.ts';
 import LoadingSpinner from '../elements/LoadingSpinner.tsx';
 import { UserCircleIcon } from '@heroicons/react/24/outline';
 
 const PeoplePage: React.FC = () => {
     useDocumentTitle('People');
+    const { faceRecognitionEnabled } = useServerMeta();
     const [people, setPeople] = useState<Person[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -36,7 +38,13 @@ const PeoplePage: React.FC = () => {
     return (
         <div className='mx-auto max-w-6xl px-4 py-12'>
             <h1 className='mb-8 text-3xl font-bold text-gray-950 dark:text-white'>People</h1>
-            {people.length === 0 && <p className='text-gray-500 dark:text-gray-400'>No people tagged yet.</p>}
+            {people.length === 0 && (
+                <p className='text-gray-500 dark:text-gray-400'>
+                    {faceRecognitionEnabled
+                        ? 'No people tagged yet.'
+                        : 'No people tagged yet. Face recognition is disabled on this server.'}
+                </p>
+            )}
             <div className='grid gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5'>
                 {people.map((person) => (
                     <Link

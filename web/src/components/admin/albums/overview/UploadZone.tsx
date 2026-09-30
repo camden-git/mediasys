@@ -114,17 +114,17 @@ const UploadZone: React.FC<UploadZoneProps> = ({ disabled, onFiles }) => {
             onDrop={handleDrop}
             className={`flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed px-6 py-10 text-center transition-colors ${
                 disabled
-                    ? 'cursor-not-allowed border-gray-200 bg-gray-50 opacity-60'
+                    ? 'cursor-not-allowed border-gray-200 bg-gray-50 opacity-60 dark:border-zinc-700 dark:bg-zinc-900'
                     : isDragOver
-                      ? 'border-blue-500 bg-blue-50'
-                      : 'border-gray-300 bg-white hover:border-gray-400'
+                      ? 'border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-500/10'
+                      : 'border-gray-300 bg-white hover:border-gray-400 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:border-zinc-500'
             }`}
         >
-            <PhotoIcon className={`h-10 w-10 ${isDragOver ? 'text-blue-400' : 'text-gray-300'}`} />
-            <div className='text-sm text-gray-600'>
+            <PhotoIcon className={`h-10 w-10 ${isDragOver ? 'text-blue-400' : 'text-gray-300 dark:text-zinc-600'}`} />
+            <div className='text-sm text-gray-600 dark:text-zinc-300'>
                 <span className='font-medium'>Drag &amp; drop files or folders here</span>
                 <br />
-                <span className='text-gray-400'>or use the buttons below</span>
+                <span className='text-gray-400 dark:text-zinc-500'>or use the buttons below</span>
             </div>
             <div className='flex gap-2'>
                 <Button color={'dark/zinc'} disabled={disabled} onClick={() => fileInputRef.current?.click()}>
