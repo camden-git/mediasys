@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"math"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 
@@ -19,6 +19,21 @@ import (
 
 // maxFaceListLimit caps the limit query param on the admin face listing endpoints.
 const maxFaceListLimit = 100
+
+// validateFaceBox checks a pixel-space box: non-negative, non-empty and, when the image
+// dimensions are known, inside the image.
+func validateFaceBox(x1, y1, x2, y2 int, img *models.Image) string {
+	if x1 < 0 || y1 < 0 {
+		return "Coordinates must not be negative"
+	}
+	if x2 <= x1 || y2 <= y1 {
+		return "x2 must be greater than x1 and y2 greater than y1"
+	}
+	if img != nil && img.Width != nil && img.Height != nil && (x2 > *img.Width || y2 > *img.Height) {
+		return "Bounding box lies outside the image"
+	}
+	return ""
+}
 
 type FaceHandler struct {
 	FaceRepo               repository.FaceRepositoryInterface
@@ -70,13 +85,18 @@ func (fh *FaceHandler) AddFace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	imagePathForDB := strings.TrimLeft(req.ImagePath, "/")
-	if _, err := fh.ImageRepo.GetByPath(imagePathForDB); err != nil {
+	img, err := fh.ImageRepo.GetByPath(imagePathForDB)
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			WriteAPIError(w, http.StatusBadRequest, "ImageNotFound", "image_path does not exist: "+imagePathForDB)
 		} else {
 			log.Printf("Error checking image %s during face add: %v", imagePathForDB, err)
 			WriteAPIError(w, http.StatusInternalServerError, "ImageFetchError", "Could not verify image_path")
 		}
+		return
+	}
+	if msg := validateFaceBox(req.X1, req.Y1, req.X2, req.Y2, img); msg != "" {
+		WriteAPIError(w, http.StatusBadRequest, "ValidationError", msg)
 		return
 	}
 
@@ -105,14 +125,10 @@ func (fh *FaceHandler) AddFace(w http.ResponseWriter, r *http.Request) {
 }
 
 func (fh *FaceHandler) ListFacesByImage(w http.ResponseWriter, r *http.Request) {
-	imageQueryParam := r.URL.Query().Get("path")
-	if imageQueryParam == "" {
+	// Query() has already percent-decoded the value; decoding again would corrupt paths containing '%' or '+'
+	imagePath := r.URL.Query().Get("path")
+	if imagePath == "" {
 		WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Missing required query parameter: path")
-		return
-	}
-	imagePath, err := url.QueryUnescape(imageQueryParam)
-	if err != nil {
-		WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Invalid URL encoding for path parameter")
 		return
 	}
 	imagePathForDB := strings.TrimLeft(imagePath, "/")
@@ -157,7 +173,8 @@ func (fh *FaceHandler) UpdateFace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// check if face exists first
-	if _, err := fh.FaceRepo.GetByID(uint(faceID)); err != nil {
+	existing, err := fh.FaceRepo.GetByID(uint(faceID))
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			WriteAPIError(w, http.StatusNotFound, "FaceNotFound", "Face tag not found")
 		} else {
@@ -194,22 +211,46 @@ func (fh *FaceHandler) UpdateFace(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	var x1Update, y1Update, x2Update, y2Update *int
-	if v, ok := reqMap["x1"].(float64); ok {
+	coords := map[string]*int{"x1": nil, "y1": nil, "x2": nil, "y2": nil}
+	for key := range coords {
+		raw, ok := reqMap[key]
+		if !ok {
+			continue
+		}
+		v, isNum := raw.(float64)
+		if !isNum || math.IsNaN(v) || math.IsInf(v, 0) || v != math.Trunc(v) || math.Abs(v) > math.MaxInt32 {
+			WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Invalid value for "+key+", expected an integer")
+			return
+		}
 		i := int(v)
-		x1Update = &i
+		coords[key] = &i
 	}
-	if v, ok := reqMap["y1"].(float64); ok {
-		i := int(v)
-		y1Update = &i
-	}
-	if v, ok := reqMap["x2"].(float64); ok {
-		i := int(v)
-		x2Update = &i
-	}
-	if v, ok := reqMap["y2"].(float64); ok {
-		i := int(v)
-		y2Update = &i
+	x1Update, y1Update, x2Update, y2Update := coords["x1"], coords["y1"], coords["x2"], coords["y2"]
+
+	if x1Update != nil || y1Update != nil || x2Update != nil || y2Update != nil {
+		x1, y1, x2, y2 := existing.X1, existing.Y1, existing.X2, existing.Y2
+		if x1Update != nil {
+			x1 = *x1Update
+		}
+		if y1Update != nil {
+			y1 = *y1Update
+		}
+		if x2Update != nil {
+			x2 = *x2Update
+		}
+		if y2Update != nil {
+			y2 = *y2Update
+		}
+		img, imgErr := fh.ImageRepo.GetByPath(existing.ImagePath)
+		if imgErr != nil && !errors.Is(imgErr, gorm.ErrRecordNotFound) {
+			log.Printf("Error fetching image %s for face %d update: %v", existing.ImagePath, faceID, imgErr)
+			WriteAPIError(w, http.StatusInternalServerError, "ImageFetchError", "Could not verify image bounds")
+			return
+		}
+		if msg := validateFaceBox(x1, y1, x2, y2, img); msg != "" {
+			WriteAPIError(w, http.StatusBadRequest, "ValidationError", msg)
+			return
+		}
 	}
 
 	if personIDProvided && personIDUpdate != nil {
@@ -230,7 +271,7 @@ func (fh *FaceHandler) UpdateFace(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(updateErr, gorm.ErrRecordNotFound) {
 			WriteAPIError(w, http.StatusNotFound, "FaceNotFound", "Face tag not found during update")
 		} else {
-			log.Printf("Error updating face %d: %v", faceID, err)
+			log.Printf("Error updating face %d: %v", faceID, updateErr)
 			WriteAPIError(w, http.StatusInternalServerError, "FaceUpdateError", "Failed to update face tag")
 		}
 		return
@@ -262,12 +303,7 @@ func (fh *FaceHandler) DeleteFace(w http.ResponseWriter, r *http.Request) {
 		WriteAPIError(w, http.StatusBadRequest, "InvalidID", "Invalid face ID format")
 		return
 	}
-	// Delete embedding first (before the face row it references)
-	if fh.EmbeddingRepo != nil {
-		if err := fh.EmbeddingRepo.DeleteByFaceID(uint(faceID)); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			log.Printf("Warning: failed to delete embedding for face %d: %v", faceID, err)
-		}
-	}
+	// the repository removes the face and its embedding in one transaction
 	err = fh.FaceRepo.Delete(uint(faceID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -526,6 +562,21 @@ func (fh *FaceHandler) AutoTagFace(w http.ResponseWriter, r *http.Request) {
 	faceID, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
 		WriteAPIError(w, http.StatusBadRequest, "InvalidID", "Invalid face ID format")
+		return
+	}
+
+	face, err := fh.FaceRepo.GetByID(uint(faceID))
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			WriteAPIError(w, http.StatusNotFound, "FaceNotFound", "Face tag not found")
+		} else {
+			log.Printf("Error getting face %d for auto-tag: %v", faceID, err)
+			WriteAPIError(w, http.StatusInternalServerError, "FaceFetchError", "Failed to retrieve face tag")
+		}
+		return
+	}
+	if face.PersonID != nil {
+		WriteAPIError(w, http.StatusConflict, "FaceAlreadyTagged", "Face is already tagged with a person")
 		return
 	}
 

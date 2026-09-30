@@ -87,8 +87,11 @@ func (r *FaceRepository) Update(faceID uint, personID *uint, x1, y1, x2, y2 *int
 	if personID != nil {
 		if *personID == 0 {
 			updates["person_id"] = gorm.Expr("NULL")
+			updates["confirmed"] = false
 		} else {
 			updates["person_id"] = *personID
+			// a manual tag is a human decision
+			updates["confirmed"] = true
 		}
 		hasUpdates = true
 	}
@@ -114,6 +117,15 @@ func (r *FaceRepository) Update(faceID uint, personID *uint, x1, y1, x2, y2 *int
 		return nil
 	}
 
+	moved := x1 != nil || y1 != nil || x2 != nil || y2 != nil
+	if moved {
+		// detection metadata describes the old box; the embedding is dropped below
+		for _, col := range []string{"recognition_confidence", "quality_score", "landmarks", "pose_yaw", "pose_pitch", "pose_roll"} {
+			updates[col] = gorm.Expr("NULL")
+		}
+		updates["detection_confidence"] = 0
+	}
+
 	updates["updated_at"] = time.Now().Unix()
 
 	return r.DB.Transaction(func(tx *gorm.DB) error {
@@ -124,6 +136,11 @@ func (r *FaceRepository) Update(faceID uint, personID *uint, x1, y1, x2, y2 *int
 		if result.RowsAffected == 0 {
 			return gorm.ErrRecordNotFound
 		}
+		if moved {
+			if err := tx.Unscoped().Where("face_id = ?", faceID).Delete(&models.FaceEmbedding{}).Error; err != nil {
+				return fmt.Errorf("failed to drop stale embedding for face ID %d: %w", faceID, err)
+			}
+		}
 		if personID != nil {
 			// retagged: another person's key photo must not point at this face
 			keep := *personID
@@ -133,7 +150,8 @@ func (r *FaceRepository) Update(faceID uint, personID *uint, x1, y1, x2, y2 *int
 	})
 }
 
-// Delete removes a face by its ID
+// Delete removes a face and its embedding by ID in one transaction. The embedding is
+// hard-deleted so no soft-deleted row lingers in the HNSW index.
 func (r *FaceRepository) Delete(id uint) error {
 	return r.DB.Transaction(func(tx *gorm.DB) error {
 		result := tx.Delete(&models.Face{}, id)
@@ -142,6 +160,9 @@ func (r *FaceRepository) Delete(id uint) error {
 		}
 		if result.RowsAffected == 0 {
 			return gorm.ErrRecordNotFound
+		}
+		if err := tx.Unscoped().Where("face_id = ?", id).Delete(&models.FaceEmbedding{}).Error; err != nil {
+			return fmt.Errorf("failed to delete embedding for face ID %d: %w", id, err)
 		}
 		return clearStaleKeyPhotos(tx, id, nil)
 	})

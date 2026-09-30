@@ -35,9 +35,9 @@ func (r *FaceEmbeddingRepository) GetByFaceID(faceID uint) (*models.FaceEmbeddin
 	return &embedding, nil
 }
 
-// DeleteByFaceID removes a face embedding by its face ID
+// DeleteByFaceID hard-deletes (soft-deleted rows stay in the HNSW index) a face embedding by its face ID
 func (r *FaceEmbeddingRepository) DeleteByFaceID(faceID uint) error {
-	result := r.DB.Where("face_id = ?", faceID).Delete(&models.FaceEmbedding{})
+	result := r.DB.Unscoped().Where("face_id = ?", faceID).Delete(&models.FaceEmbedding{})
 	if result.Error != nil {
 		return fmt.Errorf("failed to delete face embedding for face ID %d: %w", faceID, result.Error)
 	}
