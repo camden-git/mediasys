@@ -3,6 +3,7 @@ import { format } from 'date-fns';
 import { FileInfo, FaceData } from '../../types.ts';
 import { XMarkIcon } from '@heroicons/react/24/solid';
 import { bytesToString } from '../../lib/formatters.ts';
+import { formatTakenAt } from '../../lib/takenAt.ts';
 
 interface MetadataPanelProps {
     isOpen: boolean;
@@ -27,7 +28,8 @@ const MetadataPanel: React.FC<MetadataPanelProps> = ({ isOpen, onClose, image, f
         return `${length.toFixed(0)} mm`;
     };
 
-    const formatDate = (timestamp?: number): string | null => {
+    // mod_time is a real instant, so show it in local time
+    const formatModified = (timestamp?: number): string | null => {
         if (!timestamp) return null;
         try {
             return format(new Date(timestamp * 1000), "MMMM d, yyyy 'at' h:mm a");
@@ -37,14 +39,14 @@ const MetadataPanel: React.FC<MetadataPanelProps> = ({ isOpen, onClose, image, f
     };
 
     const taggedFaces = faces.filter((f) => f.person != null && f.confirmed);
-    const peopleMap = new Map<number, { name: string; count: number }>();
+    const peopleMap = new Map<number, { id: number; name: string; count: number }>();
     for (const face of taggedFaces) {
         if (!face.person) continue;
         const existing = peopleMap.get(face.person.id);
         if (existing) {
             existing.count += 1;
         } else {
-            peopleMap.set(face.person.id, { name: face.person.primary_name, count: 1 });
+            peopleMap.set(face.person.id, { id: face.person.id, name: face.person.primary_name, count: 1 });
         }
     }
     const people = Array.from(peopleMap.values());
@@ -53,9 +55,8 @@ const MetadataPanel: React.FC<MetadataPanelProps> = ({ isOpen, onClose, image, f
         <>
             {isOpen && image && (
                 <div
-                    className='h-full w-96 overflow-y-auto bg-zinc-900 text-white shadow-lg'
-                    aria-modal='true'
-                    role='dialog'
+                    className='h-full w-screen max-w-96 overflow-y-auto bg-zinc-900 text-white shadow-lg'
+                    role='complementary'
                     aria-labelledby='metadata-panel-title'
                 >
                     <div className='p-6'>
@@ -95,12 +96,15 @@ const MetadataPanel: React.FC<MetadataPanelProps> = ({ isOpen, onClose, image, f
                                     </p>
                                     {image.taken_at && (
                                         <p className='text-white/70'>
-                                            <span className='text-white/50'>Taken</span> {formatDate(image.taken_at)}
+                                            <span className='text-white/50'>Taken</span> {formatTakenAt(image.taken_at)}
                                         </p>
                                     )}
-                                    <p className='text-white/70'>
-                                        <span className='text-white/50'>Modified</span> {formatDate(image.mod_time)}
-                                    </p>
+                                    {image.mod_time && (
+                                        <p className='text-white/70'>
+                                            <span className='text-white/50'>Modified</span>{' '}
+                                            {formatModified(image.mod_time)}
+                                        </p>
+                                    )}
                                 </div>
                             )}
 
@@ -189,10 +193,7 @@ const MetadataPanel: React.FC<MetadataPanelProps> = ({ isOpen, onClose, image, f
                                     </p>
                                     <ul className='space-y-1'>
                                         {people.map((p) => (
-                                            <li
-                                                key={p.name}
-                                                className='flex items-center justify-between text-white/80'
-                                            >
+                                            <li key={p.id} className='flex items-center justify-between text-white/80'>
                                                 <span>{p.name}</span>
                                                 {p.count > 1 && (
                                                     <span className='text-xs text-white/40'>{p.count} faces</span>
