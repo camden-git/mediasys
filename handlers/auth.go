@@ -348,7 +348,19 @@ func (h *AuthHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	WriteAPIResponse(w, http.StatusOK, *user)
 }
 
+// Logout revokes the caller's token by bumping the user's TokenVersion, which
+// invalidates every outstanding token for that user. The route sits outside
+// AuthMiddleware so a missing, expired, or already-revoked token still gets a
+// success response; in that case there is nothing to revoke.
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	if user := h.userFromBearerToken(r); user != nil {
+		user.TokenVersion++
+		if err := h.UserRepo.Update(user); err != nil {
+			log.Printf("logout: failed to revoke tokens for user %d: %v", user.ID, err)
+			WriteAPIError(w, http.StatusInternalServerError, "LogoutException", "Failed to revoke token")
+			return
+		}
+	}
 	WriteAPIResponse(w, http.StatusOK, map[string]string{"message": "Logged out successfully. Please discard your token."})
 }
 
@@ -362,4 +374,31 @@ func (h *AuthHandler) CurrentUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	WriteAPIResponse(w, http.StatusOK, user)
+}
+
+// userFromBearerToken resolves the user behind a valid, unrevoked bearer token,
+// or returns nil if the request has no usable token.
+func (h *AuthHandler) userFromBearerToken(r *http.Request) *models.User {
+	parts := strings.Split(r.Header.Get("Authorization"), " ")
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "bearer") {
+		return nil
+	}
+
+	claims := &authClaims{}
+	token, err := jwt.ParseWithClaims(parts[1], claims, func(token *jwt.Token) (interface{}, error) {
+		return jwtKey, nil
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}), jwt.WithExpirationRequired())
+	if err != nil || !token.Valid {
+		return nil
+	}
+
+	var userID uint
+	if _, err := fmt.Sscan(claims.Subject, &userID); err != nil {
+		return nil
+	}
+	user, err := h.UserRepo.GetByID(userID)
+	if err != nil || user.TokenVersion != claims.TokenVersion {
+		return nil
+	}
+	return user
 }

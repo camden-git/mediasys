@@ -462,6 +462,30 @@ func TestCORSPreflightOnPeopleAndFaceRoutes(t *testing.T) {
 	}
 }
 
+func TestLogoutRevokesToken(t *testing.T) {
+	env := requireShared(t)
+	username := fmt.Sprintf("logout_%d", time.Now().UnixNano())
+	createUser(t, env.adminToken, username, "original-password")
+	_, token := loginFresh(t, username, "original-password")
+
+	if r := doRequest(t, http.MethodGet, "/api/auth/me", token, nil, ""); r.StatusCode != http.StatusOK {
+		t.Fatalf("expected fresh token to work, got %d", r.StatusCode)
+	}
+	if r := doRequest(t, http.MethodPost, "/api/auth/logout", token, nil, ""); r.StatusCode != http.StatusOK {
+		t.Fatalf("logout failed: %d %s", r.StatusCode, r.Body)
+	}
+	if r := doRequest(t, http.MethodGet, "/api/auth/me", token, nil, ""); r.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected token to be revoked after logout (401), got %d", r.StatusCode)
+	}
+
+	// logging out again, or without a usable token, still succeeds
+	for _, tok := range []string{token, "", "not.a.jwt"} {
+		if r := doRequest(t, http.MethodPost, "/api/auth/logout", tok, nil, ""); r.StatusCode != http.StatusOK {
+			t.Fatalf("logout with token %q: expected 200, got %d", tok, r.StatusCode)
+		}
+	}
+}
+
 func TestOversizedJSONBodyRejected(t *testing.T) {
 	env := requireShared(t)
 	big := `{"username":"` + strings.Repeat("a", 128<<10) + `","password":"x"}`
