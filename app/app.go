@@ -42,7 +42,7 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	if cfg.DatabaseDebug {
 		logLevel = logger.Info
 	}
-	gormDB, err := database.InitGormDB(cfg.DatabaseURL, logLevel)
+	gormDB, err := database.InitGormDB(ctx, cfg.DatabaseURL, logLevel)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize database: %w", err)
 	}
@@ -98,6 +98,8 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	}
 
 	if err := handlers.SyncSuperAdminRole(roleRepo); err != nil {
+		imageProcessor.Stop()
+		hub.Stop()
 		_ = sqlDB.Close()
 		return nil, fmt.Errorf("failed to sync super admin role: %w", err)
 	}
@@ -149,10 +151,14 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	}, nil
 }
 
-// Close releases the database connection and stops background workers.
+// Close stops background workers and the realtime hub, then releases the
+// database connection.
 func (a *App) Close() error {
 	if a.ImageProcessor != nil {
 		a.ImageProcessor.Stop()
+	}
+	if a.Hub != nil {
+		a.Hub.Stop()
 	}
 	if a.DB != nil {
 		if sqlDB, err := a.DB.DB(); err == nil {

@@ -6,8 +6,10 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"runtime/debug"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/camden-git/mediasysbackend/app"
@@ -34,7 +36,10 @@ func main() {
 		}
 	}
 
-	a, err := app.New(context.Background(), cfg)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	a, err := app.New(ctx, cfg)
 	if err != nil {
 		log.Fatalf("FATAL: %v", err)
 	}
@@ -54,5 +59,24 @@ func main() {
 		ReadHeaderTimeout: 15 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
-	log.Fatal(server.ListenAndServe())
+
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- server.ListenAndServe() }()
+
+	select {
+	case err := <-serveErr:
+		// ListenAndServe only returns on failure here; deferred Close still runs
+		log.Printf("FATAL: server stopped: %v", err)
+		return
+	case <-ctx.Done():
+	}
+
+	log.Println("Shutting down...")
+	stop() // a second signal now kills the process immediately
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Printf("Warning: graceful shutdown incomplete: %v", err)
+		_ = server.Close()
+	}
 }

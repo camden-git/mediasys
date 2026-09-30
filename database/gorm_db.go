@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -13,7 +14,7 @@ import (
 
 // InitGormDB connects to Postgres using the given DSN and returns a GORM instance.
 // It retries for a short while so the app can start alongside the database container.
-func InitGormDB(dsn string, logLevel logger.LogLevel) (*gorm.DB, error) {
+func InitGormDB(ctx context.Context, dsn string, logLevel logger.LogLevel) (*gorm.DB, error) {
 	gormLogger := logger.New(
 		log.New(os.Stdout, "\r\n", log.LstdFlags),
 		logger.Config{
@@ -27,6 +28,9 @@ func InitGormDB(dsn string, logLevel logger.LogLevel) (*gorm.DB, error) {
 	var db *gorm.DB
 	var err error
 	for attempt := 1; attempt <= 30; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return nil, fmt.Errorf("failed to connect to postgres: %w", err)
+		}
 		db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
 			Logger:                                   gormLogger,
 			DisableForeignKeyConstraintWhenMigrating: true,
@@ -35,7 +39,11 @@ func InitGormDB(dsn string, logLevel logger.LogLevel) (*gorm.DB, error) {
 			break
 		}
 		log.Printf("database: connect attempt %d failed: %v", attempt, err)
-		time.Sleep(2 * time.Second)
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("failed to connect to postgres: %w", ctx.Err())
+		case <-time.After(2 * time.Second):
+		}
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to postgres: %w", err)

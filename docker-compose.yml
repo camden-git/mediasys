@@ -41,6 +41,8 @@ services:
         OPENCV_IMAGE: ${OPENCV_IMAGE:-ghcr.io/hybridgroup/opencv:4.11.0}
     image: mediasys-backend:local
     restart: unless-stopped
+    # lets in-flight uploads/downloads and workers finish (server shutdown timeout is 25s)
+    stop_grace_period: 40s
     depends_on:
       postgres:
         condition: service_healthy

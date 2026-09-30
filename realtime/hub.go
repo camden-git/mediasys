@@ -101,6 +101,8 @@ type Hub struct {
 	unregister chan *Client
 	broadcast  chan message
 	mu         sync.RWMutex
+	done       chan struct{}
+	stopOnce   sync.Once
 }
 
 func NewHub() *Hub {
@@ -109,12 +111,26 @@ func NewHub() *Hub {
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
 		broadcast:  make(chan message, 256),
+		done:       make(chan struct{}),
 	}
+}
+
+// Stop ends Run and disconnects every client. It is safe to call more than once.
+func (h *Hub) Stop() {
+	h.stopOnce.Do(func() { close(h.done) })
 }
 
 func (h *Hub) Run() {
 	for {
 		select {
+		case <-h.done:
+			h.mu.Lock()
+			for client := range h.clients {
+				close(client.send)
+				delete(h.clients, client)
+			}
+			h.mu.Unlock()
+			return
 		case client := <-h.register:
 			h.mu.Lock()
 			h.clients[client] = true
@@ -185,7 +201,12 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request, user *models.User)
 		user.HasGlobalPermission("") // compute effective permissions now, before the hub goroutine reads them
 	}
 	client := &Client{conn: conn, send: make(chan []byte, 256), user: user}
-	h.register <- client
+	select {
+	case h.register <- client:
+	case <-h.done:
+		_ = conn.Close()
+		return
+	}
 
 	// writer
 	go func() {
@@ -223,5 +244,8 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request, user *models.User)
 			break
 		}
 	}
-	h.unregister <- client
+	select {
+	case h.unregister <- client:
+	case <-h.done:
+	}
 }
