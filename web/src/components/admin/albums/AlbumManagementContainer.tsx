@@ -96,8 +96,8 @@ const AlbumManagementContainer: React.FC = () => {
                                     </div>
                                 </TableCell>
                                 <TableCell>
-                                    <Can permission='album.edit.general'>
-                                        <Button plain to={`/admin/albums/view/${album.slug}`}>
+                                    <Can permission={['album.edit.general', 'album.photo.editmeta']} albumId={album.id}>
+                                        <Button plain to={`/admin/albums/view/${album.slug}/settings`}>
                                             Edit
                                         </Button>
                                     </Can>
