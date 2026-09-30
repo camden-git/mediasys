@@ -427,38 +427,41 @@ func RegisterRoutes(r chi.Router, deps AppDependencies) {
 		}
 
 		r.Route("/people", func(r chi.Router) {
-			r.With(credentialedCORS, requirePeopleManage).Post("/", deps.PersonHandler.CreatePerson)
+			r.Use(credentialedCORS) // at router level so OPTIONS preflight is answered
+			r.With(requirePeopleManage).Post("/", deps.PersonHandler.CreatePerson)
 			r.Get("/", deps.PersonHandler.ListPeople)
 			r.Get("/search", deps.PersonHandler.SearchPeople)
 			r.Route("/{person_id}", func(r chi.Router) {
 				r.Get("/", deps.PersonHandler.GetPerson)
-				r.With(credentialedCORS, requirePeopleManage).Put("/", deps.PersonHandler.UpdatePerson)
-				r.With(credentialedCORS, requirePeopleManage).Delete("/", deps.PersonHandler.DeletePerson)
-				r.With(credentialedCORS, requirePeopleManage).Put("/key-photo", deps.PersonHandler.SetKeyPhoto)
+				r.With(requirePeopleManage).Put("/", deps.PersonHandler.UpdatePerson)
+				r.With(requirePeopleManage).Delete("/", deps.PersonHandler.DeletePerson)
+				r.With(requirePeopleManage).Put("/key-photo", deps.PersonHandler.SetKeyPhoto)
 				r.Get("/key-photo.jpg", deps.PersonHandler.ServeKeyPhoto)
 				r.Route("/aliases", func(r chi.Router) {
 					r.Get("/", deps.PersonHandler.ListAliases)
-					r.With(credentialedCORS, requirePeopleManage).Post("/", deps.PersonHandler.AddAlias)
-					r.With(credentialedCORS, requirePeopleManage).Delete("/{alias_id}", deps.PersonHandler.DeleteAlias)
+					r.With(requirePeopleManage).Post("/", deps.PersonHandler.AddAlias)
+					r.With(requirePeopleManage).Delete("/{alias_id}", deps.PersonHandler.DeleteAlias)
 				})
 			})
 		})
 
 		r.Route("/images/faces", func(r chi.Router) {
-			r.With(credentialedCORS, requireFaceManage).Post("/", deps.FaceHandler.AddFace)
+			r.Use(credentialedCORS) // at router level so OPTIONS preflight is answered
+			r.With(requireFaceManage).Post("/", deps.FaceHandler.AddFace)
 			r.Get("/", deps.FaceHandler.ListFacesByImage)
 		})
 
 		r.Route("/faces", func(r chi.Router) {
-			r.With(credentialedCORS, requireFaceManage).Get("/untagged", deps.FaceHandler.GetUntaggedFaces)
+			r.Use(credentialedCORS) // at router level so OPTIONS preflight is answered
+			r.With(requireFaceManage).Get("/untagged", deps.FaceHandler.GetUntaggedFaces)
 			r.Route("/{face_id}", func(r chi.Router) {
-				r.With(credentialedCORS, requireFaceManage).Get("/", deps.FaceHandler.GetFace)
-				r.With(credentialedCORS, requireFaceManage).Put("/", deps.FaceHandler.UpdateFace)
-				r.With(credentialedCORS, requireFaceManage).Delete("/", deps.FaceHandler.DeleteFace)
-				r.With(credentialedCORS, requireFaceManage).Get("/similar", deps.FaceHandler.GetSimilarFaces)
-				r.With(credentialedCORS, requireFaceManage).Get("/suggest", deps.FaceHandler.SuggestFace)
-				r.With(credentialedCORS, requireFaceManage).Post("/tag", deps.FaceHandler.TagFace)
-				r.With(credentialedCORS, requireFaceManage).Post("/auto-tag", deps.FaceHandler.AutoTagFace)
+				r.With(requireFaceManage).Get("/", deps.FaceHandler.GetFace)
+				r.With(requireFaceManage).Put("/", deps.FaceHandler.UpdateFace)
+				r.With(requireFaceManage).Delete("/", deps.FaceHandler.DeleteFace)
+				r.With(requireFaceManage).Get("/similar", deps.FaceHandler.GetSimilarFaces)
+				r.With(requireFaceManage).Get("/suggest", deps.FaceHandler.SuggestFace)
+				r.With(requireFaceManage).Post("/tag", deps.FaceHandler.TagFace)
+				r.With(requireFaceManage).Post("/auto-tag", deps.FaceHandler.AutoTagFace)
 			})
 		})
 
