@@ -93,6 +93,8 @@ type RetinaFaceDetector struct {
 
 	// Priors are pre-computed at construction time and reused across calls
 	Priors []PriorBox
+
+	outputNames []string
 }
 
 // NewRetinaFaceDetector loads the RetinaFace model
@@ -187,6 +189,32 @@ func (r *RetinaFaceDetector) letterbox(img gocv.Mat) (gocv.Mat, float32) {
 	return canvas, scale
 }
 
+// outputLayerNames resolves (and caches) the names of the unconnected output
+// layers. Names are looked up per layer id: indexing GetLayerNames by id is
+// unreliable and intermittently yields empty names, which makes ForwardLayers
+// return copies of the input instead of the network outputs.
+func (r *RetinaFaceDetector) outputLayerNames() ([]string, error) {
+	if len(r.outputNames) > 0 {
+		return r.outputNames, nil
+	}
+	outIDs := r.Net.GetUnconnectedOutLayers()
+	names := make([]string, 0, len(outIDs))
+	for _, id := range outIDs {
+		layer := r.Net.GetLayer(id)
+		name := layer.GetName()
+		layer.Close()
+		if name == "" {
+			return nil, fmt.Errorf("retinaface: output layer %d has no name", id)
+		}
+		names = append(names, name)
+	}
+	if len(names) < 3 {
+		return nil, fmt.Errorf("retinaface model has %d output layers (need at least 3): %v", len(names), names)
+	}
+	r.outputNames = names
+	return names, nil
+}
+
 // DetectFaces runs face detection using RetinaFace
 func (r *RetinaFaceDetector) DetectFaces(img gocv.Mat) ([]DetectionResult, error) {
 	if r == nil || !r.Enabled {
@@ -207,17 +235,9 @@ func (r *RetinaFaceDetector) DetectFaces(img gocv.Mat) ([]DetectionResult, error
 
 	r.Net.SetInput(blob, "")
 
-	// Discover the actual output layer names at runtime rather than hardcoding them.
-	allNames := r.Net.GetLayerNames()
-	outIDs := r.Net.GetUnconnectedOutLayers()
-	outputNames := make([]string, 0, len(outIDs))
-	for _, id := range outIDs {
-		if id >= 1 && id <= len(allNames) {
-			outputNames = append(outputNames, allNames[id-1])
-		}
-	}
-	if len(outputNames) < 3 {
-		return nil, fmt.Errorf("retinaface model has %d output layers (need at least 3): %v", len(outputNames), outputNames)
+	outputNames, err := r.outputLayerNames()
+	if err != nil {
+		return nil, err
 	}
 
 	// Fetch all outputs in one pass: separate Forward(name) calls reuse internal
