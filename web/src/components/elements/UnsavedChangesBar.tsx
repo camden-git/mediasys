@@ -1,7 +1,7 @@
-import { Fragment, useEffect } from 'react';
-import { useBlocker } from 'react-router-dom';
+import { Fragment, useEffect, useId } from 'react';
 import { Transition } from '@headlessui/react';
 import { Button } from './Button';
+import { useUnsavedChangesStore } from '../../store/useUnsavedChangesStore';
 
 interface UnsavedChangesBarProps {
     isDirty: boolean;
@@ -19,22 +19,14 @@ export function UnsavedChangesBar({ isDirty, isSubmitting, onDiscard }: UnsavedC
         return () => window.removeEventListener('beforeunload', handler);
     }, [isDirty]);
 
-    // block in-app navigation (links, back/forward) while there are unsaved changes
+    // register with UnsavedChangesGuard, which blocks in-app navigation (links, back/forward)
+    const formId = useId();
+    const setDirty = useUnsavedChangesStore((s) => s.setDirty);
     const shouldBlock = isDirty && !isSubmitting;
-    const blocker = useBlocker(
-        ({ currentLocation, nextLocation }) =>
-            shouldBlock &&
-            (currentLocation.pathname !== nextLocation.pathname || currentLocation.search !== nextLocation.search),
-    );
-
     useEffect(() => {
-        if (blocker.state !== 'blocked') return;
-        if (window.confirm('You have unsaved changes. Leave this page and discard them?')) {
-            blocker.proceed();
-        } else {
-            blocker.reset();
-        }
-    }, [blocker]);
+        setDirty(formId, shouldBlock);
+        return () => setDirty(formId, false);
+    }, [formId, shouldBlock, setDirty]);
 
     const saveButton = (
         <Button type='submit' disabled={isSubmitting || !isDirty}>

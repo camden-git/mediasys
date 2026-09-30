@@ -2,6 +2,7 @@ import React, { Suspense, useEffect } from 'react';
 import { Routes, Route, RouterProvider, createBrowserRouter } from 'react-router-dom';
 import { useAuthStore } from './store/useAuthStore';
 import ProgressBar from './components/elements/ProgressBar';
+import { UnsavedChangesGuard } from './components/elements/UnsavedChangesGuard';
 
 const IndexRouter = React.lazy(() => import('./routes/IndexRouter'));
 const AlbumRouter = React.lazy(() => import('./routes/AlbumRouter'));
@@ -20,6 +21,7 @@ function AppRoutes() {
     return (
         <>
             <ProgressBar />
+            <UnsavedChangesGuard />
             <Suspense fallback={null}>
                 <Routes>
                     <Route path='/auth/*' element={<AuthRouter />} />
@@ -45,7 +47,7 @@ function AppRoutes() {
     );
 }
 
-// A data router (rather than <BrowserRouter>) is required for useBlocker, which guards unsaved changes.
+// A data router (rather than <BrowserRouter>) is required for useBlocker (see UnsavedChangesGuard).
 const router = createBrowserRouter([{ path: '*', element: <AppRoutes /> }]);
 
 function App() {
