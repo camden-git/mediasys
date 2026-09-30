@@ -317,6 +317,18 @@ const AlbumView: React.FC = () => {
         }
     }, [imageFiles, selectedIndex, selectedImage, goToImage]);
 
+    // tab title follows the album and the open image; restored on unmount
+    const albumName = currentAlbum?.name;
+    const selectedName = selectedImage?.name;
+    useEffect(() => {
+        if (!albumName) return;
+        const previous = document.title;
+        document.title = selectedName ? `${selectedName} - ${albumName}` : albumName;
+        return () => {
+            document.title = previous;
+        };
+    }, [albumName, selectedName]);
+
     const handleDownloadZip = () => {
         const zipId = currentAlbum?.slug || identifier;
         if (!currentAlbum?.zip_ready || !zipId) return;
