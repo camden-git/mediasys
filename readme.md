@@ -18,8 +18,12 @@ mkdir -p ml-models     # drop the face models in here
 docker compose up -d --build
 ```
 
-The app is served at `http://localhost:8080`. Create the first admin with
-`POST /api/setup/initial-admin` (`{"username": "...", "password": "..."}`).
+The app is served at `http://localhost:8080`. Create the first admin with:
+
+```sh
+docker compose exec backend /app/mediasys user create --admin
+```
+
 The storage console is at `http://localhost:9001` (bound to localhost only).
 
 ## License
