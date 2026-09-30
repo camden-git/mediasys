@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"net/http"
+	"sort"
 
 	"github.com/camden-git/mediasysbackend/models"
 )
@@ -113,6 +114,38 @@ func roleGrantDenial(caller *models.User, role *models.Role) string {
 	for _, rap := range role.AlbumPermissions {
 		if msg := albumGrantDenial(caller, rap.AlbumID, rap.Permissions, nil); msg != "" {
 			return fmt.Sprintf("You cannot manage role '%s': %s", role.Name, msg)
+		}
+	}
+	return ""
+}
+
+// userManageDenial returns a non-empty message if a non-super-admin caller may not edit or
+// delete target, i.e. the target holds effective global or album permissions the caller lacks.
+// Otherwise a caller could take over a more privileged account, e.g. by resetting its password.
+func userManageDenial(caller, target *models.User) string {
+	if isSuperAdmin(caller) {
+		return ""
+	}
+	if isSuperAdmin(target) {
+		return "Only a Super Administrator can manage a Super Administrator"
+	}
+	target.RefreshEffectivePermissions()
+	effective := target.EffectivePermissions
+
+	if msg := globalGrantDenial(caller, effective.Global, nil); msg != "" {
+		return fmt.Sprintf("You cannot manage user '%s': %s", target.Username, msg)
+	}
+	if msg := albumForAllGrantDenial(caller, effective.Album.ForAll, nil); msg != "" {
+		return fmt.Sprintf("You cannot manage user '%s': %s", target.Username, msg)
+	}
+	albumIDs := make([]uint, 0, len(effective.Album.ByAlbum))
+	for albumID := range effective.Album.ByAlbum {
+		albumIDs = append(albumIDs, albumID)
+	}
+	sort.Slice(albumIDs, func(i, j int) bool { return albumIDs[i] < albumIDs[j] })
+	for _, albumID := range albumIDs {
+		if msg := albumGrantDenial(caller, albumID, effective.Album.ByAlbum[albumID], nil); msg != "" {
+			return fmt.Sprintf("You cannot manage user '%s': %s", target.Username, msg)
 		}
 	}
 	return ""

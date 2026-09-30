@@ -255,7 +255,7 @@ func (h *AdminUserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 // @Param user body UserUpdatePayload true "User update payload"
 // @Success 200 {object} UserResponseDTO
 // @Failure 400 {object} map[string]string
-// @Failure 403 {object} map[string]string "Caller lacks a permission or role being granted, or target is a Super Administrator"
+// @Failure 403 {object} map[string]string "Caller lacks a permission or role being granted, or target holds permissions the caller lacks"
 // @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @Router /api/admin/users/{id} [put]
@@ -294,6 +294,10 @@ func (h *AdminUserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 	if isSuperAdmin(user) && !isSuperAdmin(caller) {
 		WriteAPIError(w, http.StatusForbidden, "ForbiddenUserUpdate", "Only a Super Administrator can edit a Super Administrator")
+		return
+	}
+	if msg := userManageDenial(caller, user); msg != "" {
+		WriteAPIError(w, http.StatusForbidden, "ForbiddenUserUpdate", msg)
 		return
 	}
 
@@ -458,7 +462,7 @@ func (h *AdminUserHandler) isLastSuperAdmin() (bool, error) {
 // @Param id path int true "User ID"
 // @Success 204 "No Content"
 // @Failure 400 {object} map[string]string
-// @Failure 403 {object} map[string]string "Cannot delete yourself or a Super Administrator (or the last one)"
+// @Failure 403 {object} map[string]string "Cannot delete yourself, a user holding permissions you lack, or a Super Administrator (or the last one)"
 // @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @Router /api/admin/users/{id} [delete]
@@ -503,6 +507,10 @@ func (h *AdminUserHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 			WriteAPIError(w, http.StatusForbidden, "ForbiddenLastSuperAdmin", "The last Super Administrator cannot be deleted")
 			return
 		}
+	}
+	if msg := userManageDenial(caller, target); msg != "" {
+		WriteAPIError(w, http.StatusForbidden, "ForbiddenUserDelete", msg)
+		return
 	}
 
 	if err := h.UserRepo.Delete(uint(userID)); err != nil {

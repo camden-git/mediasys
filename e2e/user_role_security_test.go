@@ -438,3 +438,78 @@ func TestPerPageBelowDefault(t *testing.T) {
 		t.Fatalf("expected per_page=2 with 2 items, got per_page=%d items=%d", body.Meta.Pagination.PerPage, len(body.Data))
 	}
 }
+
+// secCleanupDelete registers a cleanup that deletes the resource at path as the initial admin.
+func secCleanupDelete(t *testing.T, path string) {
+	t.Helper()
+	env := requireShared(t)
+	t.Cleanup(func() {
+		resp := doRequest(t, http.MethodDelete, path, env.adminToken, nil, "")
+		if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotFound {
+			t.Errorf("cleanup of %s failed: %d %s", path, resp.StatusCode, resp.Body)
+		}
+	})
+}
+
+// secMakeCleanUser is secMakeUser (as the initial admin) plus a cleanup deleting the user.
+func secMakeCleanUser(t *testing.T, username string, globalPerms []string, roleIDs []uint) secUser {
+	t.Helper()
+	u := secMakeUser(t, requireShared(t).adminToken, username, globalPerms, roleIDs)
+	secCleanupDelete(t, fmt.Sprintf("/api/admin/users/%d", u.ID))
+	return u
+}
+
+// TestUserEditCannotTakeOverMorePrivilegedUser verifies a caller with user.edit/user.delete
+// cannot edit (e.g. reset the password of) or delete a user holding permissions they lack.
+func TestUserEditCannotTakeOverMorePrivilegedUser(t *testing.T) {
+	env := requireShared(t)
+	suffix := randomSuffix()
+
+	album := createAlbum(t, env.adminToken, "Takeover "+suffix, "takeover-"+suffix, "")
+	secCleanupDelete(t, fmt.Sprintf("/api/admin/albums/%d", album.ID))
+
+	staff := secMakeCleanUser(t, "tk_staff_"+suffix, []string{"user.edit", "user.delete", "user.list", "user.view"}, nil)
+	staffToken := secLoginAs(t, staff.Username)
+
+	albumAllRole := secMakeRole(t, env.adminToken, "tk_albumall_"+suffix, nil, []string{"album.photo.delete"})
+	secCleanupDelete(t, fmt.Sprintf("/api/admin/roles/%d", albumAllRole.ID))
+
+	globalTarget := secMakeCleanUser(t, "tk_global_"+suffix, []string{"role.edit"}, nil)
+	albumAllTarget := secMakeCleanUser(t, "tk_albumall_"+suffix, nil, []uint{albumAllRole.ID})
+	albumTarget := secMakeCleanUser(t, "tk_album_"+suffix, nil, nil)
+	grantAlbumPermission(t, env.adminToken, album.ID, albumTarget.ID, []string{"album.manage.members"})
+
+	for _, target := range []secUser{globalTarget, albumAllTarget, albumTarget} {
+		t.Run("cannot edit or delete "+target.Username, func(t *testing.T) {
+			path := fmt.Sprintf("/api/admin/users/%d", target.ID)
+			secExpectForbidden(t, doJSON(t, http.MethodPut, path, staffToken, map[string]any{"password": "hijacked-password-123"}))
+			secExpectForbidden(t, doJSON(t, http.MethodPut, path, staffToken, map[string]any{"first_name": "Hijacked"}))
+			secExpectForbidden(t, doRequest(t, http.MethodDelete, path, staffToken, nil, ""))
+
+			secLoginAs(t, target.Username) // original password still works
+			if got := secGetUser(t, env.adminToken, target.ID); got.FirstName == "Hijacked" {
+				t.Fatalf("target was modified despite 403")
+			}
+		})
+	}
+
+	t.Run("can edit and delete a user with a subset of the caller's permissions", func(t *testing.T) {
+		peer := secMakeCleanUser(t, "tk_peer_"+suffix, []string{"user.list"}, nil)
+		path := fmt.Sprintf("/api/admin/users/%d", peer.ID)
+		resp := doJSON(t, http.MethodPut, path, staffToken, map[string]any{"first_name": "Renamed"})
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("expected 200 editing a less privileged user, got %d: %s", resp.StatusCode, resp.Body)
+		}
+		resp = doRequest(t, http.MethodDelete, path, staffToken, nil, "")
+		if resp.StatusCode != http.StatusNoContent {
+			t.Fatalf("expected 204 deleting a less privileged user, got %d: %s", resp.StatusCode, resp.Body)
+		}
+	})
+
+	t.Run("super admin can still edit more privileged users", func(t *testing.T) {
+		resp := doJSON(t, http.MethodPut, fmt.Sprintf("/api/admin/users/%d", globalTarget.ID), env.adminToken, map[string]any{"first_name": "Edited"})
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", resp.StatusCode, resp.Body)
+		}
+	})
+}
