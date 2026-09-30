@@ -7,10 +7,31 @@ import (
 	"log"
 	"math"
 	"os"
+	"sort"
 	"strconv"
 
 	"gocv.io/x/gocv"
 )
+
+const (
+	retinaFaceInputSize = 640
+
+	// retinaFaceConfThreshold is the minimum face score to keep a candidate.
+	retinaFaceConfThreshold = 0.5
+	// retinaFaceIoUThreshold is the NMS overlap above which a lower scored box is dropped.
+	retinaFaceIoUThreshold = 0.5
+	// minFaceBoxPx is the smallest box side (original image pixels) worth keeping.
+	minFaceBoxPx = 8
+	// qualityAreaScale scales score * face-area-fraction into QualityScore.
+	qualityAreaScale = 100
+
+	// Landmark sanity limits, relative to the box width.
+	maxInterEyeToBoxRatio   = 0.65
+	maxNoseOffsetToBoxWidth = 0.20
+)
+
+// retinaFaceVariances are the box/landmark decoding variances used in training.
+var retinaFaceVariances = [2]float32{0.1, 0.2}
 
 // RetinaFace prior box generation and box decoding utilities
 
@@ -148,13 +169,13 @@ func NewRetinaFaceDetector(modelPath string) *RetinaFaceDetector {
 	return &RetinaFaceDetector{
 		Net:           net,
 		Enabled:       true,
-		InputSizeW:    640,
-		InputSizeH:    640,
+		InputSizeW:    retinaFaceInputSize,
+		InputSizeH:    retinaFaceInputSize,
 		ScaleFactor:   1.0,
 		MeanVal:       gocv.NewScalar(104.0, 117.0, 123.0, 0),
-		ConfThreshold: 0.5,
-		IoUThreshold:  0.5,
-		Priors:        GenerateRetinaFacePriors(640, 640),
+		ConfThreshold: retinaFaceConfThreshold,
+		IoUThreshold:  retinaFaceIoUThreshold,
+		Priors:        GenerateRetinaFacePriors(retinaFaceInputSize, retinaFaceInputSize),
 	}
 }
 
@@ -302,7 +323,7 @@ func (r *RetinaFaceDetector) parseRetinaFaceOutput(boxes, scores, landmarks gocv
 	defer scores2D.Close()
 	landmarks2D := landmarks.Reshape(1, numDetections)
 	defer landmarks2D.Close()
-	variances := [2]float32{0.1, 0.2}
+	variances := retinaFaceVariances
 
 	var detections []DetectionResult
 	for i := 0; i < numDetections; i++ {
@@ -321,7 +342,7 @@ func (r *RetinaFaceDetector) parseRetinaFaceOutput(boxes, scores, landmarks gocv
 		y1 := max(0, decoded[1]*inverse)
 		x2 := min(imgWidth, decoded[2]*inverse)
 		y2 := min(imgHeight, decoded[3]*inverse)
-		if x2 <= x1 || y2 <= y1 {
+		if x2-x1 < minFaceBoxPx || y2-y1 < minFaceBoxPx {
 			continue
 		}
 
@@ -343,7 +364,7 @@ func (r *RetinaFaceDetector) parseRetinaFaceOutput(boxes, scores, landmarks gocv
 		}
 
 		faceArea := (x2 - x1) * (y2 - y1)
-		qs := scoreFace * (faceArea / (imgWidth * imgHeight)) * 100
+		qs := scoreFace * (faceArea / (imgWidth * imgHeight)) * qualityAreaScale
 		detections = append(detections, DetectionResult{
 			X:            int(x1),
 			Y:            int(y1),
@@ -363,9 +384,11 @@ func (r *RetinaFaceDetector) parseRetinaFaceOutput(boxes, scores, landmarks gocv
 // validateLandmarkGeometry filters phantom detections that span two nearby faces.
 // RetinaFace landmarks: [0]=left eye, [1]=right eye, [2]=nose, [3]=left mouth, [4]=right mouth.
 //
-// Two checks catch the "one eye from each person" case regardless of box shape:
-//  1. Inter-eye distance / box width > 0.65 → eyes are near opposite edges, not a single face.
-//  2. |nose_x - eye_midpoint_x| / box_width > 0.20 → nose isn't centred between the eyes.
+// The checks work in the frame of the eye vector so rolled (tilted) heads pass:
+//  1. Inter-eye distance / box width > maxInterEyeToBoxRatio → eyes are near
+//     opposite edges of the box, not on a single face.
+//  2. Nose offset from the eye midpoint, measured along the eye vector, over the
+//     box width > maxNoseOffsetToBoxWidth → the nose isn't centred between the eyes.
 func validateLandmarkGeometry(pts []Point2D, x1, y1, x2, y2 float32) bool {
 	if len(pts) < 3 {
 		return true // no landmarks to check, let NMS handle it
@@ -376,32 +399,19 @@ func validateLandmarkGeometry(pts []Point2D, x1, y1, x2, y2 float32) bool {
 		return false
 	}
 
-	leftEye := pts[0]
-	rightEye := pts[1]
-	nose := pts[2]
-
-	// 1. Inter-eye distance should not span most of the box width.
-	interEye := rightEye.X - leftEye.X
-	if interEye < 0 {
-		interEye = -interEye
+	leftEye, rightEye, nose := pts[0], pts[1], pts[2]
+	ex, ey := rightEye.X-leftEye.X, rightEye.Y-leftEye.Y
+	interEye := float32(math.Hypot(float64(ex), float64(ey)))
+	if interEye == 0 {
+		return false
 	}
-	if interEye/boxW > 0.65 {
-		log.Printf("detection(retinaface): dropping phantom detection — inter-eye ratio %.2f", interEye/boxW)
+	if interEye/boxW > maxInterEyeToBoxRatio {
 		return false
 	}
 
-	// 2. Nose should be roughly centred between the two eyes horizontally.
-	eyeMidX := (leftEye.X + rightEye.X) / 2
-	noseDeviation := nose.X - eyeMidX
-	if noseDeviation < 0 {
-		noseDeviation = -noseDeviation
-	}
-	if noseDeviation/boxW > 0.20 {
-		log.Printf("detection(retinaface): dropping phantom detection — nose deviation ratio %.2f", noseDeviation/boxW)
-		return false
-	}
-
-	return true
+	midX, midY := (leftEye.X+rightEye.X)/2, (leftEye.Y+rightEye.Y)/2
+	along := ((nose.X-midX)*ex + (nose.Y-midY)*ey) / interEye
+	return float32(math.Abs(float64(along)))/boxW <= maxNoseOffsetToBoxWidth
 }
 
 // nonMaxSuppression applies NMS to remove overlapping detections
@@ -411,13 +421,9 @@ func (r *RetinaFaceDetector) nonMaxSuppression(detections []DetectionResult) []D
 	}
 
 	// Sort by confidence (highest first)
-	for i := 0; i < len(detections)-1; i++ {
-		for j := i + 1; j < len(detections); j++ {
-			if detections[i].Confidence < detections[j].Confidence {
-				detections[i], detections[j] = detections[j], detections[i]
-			}
-		}
-	}
+	sort.Slice(detections, func(i, j int) bool {
+		return detections[i].Confidence > detections[j].Confidence
+	})
 
 	// Apply NMS
 	var result []DetectionResult
