@@ -32,9 +32,7 @@ func (h *AdminAlbumHandler) AddAlbumBanner(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	const maxUploadSize = 20 << 20
-	if err := r.ParseMultipartForm(maxUploadSize); err != nil {
-		WriteAPIError(w, http.StatusBadRequest, "InvalidForm", "Invalid form data: "+err.Error())
+	if !parseBannerForm(w, r) {
 		return
 	}
 	file, handler, err := r.FormFile("banner_image")

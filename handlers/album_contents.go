@@ -25,20 +25,8 @@ func (ah *AlbumHandler) GetAlbumContents(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	defaultLimit := 120
 	q := r.URL.Query()
-	offset := 0
-	limit := defaultLimit
-	if o := q.Get("offset"); o != "" {
-		if v, convErr := strconv.Atoi(o); convErr == nil && v >= 0 {
-			offset = v
-		}
-	}
-	if l := q.Get("limit"); l != "" {
-		if v, convErr := strconv.Atoi(l); convErr == nil && v > 0 {
-			limit = v
-		}
-	}
+	offset, limit := parseListWindow(q)
 	var minRating *int
 	if mr := q.Get("min_rating"); mr != "" {
 		if v, convErr := strconv.Atoi(mr); convErr == nil && v >= 1 {

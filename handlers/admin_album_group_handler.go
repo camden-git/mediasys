@@ -226,9 +226,7 @@ func (h *AdminAlbumGroupHandler) UploadGroupBanner(w http.ResponseWriter, r *htt
 		return
 	}
 
-	const maxUploadSize = 20 << 20 // 20 MB
-	if err := r.ParseMultipartForm(maxUploadSize); err != nil {
-		WriteAPIError(w, http.StatusBadRequest, "InvalidForm", "Invalid form data: "+err.Error())
+	if !parseBannerForm(w, r) {
 		return
 	}
 

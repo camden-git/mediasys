@@ -4,7 +4,6 @@ import (
 	"errors"
 	"log"
 	"net/http"
-	"strconv"
 
 	"github.com/camden-git/mediasysbackend/database"
 	"github.com/camden-git/mediasysbackend/models"
@@ -113,18 +112,7 @@ func (h *CollectionHandler) GetCollectionPhotos(w http.ResponseWriter, r *http.R
 		return
 	}
 	q := r.URL.Query()
-	offset := 0
-	limit := 120
-	if o := q.Get("offset"); o != "" {
-		if v, convErr := strconv.Atoi(o); convErr == nil && v >= 0 {
-			offset = v
-		}
-	}
-	if l := q.Get("limit"); l != "" {
-		if v, convErr := strconv.Atoi(l); convErr == nil && v > 0 {
-			limit = v
-		}
-	}
+	offset, limit := parseListWindow(q)
 
 	sortOrder := c.SortOrder
 	if !database.IsValidSortOrder(sortOrder) {

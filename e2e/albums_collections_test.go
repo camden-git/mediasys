@@ -1,8 +1,10 @@
 package e2e_test
 
 import (
+	"bytes"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"strings"
@@ -144,6 +146,45 @@ func TestPreviewAndOriginalCaching(t *testing.T) {
 	resp := getWithHeaders(t, previewURL, nil)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 for unavailable preview, got %d", resp.StatusCode)
+	}
+	assertErrorShape(t, resp)
+}
+
+func TestPublicListLimitIsClamped(t *testing.T) {
+	env := requireShared(t)
+	s := randomSuffix()
+	album := createAlbum(t, env.adminToken, "Lim "+s, "lim-"+s, "")
+
+	resp := doRequest(t, http.MethodGet, "/api/albums/"+album.Slug+"/contents?limit=100000", "", nil, "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("contents: %d %s", resp.StatusCode, resp.Body)
+	}
+	var listing directoryListing
+	resp.decode(t, &listing)
+	if listing.Limit != 500 {
+		t.Fatalf("expected limit clamped to 500, got %d", listing.Limit)
+	}
+}
+
+func TestBannerUploadBodyIsCapped(t *testing.T) {
+	env := requireShared(t)
+	s := randomSuffix()
+	album := createAlbum(t, env.adminToken, "Cap "+s, "cap-"+s, "")
+
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	part, err := mw.CreateFormFile("banner_image", "big.jpg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write(make([]byte, 21<<20)); err != nil {
+		t.Fatal(err)
+	}
+	_ = mw.Close()
+
+	resp := doRequest(t, http.MethodPost, fmt.Sprintf("/api/admin/albums/%d/banners", album.ID), env.adminToken, &buf, mw.FormDataContentType())
+	if resp.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected 413, got %d %s", resp.StatusCode, resp.Body)
 	}
 	assertErrorShape(t, resp)
 }
