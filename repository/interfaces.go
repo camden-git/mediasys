@@ -121,6 +121,7 @@ type FaceEmbeddingRepositoryInterface interface {
 // UserRepository defines the methods for user data operations
 type UserRepository interface {
 	Create(user *models.User) error
+	CreateWithRoles(user *models.User, roleIDs []uint) error   // creates the user and assigns roles atomically
 	CreateWithInviteCode(user *models.User, code string) error // claims an invite code use and creates the user atomically
 	GetByID(id uint) (*models.User, error)
 	GetByUsername(username string) (*models.User, error)

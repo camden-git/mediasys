@@ -1,7 +1,6 @@
 # built binaries
 /mediasys
 /mediasysbackend
-/cli
 
 # local environment (keep the example)
 /.env*

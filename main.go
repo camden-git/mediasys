@@ -11,14 +11,21 @@ import (
 	"time"
 
 	"github.com/camden-git/mediasysbackend/app"
+	"github.com/camden-git/mediasysbackend/cli"
 	"github.com/camden-git/mediasysbackend/config"
 	"github.com/joho/godotenv"
 )
 
 func main() {
-	err := godotenv.Load()
-	if err != nil {
-		log.Printf("Info: No .env file found or error loading: %v", err)
+	envErr := godotenv.Load()
+
+	// any arguments select a management command (see cli.Run) instead of the server
+	if len(os.Args) > 1 {
+		os.Exit(cli.Run(context.Background(), os.Args[1:]))
+	}
+
+	if envErr != nil {
+		log.Printf("Info: No .env file found or error loading: %v", envErr)
 	}
 	cfg, err := config.LoadConfig()
 	if err != nil {

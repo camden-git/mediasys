@@ -18,6 +18,7 @@ require (
 	github.com/rwcarlsen/goexif v0.0.0-20190401172101-9e8deecbddbd
 	gocv.io/x/gocv v0.41.0
 	golang.org/x/crypto v0.55.0
+	golang.org/x/term v0.45.0
 	gorm.io/driver/postgres v1.6.3
 	gorm.io/gorm v1.31.2
 )

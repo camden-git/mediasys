@@ -193,8 +193,8 @@ const (
 	maxPasswordBytes  = 72 // bcrypt ignores or rejects anything longer
 )
 
-// passwordPolicyError returns a validation message if the password is unacceptable, or "" if it is fine.
-func passwordPolicyError(password string) string {
+// PasswordPolicyError returns a validation message if the password is unacceptable, or "" if it is fine.
+func PasswordPolicyError(password string) string {
 	if len(password) < minPasswordLength {
 		return fmt.Sprintf("Password must be at least %d characters", minPasswordLength)
 	}
@@ -244,7 +244,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		WriteAPIError(w, http.StatusBadRequest, "ValidationException", "Username cannot be empty")
 		return
 	}
-	if msg := passwordPolicyError(payload.Password); msg != "" {
+	if msg := PasswordPolicyError(payload.Password); msg != "" {
 		WriteAPIError(w, http.StatusBadRequest, "ValidationException", msg)
 		return
 	}
@@ -299,7 +299,7 @@ func (h *AuthHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if payload.NewPassword != nil {
-		if msg := passwordPolicyError(*payload.NewPassword); msg != "" {
+		if msg := PasswordPolicyError(*payload.NewPassword); msg != "" {
 			WriteAPIError(w, http.StatusBadRequest, "ValidationException", msg)
 			return
 		}

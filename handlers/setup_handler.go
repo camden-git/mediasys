@@ -112,7 +112,7 @@ func (h *SetupHandler) CreateFirstAdmin(w http.ResponseWriter, r *http.Request) 
 		WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Username and password are required")
 		return
 	}
-	if msg := passwordPolicyError(payload.Password); msg != "" {
+	if msg := PasswordPolicyError(payload.Password); msg != "" {
 		WriteAPIError(w, http.StatusBadRequest, "ValidationError", msg)
 		return
 	}

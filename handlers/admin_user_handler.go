@@ -174,7 +174,7 @@ func (h *AdminUserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Username cannot be empty")
 		return
 	}
-	if msg := passwordPolicyError(payload.Password); msg != "" {
+	if msg := PasswordPolicyError(payload.Password); msg != "" {
 		WriteAPIError(w, http.StatusBadRequest, "ValidationError", msg)
 		return
 	}
@@ -298,7 +298,7 @@ func (h *AdminUserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		user.Username = *payload.Username
 	}
 	if payload.Password != nil && *payload.Password != "" {
-		if msg := passwordPolicyError(*payload.Password); msg != "" {
+		if msg := PasswordPolicyError(*payload.Password); msg != "" {
 			WriteAPIError(w, http.StatusBadRequest, "ValidationError", msg)
 			return
 		}

@@ -93,6 +93,22 @@ func (r *GormUserRepository) Create(user *models.User) error {
 	return r.db.Create(user).Error
 }
 
+// CreateWithRoles creates the user and assigns it roleIDs in one transaction.
+func (r *GormUserRepository) CreateWithRoles(user *models.User, roleIDs []uint) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Omit(clause.Associations).Create(user).Error; err != nil {
+			return err
+		}
+		for _, roleID := range roleIDs {
+			userRole := models.UserRole{UserID: user.ID, RoleID: roleID}
+			if err := tx.Omit(clause.Associations).Create(&userRole).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 // CreateWithInviteCode claims one use of the invite code and creates the user in a
 // single transaction. The claim is a conditional UPDATE, so concurrent registrations
 // cannot exceed max_uses. Returns ErrInviteCodeInvalid if the code cannot be claimed.
