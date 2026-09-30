@@ -54,11 +54,8 @@ func (ah *AlbumHandler) ListAlbums(w http.ResponseWriter, r *http.Request) {
 		WriteAPIError(w, http.StatusInternalServerError, "InternalError", "Failed to retrieve albums")
 		return
 	}
-	if albums == nil {
-		albums = []models.Album{} // ensure an empty array instead of null for JSON
-	}
 	setCacheHeaders(w, 300)
-	writeJSON(w, http.StatusOK, albums)
+	writeJSON(w, http.StatusOK, toPublicAlbums(albums))
 }
 
 func (ah *AlbumHandler) GetAlbum(w http.ResponseWriter, r *http.Request) {
@@ -75,34 +72,38 @@ func (ah *AlbumHandler) GetAlbum(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build artists list from uploaders
 	var artists []map[string]interface{}
-	if ah.ImageRepo != nil && ah.UserRepo != nil {
-		if ids, err := ah.ImageRepo.GetDistinctUploaderIDsByAlbum(album.ID); err == nil {
-			for _, id := range ids {
-				if u, err := ah.UserRepo.GetByID(id); err == nil && u != nil {
-					artists = append(artists, map[string]interface{}{
-						"id":         u.ID,
-						"username":   u.Username,
-						"first_name": u.FirstName,
-						"last_name":  u.LastName,
-					})
-				}
-			}
+	if ah.ImageRepo != nil {
+		users, err := ah.ImageRepo.ListUploadersByAlbum(album.ID)
+		if err != nil {
+			log.Printf("Error loading uploaders for album %d: %v", album.ID, err)
+		}
+		for _, u := range users {
+			artists = append(artists, map[string]interface{}{
+				"id":         u.ID,
+				"username":   u.Username,
+				"first_name": u.FirstName,
+				"last_name":  u.LastName,
+			})
 		}
 	}
 
-	banners, _ := ah.AlbumRepo.GetBanners(album.ID)
+	banners, err := ah.AlbumRepo.GetBanners(album.ID)
+	if err != nil {
+		log.Printf("Error loading banners for album %d: %v", album.ID, err)
+		WriteAPIError(w, http.StatusInternalServerError, "InternalError", "Failed to retrieve album")
+		return
+	}
 	bannerPaths := make([]string, 0, len(banners))
 	for _, b := range banners {
 		bannerPaths = append(bannerPaths, b.ImagePath)
 	}
 
 	type albumWithArtists struct {
-		*models.Album
+		PublicAlbum
 		Artists []map[string]interface{} `json:"artists,omitempty"`
 		Banners []string                 `json:"banners"`
 	}
 	setCacheHeaders(w, 300)
-	writeJSON(w, http.StatusOK, albumWithArtists{Album: album, Artists: artists, Banners: bannerPaths})
+	writeJSON(w, http.StatusOK, albumWithArtists{PublicAlbum: toPublicAlbum(album), Artists: artists, Banners: bannerPaths})
 }

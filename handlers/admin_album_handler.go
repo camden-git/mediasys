@@ -179,16 +179,16 @@ func (h *AdminAlbumHandler) GetAlbum(w http.ResponseWriter, r *http.Request) {
 	}
 	adminAlbum := convertAlbumToAdminResponse(album, banners)
 	// populate artists with names
-	if ids, err := h.ImageRepo.GetDistinctUploaderIDsByAlbum(album.ID); err == nil && len(ids) > 0 {
-		for _, id := range ids {
-			if u, err := h.UserRepo.GetByID(id); err == nil && u != nil {
-				adminAlbum.Artists = append(adminAlbum.Artists, struct {
-					ID        uint   `json:"id"`
-					Username  string `json:"username"`
-					FirstName string `json:"first_name"`
-					LastName  string `json:"last_name"`
-				}{ID: u.ID, Username: u.Username, FirstName: u.FirstName, LastName: u.LastName})
-			}
+	if users, err := h.ImageRepo.ListUploadersByAlbum(album.ID); err != nil {
+		log.Printf("Error loading uploaders for album %d: %v", album.ID, err)
+	} else {
+		for _, u := range users {
+			adminAlbum.Artists = append(adminAlbum.Artists, struct {
+				ID        uint   `json:"id"`
+				Username  string `json:"username"`
+				FirstName string `json:"first_name"`
+				LastName  string `json:"last_name"`
+			}{ID: u.ID, Username: u.Username, FirstName: u.FirstName, LastName: u.LastName})
 		}
 	}
 	WriteAPIResponse(w, http.StatusOK, adminAlbum)
@@ -406,7 +406,7 @@ func (h *AdminAlbumHandler) GetAlbumUploaders(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	dedup, err := h.ImageRepo.GetDistinctUploaderIDsByAlbum(album.ID)
+	uploaders, err := h.ImageRepo.ListUploadersByAlbum(album.ID)
 	if err != nil {
 		log.Printf("Error querying uploaders for album %d: %v", album.ID, err)
 		WriteAPIError(w, http.StatusInternalServerError, "UploaderFetchError", "Failed to fetch uploaders")
@@ -418,12 +418,9 @@ func (h *AdminAlbumHandler) GetAlbumUploaders(w http.ResponseWriter, r *http.Req
 		Username string `json:"username"`
 	}
 
-	users := make([]UserLite, 0, len(dedup))
-	for _, id := range dedup {
-		u, err := h.UserRepo.GetByID(id)
-		if err == nil && u != nil {
-			users = append(users, UserLite{ID: u.ID, Username: u.Username})
-		}
+	users := make([]UserLite, 0, len(uploaders))
+	for _, u := range uploaders {
+		users = append(users, UserLite{ID: u.ID, Username: u.Username})
 	}
 
 	WriteAPIResponse(w, http.StatusOK, users)

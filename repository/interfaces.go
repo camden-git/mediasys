@@ -82,7 +82,7 @@ type ImageRepositoryInterface interface {
 	ListByAlbumPaged(albumID uint, minRating *int, sortOrder string, offset, limit int) ([]models.Image, int, error)
 	GetImagesByPaths(originalPaths []string) ([]models.Image, error)
 	GetImagesByAlbumIDs(albumIDs []uint, minRating *int, offset, limit int) ([]models.Image, int, error)
-	GetDistinctUploaderIDsByAlbum(albumID uint) ([]uint, error)
+	ListUploadersByAlbum(albumID uint) ([]models.User, error)
 	DeleteImages(paths []string) ([]string, error)
 }
 

@@ -31,7 +31,10 @@ func (ah *AlbumHandler) ShareAlbumHTML(w http.ResponseWriter, r *http.Request) {
 	pageURL := absolute("/album/" + album.Slug)
 
 	var imageURL string
-	if banners, err := ah.AlbumRepo.GetBanners(album.ID); err == nil && len(banners) > 0 {
+	banners, err := ah.AlbumRepo.GetBanners(album.ID)
+	if err != nil {
+		log.Printf("Error loading banners for share page of album %d: %v", album.ID, err)
+	} else if len(banners) > 0 {
 		imageURL = absolute("/api/" + banners[0].ImagePath)
 	}
 

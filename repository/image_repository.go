@@ -399,16 +399,18 @@ func (r *ImageRepository) GetImagesByAlbumIDs(albumIDs []uint, minRating *int, o
 	return images, int(total), nil
 }
 
-// GetDistinctUploaderIDsByAlbum returns distinct uploader user IDs for an album
-func (r *ImageRepository) GetDistinctUploaderIDsByAlbum(albumID uint) ([]uint, error) {
-	var ids []uint
-	err := r.DB.Model(&models.Image{}).
-		Where("album_id = ? AND uploaded_by_user_id IS NOT NULL", albumID).
-		Distinct().Pluck("uploaded_by_user_id", &ids).Error
+// ListUploadersByAlbum returns the distinct users who uploaded images to an album.
+func (r *ImageRepository) ListUploadersByAlbum(albumID uint) ([]models.User, error) {
+	var users []models.User
+	err := r.DB.
+		Where("id IN (?)", r.DB.Model(&models.Image{}).
+			Select("DISTINCT uploaded_by_user_id").
+			Where("album_id = ? AND uploaded_by_user_id IS NOT NULL", albumID)).
+		Order("id ASC").Find(&users).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to query uploaders for album %d: %w", albumID, err)
 	}
-	return ids, nil
+	return users, nil
 }
 
 // DeleteImages hard-deletes images plus their faces, embeddings and tags. It

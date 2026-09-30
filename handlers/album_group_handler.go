@@ -25,8 +25,12 @@ func (h *AlbumGroupHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
 		WriteAPIError(w, http.StatusInternalServerError, "GroupListError", "Failed to retrieve album groups")
 		return
 	}
+	out := make([]PublicAlbumGroup, len(groups))
+	for i := range groups {
+		out[i] = toPublicAlbumGroup(&groups[i])
+	}
 	setCacheHeaders(w, 300)
-	WriteAPIResponse(w, http.StatusOK, groups)
+	WriteAPIResponse(w, http.StatusOK, out)
 }
 
 // GetGroup returns a single non-hidden album group by slug.
@@ -47,7 +51,7 @@ func (h *AlbumGroupHandler) GetGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setCacheHeaders(w, 300)
-	WriteAPIResponse(w, http.StatusOK, group)
+	WriteAPIResponse(w, http.StatusOK, toPublicAlbumGroup(group))
 }
 
 // GetGroupPhotos returns paginated images across all albums in a group, with optional min_rating filter.
