@@ -18,6 +18,7 @@ import PersonAdminView from '../components/admin/people/PersonAdminView.tsx';
 import FaceTaggingContainer from '../components/admin/faces/FaceTaggingContainer.tsx';
 import GroupManagementContainer from '../components/admin/groups/GroupManagementContainer.tsx';
 import CollectionManagementContainer from '../components/admin/collections/CollectionManagementContainer.tsx';
+import { NoPermission, AdminNotFound } from '../components/admin/shared/StatusMessages.tsx';
 import ProfileContainer from '../components/admin/profile/ProfileContainer.tsx';
 
 export interface RouteDefinition {
@@ -90,25 +91,25 @@ const navItems: AdminRouteDefinition[] = [
     },
     {
         path: 'people',
-        permission: null,
+        permission: 'people.manage',
         name: 'People',
         component: PeopleManagementContainer,
     },
     {
         path: 'people/:id',
-        permission: null,
+        permission: 'people.manage',
         name: undefined,
         component: PersonAdminView,
     },
     {
         path: 'faces',
-        permission: null,
+        permission: 'face.manage',
         name: 'Face Tagging',
         component: FaceTaggingContainer,
     },
     {
         path: 'groups',
-        permission: null,
+        permission: 'album.group.manage',
         name: 'Groups',
         component: GroupManagementContainer,
     },
@@ -169,17 +170,17 @@ const AdminRouter: React.FC = () => {
                             path={path.replace(/\/$/, '')}
                             key={path}
                             element={
-                                <>
-                                    <Can permission={permission} allowAnyAlbumAccess={allowAnyAlbumAccess}>
-                                        <Component />
-                                    </Can>
-                                </>
+                                <Can
+                                    permission={permission}
+                                    allowAnyAlbumAccess={allowAnyAlbumAccess}
+                                    fallback={<NoPermission />}
+                                >
+                                    <Component />
+                                </Can>
                             }
                         />
                     ))}
-
-                    {/* <Route path="users" element={<UserManagementPage />} /> */}
-                    {/* <Route path="roles" element={<RoleManagementPage />} /> */}
+                    <Route path='*' element={<AdminNotFound backTo='/admin' backLabel='Back to admin home' />} />
                 </Route>
             </Routes>
         </StackedLayout>

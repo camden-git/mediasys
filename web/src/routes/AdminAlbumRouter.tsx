@@ -8,6 +8,7 @@ import { Sidebar, SidebarBody, SidebarItem, SidebarSection } from '../components
 import AlbumView from '../components/admin/albums/AlbumView.tsx';
 import AlbumSubusersPage from '../components/admin/albums/AlbumSubusersPage.tsx';
 import { Can } from '../components/elements/Can.tsx';
+import { NoPermission, AdminNotFound } from '../components/admin/shared/StatusMessages.tsx';
 import LoadingSpinner from '../components/elements/LoadingSpinner';
 import {
     Dropdown,
@@ -80,7 +81,7 @@ const AdminAlbumRouter: React.FC = () => {
             path: '/settings',
             name: 'Settings',
             component: SettingsContainer,
-            permission: 'album.edit.general',
+            permission: ['album.edit.general', 'album.photo.editmeta'],
         },
         {
             path: '/subusers',
@@ -92,7 +93,7 @@ const AdminAlbumRouter: React.FC = () => {
             path: '/faces',
             name: 'Face Tagging',
             component: AlbumFaceTaggingContainer,
-            permission: null,
+            permission: 'face.manage',
         },
     ];
 
@@ -157,12 +158,16 @@ const AdminAlbumRouter: React.FC = () => {
                             path={path.replace(/\/$/, '')}
                             key={path}
                             element={
-                                <Can permission={permission} albumId={album.id}>
+                                <Can permission={permission} albumId={album.id} fallback={<NoPermission />}>
                                     <Component key={slug} />
                                 </Can>
                             }
                         />
                     ))}
+                    <Route
+                        path='*'
+                        element={<AdminNotFound backTo={`/admin/albums/view/${slug}`} backLabel='Back to album' />}
+                    />
                 </Route>
             </Routes>
         </StackedLayout>

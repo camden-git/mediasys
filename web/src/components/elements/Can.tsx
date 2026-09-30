@@ -12,6 +12,8 @@ interface CanProps {
     // albums") also satisfies the check, even without albumId or a matching global permission.
     // Useful for nav entries that link to an album list/section rather than a specific album.
     allowAnyAlbumAccess?: boolean;
+    // rendered instead of the children when the check fails (defaults to nothing)
+    fallback?: React.ReactNode;
     children: React.ReactNode;
 }
 
@@ -37,6 +39,7 @@ export const Can: React.FC<CanProps> = ({
     requireAll = false,
     albumId,
     allowAnyAlbumAccess = false,
+    fallback = null,
     children,
 }) => {
     const user = useAuthStore((s) => s.user);
@@ -73,7 +76,7 @@ export const Can: React.FC<CanProps> = ({
     }
 
     if (!currentUserPermissions || currentUserPermissions.length === 0) {
-        return null;
+        return <>{fallback}</>;
     }
 
     let hasPermission = false;
@@ -90,5 +93,5 @@ export const Can: React.FC<CanProps> = ({
         }
     }
 
-    return hasPermission ? <>{children}</> : null;
+    return hasPermission ? <>{children}</> : <>{fallback}</>;
 };
