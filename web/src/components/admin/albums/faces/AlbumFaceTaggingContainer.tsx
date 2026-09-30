@@ -12,37 +12,36 @@ import FaceLightboxModal from '../../faces/shared/FaceLightboxModal';
 const AlbumFaceTaggingContainer: React.FC = () => {
     const album = useAlbumData();
 
-    const [allFaces, setAllFaces] = useState<UntaggedFaceResult[]>([]);
     const [faces, setFaces] = useState<UntaggedFaceResult[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
+    const albumId = album?.id;
+
     useEffect(() => {
+        if (albumId == null) return;
+        const ctrl = new AbortController();
         setLoading(true);
         setError(null);
-        getUntaggedFaces({ limit: 100 })
-            .then(setAllFaces)
-            .catch((e) => setError(e.message))
-            .finally(() => setLoading(false));
-    }, []);
-
-    // Filter faces to this album's folder path
-    useEffect(() => {
-        if (!album) return;
-        setFaces(allFaces.filter((f) => f.image_path.startsWith(album.folder_path)));
-    }, [allFaces, album]);
+        getUntaggedFaces({ limit: 100, album_id: albumId }, ctrl.signal)
+            .then(setFaces)
+            .catch((e) => {
+                if (e.name !== 'AbortError') setError(e.message);
+            })
+            .finally(() => {
+                if (!ctrl.signal.aborted) setLoading(false);
+            });
+        return () => ctrl.abort();
+    }, [albumId]);
 
     const handleTagged = (faceId: number) => {
-        setAllFaces((prev) => {
+        setFaces((prev) => {
             const next = prev.filter((f) => f.face_id !== faceId);
-            // faces state will update via useEffect above
-            // advance or close lightbox based on next filtered list
-            const nextFiltered = album ? next.filter((f) => f.image_path.startsWith(album.folder_path)) : next;
             setLightboxIndex((idx) => {
                 if (idx === null) return null;
-                if (nextFiltered.length === 0) return null;
-                return Math.min(idx, nextFiltered.length - 1);
+                if (next.length === 0) return null;
+                return Math.min(idx, next.length - 1);
             });
             return next;
         });
@@ -56,7 +55,7 @@ const AlbumFaceTaggingContainer: React.FC = () => {
         personName: string | null,
         suggestionCount: number,
     ) => {
-        setAllFaces((prev) =>
+        setFaces((prev) =>
             prev.map((f) =>
                 f.face_id === faceId
                     ? {
@@ -98,13 +97,8 @@ const AlbumFaceTaggingContainer: React.FC = () => {
                                 className='group relative overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-700'
                             >
                                 <FaceThumbnail
-                                    imagePath={face.image_path}
-                                    x1={face.x1}
-                                    y1={face.y1}
-                                    x2={face.x2}
-                                    y2={face.y2}
-                                    imageWidth={face.image_width}
-                                    imageHeight={face.image_height}
+                                    faceId={face.face_id}
+                                    label={`Review face ${i + 1}`}
                                     onClick={() => setLightboxIndex(i)}
                                 />
                                 <span className='absolute top-1.5 right-1.5 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] text-white'>

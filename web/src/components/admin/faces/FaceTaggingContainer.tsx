@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Heading } from '../../elements/Heading';
 import { Text } from '../../elements/Text';
 import PageContentBlock from '../../elements/PageContentBlock.tsx';
@@ -13,6 +13,9 @@ const DEFAULT_FILTERS: UntaggedFaceParams = {
     sort_by: 'created_at',
     sort_order: 'desc',
 };
+
+// refetch the queue once fewer than this many faces remain
+const REFILL_THRESHOLD = 20;
 
 const FaceTaggingContainer: React.FC = () => {
     const [faces, setFaces] = useState<UntaggedFaceResult[]>([]);
@@ -30,18 +33,14 @@ const FaceTaggingContainer: React.FC = () => {
     const [pendingSortBy, setPendingSortBy] = useState<UntaggedFaceParams['sort_by']>('created_at');
     const [pendingSortOrder, setPendingSortOrder] = useState<UntaggedFaceParams['sort_order']>('desc');
 
-    // Group-by-image: client-side stable sort, applies immediately (no Apply needed)
-    const [groupByImage, setGroupByImage] = useState(false);
+    // Group-by-image: the backend keeps only the best face per image (applied with Apply)
+    const [pendingGroupByImage, setPendingGroupByImage] = useState(false);
+
+    // true when the last fetch filled the page, i.e. more untagged faces may exist on the server
+    const [hasMore, setHasMore] = useState(false);
 
     const abortRef = useRef<AbortController | null>(null);
-
-    // displayFaces: stable-sort by image_path when groupByImage is on so all
-    // faces from the same photo appear adjacent. Within each image the original
-    // backend order (quality / confidence / date) is preserved.
-    const displayFaces = useMemo(() => {
-        if (!groupByImage) return faces;
-        return [...faces].sort((a, b) => a.image_path.localeCompare(b.image_path));
-    }, [faces, groupByImage]);
+    const displayFaces = faces;
 
     const fetchFaces = (params: UntaggedFaceParams) => {
         if (abortRef.current) abortRef.current.abort();
@@ -51,22 +50,37 @@ const FaceTaggingContainer: React.FC = () => {
         setFetching(true);
         setError(null);
         getUntaggedFaces(params, ctrl.signal)
-            .then((f) => setFaces(f))
-            .catch((e) => {
-                if (e.name !== 'AbortError') setError(e.message);
+            .then((f) => {
+                setFaces(f);
+                setHasMore(f.length >= (params.limit ?? DEFAULT_FILTERS.limit!));
             })
-            .finally(() => setFetching(false));
+            .catch((e) => {
+                if (e.name === 'AbortError') return;
+                setError(e.message);
+                setHasMore(false);
+            })
+            .finally(() => {
+                if (abortRef.current === ctrl) {
+                    setFetching(false);
+                    setLoading(false);
+                }
+            });
     };
 
     // Initial load
     useEffect(() => {
-        setLoading(true);
-        getUntaggedFaces(filters)
-            .then((f) => setFaces(f))
-            .catch((e) => setError(e.message))
-            .finally(() => setLoading(false));
+        fetchFaces(DEFAULT_FILTERS);
+        return () => abortRef.current?.abort();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    // The backend has no offset, so the queue is capped at one page. When the reviewer works it
+    // down, pull the next batch of untagged faces in automatically.
+    useEffect(() => {
+        if (loading || fetching || !hasMore || lightboxIndex !== null) return;
+        if (faces.length < REFILL_THRESHOLD) fetchFaces(filters);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [faces.length, hasMore, loading, fetching, lightboxIndex]);
 
     const handleApply = () => {
         const params: UntaggedFaceParams = {
@@ -74,6 +88,7 @@ const FaceTaggingContainer: React.FC = () => {
             sort_by: pendingSortBy,
             sort_order: pendingSortOrder,
         };
+        if (pendingGroupByImage) params.group_by_image = true;
         if (pendingMinQuality !== '') {
             const v = parseFloat(pendingMinQuality);
             if (!isNaN(v)) params.min_quality = v;
@@ -132,8 +147,11 @@ const FaceTaggingContainer: React.FC = () => {
             {/* Filter bar */}
             <div className='mb-4 flex flex-wrap items-end gap-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/40'>
                 <div className='flex flex-col gap-1'>
-                    <label className='text-xs font-medium text-zinc-600 dark:text-zinc-400'>Min Quality (0–100)</label>
+                    <label htmlFor='face-min-quality' className='text-xs font-medium text-zinc-600 dark:text-zinc-400'>
+                        Min Quality (0–100)
+                    </label>
                     <input
+                        id='face-min-quality'
                         type='number'
                         min={0}
                         max={100}
@@ -144,8 +162,14 @@ const FaceTaggingContainer: React.FC = () => {
                     />
                 </div>
                 <div className='flex flex-col gap-1'>
-                    <label className='text-xs font-medium text-zinc-600 dark:text-zinc-400'>Min Confidence (%)</label>
+                    <label
+                        htmlFor='face-min-confidence'
+                        className='text-xs font-medium text-zinc-600 dark:text-zinc-400'
+                    >
+                        Min Confidence (%)
+                    </label>
                     <input
+                        id='face-min-confidence'
                         type='number'
                         min={0}
                         max={100}
@@ -156,8 +180,11 @@ const FaceTaggingContainer: React.FC = () => {
                     />
                 </div>
                 <div className='flex flex-col gap-1'>
-                    <label className='text-xs font-medium text-zinc-600 dark:text-zinc-400'>Sort by</label>
+                    <label htmlFor='face-sort-by' className='text-xs font-medium text-zinc-600 dark:text-zinc-400'>
+                        Sort by
+                    </label>
                     <select
+                        id='face-sort-by'
                         value={pendingSortBy}
                         onChange={(e) => setPendingSortBy(e.target.value as UntaggedFaceParams['sort_by'])}
                         className='rounded border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-600 dark:bg-zinc-900'
@@ -168,8 +195,11 @@ const FaceTaggingContainer: React.FC = () => {
                     </select>
                 </div>
                 <div className='flex flex-col gap-1'>
-                    <label className='text-xs font-medium text-zinc-600 dark:text-zinc-400'>Order</label>
+                    <label htmlFor='face-sort-order' className='text-xs font-medium text-zinc-600 dark:text-zinc-400'>
+                        Order
+                    </label>
                     <select
+                        id='face-sort-order'
                         value={pendingSortOrder}
                         onChange={(e) => setPendingSortOrder(e.target.value as UntaggedFaceParams['sort_order'])}
                         className='rounded border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-600 dark:bg-zinc-900'
@@ -181,8 +211,8 @@ const FaceTaggingContainer: React.FC = () => {
                 <label className='flex cursor-pointer items-center gap-2 self-end pb-1 text-sm text-zinc-700 dark:text-zinc-300'>
                     <input
                         type='checkbox'
-                        checked={groupByImage}
-                        onChange={(e) => setGroupByImage(e.target.checked)}
+                        checked={pendingGroupByImage}
+                        onChange={(e) => setPendingGroupByImage(e.target.checked)}
                         className='rounded'
                     />
                     Group by image
@@ -207,6 +237,7 @@ const FaceTaggingContainer: React.FC = () => {
                 <>
                     <p className='mb-4 text-sm text-zinc-500'>
                         {displayFaces.length} face{displayFaces.length !== 1 ? 's' : ''} to review
+                        {hasMore && ' (more are loaded automatically as you work through the queue)'}
                     </p>
                     <div
                         className={`grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 ${fetching ? 'opacity-50' : ''}`}
@@ -217,13 +248,8 @@ const FaceTaggingContainer: React.FC = () => {
                                 className='group relative overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-700'
                             >
                                 <FaceThumbnail
-                                    imagePath={face.image_path}
-                                    x1={face.x1}
-                                    y1={face.y1}
-                                    x2={face.x2}
-                                    y2={face.y2}
-                                    imageWidth={face.image_width}
-                                    imageHeight={face.image_height}
+                                    faceId={face.face_id}
+                                    label={`Review face ${i + 1}`}
                                     onClick={() => setLightboxIndex(i)}
                                 />
                                 <span className='absolute top-1.5 right-1.5 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] text-white'>

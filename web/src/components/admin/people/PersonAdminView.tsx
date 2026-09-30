@@ -192,22 +192,20 @@ const PersonAdminView: React.FC = () => {
                             .filter((f) => f.confirmed)
                             .map((face) => (
                                 <div key={face.id} className='relative'>
-                                    <div
-                                        className={`h-16 w-16 cursor-pointer overflow-hidden rounded ring-2 transition-all ${
+                                    <button
+                                        type='button'
+                                        aria-label='Use this face as key photo'
+                                        aria-pressed={person.key_photo_face_id === face.id}
+                                        className={`block h-16 w-16 cursor-pointer overflow-hidden rounded ring-2 transition-all ${
                                             person.key_photo_face_id === face.id
                                                 ? 'ring-blue-500'
                                                 : 'ring-zinc-300 hover:ring-zinc-500 dark:ring-zinc-600'
                                         }`}
-                                        onClick={() => !keyPhotoLoading && handleSetKeyPhoto(face.id)}
+                                        disabled={keyPhotoLoading}
+                                        onClick={() => handleSetKeyPhoto(face.id)}
                                     >
-                                        <FaceThumbnail
-                                            imagePath={face.image_path}
-                                            x1={face.x1}
-                                            y1={face.y1}
-                                            x2={face.x2}
-                                            y2={face.y2}
-                                        />
-                                    </div>
+                                        <FaceThumbnail faceId={face.id} />
+                                    </button>
                                     {person.key_photo_face_id === face.id && (
                                         <div className='absolute right-0.5 bottom-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-blue-500 text-[9px] text-white'>
                                             ✓

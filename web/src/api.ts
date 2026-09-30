@@ -155,6 +155,10 @@ export const getPreviewImageUrl = (imagePath: string): string => {
     return `${import.meta.env.VITE_BACKEND_URL}${getPreviewImagePath(imagePath)}`;
 };
 
+export const getFaceThumbnailUrl = (faceId: number): string => {
+    return `${import.meta.env.VITE_BACKEND_URL}/faces/${faceId}/thumbnail.jpg`;
+};
+
 export const getFacesForImage = async (imagePath: string): Promise<FaceData[]> => {
     const response = await apiClient(`/images/faces?path=${encodeURIComponent(imagePath)}`);
     return (await response.json()) as FaceData[];
@@ -296,6 +300,7 @@ export interface UntaggedFaceParams {
     sort_by?: 'quality' | 'confidence' | 'created_at';
     sort_order?: 'asc' | 'desc';
     group_by_image?: boolean;
+    album_id?: number;
 }
 
 export const getUntaggedFaces = async (
@@ -309,6 +314,7 @@ export const getUntaggedFaces = async (
     if (params.sort_by) qs.set('sort_by', params.sort_by);
     if (params.sort_order) qs.set('sort_order', params.sort_order);
     if (params.group_by_image) qs.set('group_by_image', 'true');
+    if (params.album_id != null) qs.set('album_id', String(params.album_id));
     const response = await apiClient(`/faces/untagged?${qs}`, {}, signal);
     return ((await response.json()) ?? []) as UntaggedFaceResult[];
 };
