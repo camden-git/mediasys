@@ -17,8 +17,6 @@ import (
 	"github.com/camden-git/mediasysbackend/media"
 	"github.com/camden-git/mediasysbackend/models"
 	"github.com/camden-git/mediasysbackend/repository"
-	"github.com/chai2010/webp"
-	"github.com/disintegration/imaging"
 	"gocv.io/x/gocv"
 	"gorm.io/gorm"
 )
@@ -50,6 +48,10 @@ func (iph *ImagePreviewHandler) lookupImage(w http.ResponseWriter, r *http.Reque
 	return img, true
 }
 
+// imageCacheControl is short so that a replaced image shows up quickly; clients
+// revalidate with the key-based ETag afterwards.
+var imageCacheControl = cacheFor(5 * time.Minute)
+
 // ServeOriginal streams the original uploaded file.
 // Registered at /api/originals/* — the image path is the wildcard segment.
 func (iph *ImagePreviewHandler) ServeOriginal(w http.ResponseWriter, r *http.Request) {
@@ -61,11 +63,12 @@ func (iph *ImagePreviewHandler) ServeOriginal(w http.ResponseWriter, r *http.Req
 	if r.URL.Query().Has("download") {
 		kind = "attachment"
 	}
-	serveObject(w, r, iph.Store, img.ObjectKey, cacheFor(24*time.Hour), contentDisposition(kind, path.Base(img.OriginalPath)))
+	serveObject(w, r, iph.Store, img.ObjectKey, imageCacheControl, contentDisposition(kind, path.Base(img.OriginalPath)), keyETag(img.ObjectKey))
 }
 
-// ServeScaledPreview serves the pre-generated WebP preview, generating one on
-// the fly from the original if processing has not finished yet.
+// ServeScaledPreview serves the pre-generated WebP preview. Until processing has
+// finished (or if it failed) it answers 404 instead of decoding the original on
+// demand; clients fall back to the original.
 // Registered at /api/preview/* — the image path is the wildcard segment.
 func (iph *ImagePreviewHandler) ServeScaledPreview(w http.ResponseWriter, r *http.Request) {
 	img, ok := iph.lookupImage(w, r)
@@ -74,36 +77,12 @@ func (iph *ImagePreviewHandler) ServeScaledPreview(w http.ResponseWriter, r *htt
 	}
 
 	if img.PreviewStatus == database.StatusDone && img.PreviewPath != nil {
-		serveObject(w, r, iph.Store, *img.PreviewPath, cacheFor(24*time.Hour), "")
+		serveObject(w, r, iph.Store, *img.PreviewPath, imageCacheControl, "", keyETag(*img.PreviewPath))
 		return
 	}
 
-	obj, _, err := iph.Store.Get(r.Context(), img.ObjectKey)
-	if err != nil {
-		log.Printf("ServeScaledPreview: failed to open original %s: %v", img.ObjectKey, err)
-		http.NotFound(w, r)
-		return
-	}
-	defer obj.Close()
-
-	src, err := imaging.Decode(obj, imaging.AutoOrientation(true))
-	if err != nil {
-		log.Printf("ServeScaledPreview: failed to decode %s: %v", img.OriginalPath, err)
-		WriteAPIError(w, http.StatusInternalServerError, "ImageOpenError", "could not open image")
-		return
-	}
-	imgW, imgH := src.Bounds().Dx(), src.Bounds().Dy()
-	if imgW >= imgH && imgW > media.PreviewLandscapeMaxLong {
-		src = imaging.Fit(src, media.PreviewLandscapeMaxLong, 99999, imaging.Lanczos)
-	} else if imgH > imgW && imgH > media.PreviewPortraitMaxLong {
-		src = imaging.Fit(src, 99999, media.PreviewPortraitMaxLong, imaging.Lanczos)
-	}
-
-	w.Header().Set("Content-Type", "image/webp")
-	w.Header().Set("Cache-Control", "no-cache")
-	if err := webp.Encode(w, src, &webp.Options{Quality: media.PreviewQuality}); err != nil {
-		log.Printf("ServeScaledPreview: encode error for %s: %v", img.OriginalPath, err)
-	}
+	w.Header().Set("Cache-Control", "no-store")
+	WriteAPIError(w, http.StatusNotFound, "PreviewNotReady", "Preview is not available")
 }
 
 // ServeImageWithFaces draws detected face boxes over the original (debug helper).

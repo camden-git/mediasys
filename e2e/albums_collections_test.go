@@ -2,10 +2,12 @@ package e2e_test
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/camden-git/mediasysbackend/models"
 )
@@ -86,4 +88,62 @@ func TestOriginalsServePercentInFilename(t *testing.T) {
 			}
 		})
 	}
+}
+
+func getWithHeaders(t *testing.T, path string, headers map[string]string) apiResponse {
+	t.Helper()
+	env := requireShared(t)
+	req, err := http.NewRequest(http.MethodGet, env.server.URL+path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	return apiResponse{StatusCode: resp.StatusCode, Header: resp.Header, Body: body}
+}
+
+func TestPreviewAndOriginalCaching(t *testing.T) {
+	env := requireShared(t)
+	s := randomSuffix()
+	album := createAlbum(t, env.adminToken, "Prev "+s, "prev-"+s, "")
+	imgPath := uploadImage(t, env.adminToken, album.ID, "p.jpg")
+	previewURL := "/api/preview/" + (&url.URL{Path: imgPath}).EscapedPath()
+	originalURL := "/api/originals/" + (&url.URL{Path: imgPath}).EscapedPath()
+
+	pollUntil(t, 30*time.Second, 250*time.Millisecond, "preview to be generated", func() bool {
+		return getWithHeaders(t, previewURL, nil).StatusCode == http.StatusOK
+	})
+
+	for _, u := range []string{previewURL, originalURL} {
+		resp := getWithHeaders(t, u, nil)
+		etag := resp.Header.Get("ETag")
+		if resp.StatusCode != http.StatusOK || etag == "" {
+			t.Fatalf("%s: expected 200 with ETag, got %d etag=%q", u, resp.StatusCode, etag)
+		}
+		if cc := resp.Header.Get("Cache-Control"); strings.Contains(cc, "max-age=86400") {
+			t.Fatalf("%s: cache max-age too long: %q", u, cc)
+		}
+		cond := getWithHeaders(t, u, map[string]string{"If-None-Match": etag})
+		if cond.StatusCode != http.StatusNotModified {
+			t.Fatalf("%s: expected 304, got %d", u, cond.StatusCode)
+		}
+	}
+
+	// a preview that is not ready is a 404, not an on-demand decode of the original
+	if err := env.app.DB.Model(&models.Image{}).Where("original_path = ?", imgPath).
+		Updates(map[string]any{"preview_status": "error", "preview_path": nil}).Error; err != nil {
+		t.Fatal(err)
+	}
+	resp := getWithHeaders(t, previewURL, nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404 for unavailable preview, got %d", resp.StatusCode)
+	}
+	assertErrorShape(t, resp)
 }

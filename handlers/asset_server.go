@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
@@ -38,7 +40,19 @@ func wildcardKey(r *http.Request) (string, bool) {
 
 // serveObject streams an object from the store with range, ETag and
 // conditional request support.
-func serveObject(w http.ResponseWriter, r *http.Request, store *media.Store, key, cacheControl, disposition string) {
+//
+// When etag is non-empty it replaces the storage ETag and is checked against
+// If-None-Match before the object is opened, so revalidations cost no storage
+// round trip.
+func serveObject(w http.ResponseWriter, r *http.Request, store *media.Store, key, cacheControl, disposition, etag string) {
+	if etag != "" && ifNoneMatch(r, etag) {
+		w.Header().Set("ETag", etag)
+		if cacheControl != "" {
+			w.Header().Set("Cache-Control", cacheControl)
+		}
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
 	obj, info, err := store.Get(r.Context(), key)
 	if err != nil {
 		if errors.Is(err, media.ErrNotFound) {
@@ -54,7 +68,9 @@ func serveObject(w http.ResponseWriter, r *http.Request, store *media.Store, key
 	if info.ContentType != "" {
 		w.Header().Set("Content-Type", info.ContentType)
 	}
-	if info.ETag != "" {
+	if etag != "" {
+		w.Header().Set("ETag", etag)
+	} else if info.ETag != "" {
 		w.Header().Set("ETag", `"`+strings.Trim(info.ETag, `"`)+`"`)
 	}
 	if cacheControl != "" {
@@ -75,8 +91,30 @@ func ObjectServer(store *media.Store, prefix string) http.HandlerFunc {
 			WriteAPIError(w, http.StatusBadRequest, "InvalidPath", "Invalid asset path")
 			return
 		}
-		serveObject(w, r, store, prefix+key, immutableCacheControl, "")
+		serveObject(w, r, store, prefix+key, immutableCacheControl, "", "")
 	}
+}
+
+// keyETag derives a strong ETag from an object key. Keys are unique per upload,
+// so the tag changes whenever an image is replaced.
+func keyETag(key string) string {
+	sum := sha256.Sum256([]byte(key))
+	return `"` + hex.EncodeToString(sum[:12]) + `"`
+}
+
+// ifNoneMatch reports whether the request's If-None-Match header matches etag.
+func ifNoneMatch(r *http.Request, etag string) bool {
+	header := r.Header.Get("If-None-Match")
+	if header == "" {
+		return false
+	}
+	for _, candidate := range strings.Split(header, ",") {
+		candidate = strings.TrimPrefix(strings.TrimSpace(candidate), "W/")
+		if candidate == "*" || candidate == etag {
+			return true
+		}
+	}
+	return false
 }
 
 // contentDisposition builds an RFC 6266 header value for filename.

@@ -83,5 +83,5 @@ func (ah *AlbumHandler) serveAlbumZip(w http.ResponseWriter, r *http.Request, id
 	}
 
 	serveObject(w, r, ah.Store, *album.ZipPath, "private, max-age=0, must-revalidate",
-		contentDisposition("attachment", album.Slug+"_archive.zip"))
+		contentDisposition("attachment", album.Slug+"_archive.zip"), "")
 }
