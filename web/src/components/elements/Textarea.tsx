@@ -25,7 +25,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, HeadlessTextareaProps>(f
                 'after:pointer-events-none after:absolute after:inset-0 after:rounded-lg after:ring-transparent after:ring-inset sm:after:focus-within:ring-2 sm:after:focus-within:ring-blue-500',
 
                 // Disabled state
-                'has-[[data-disabled]]:opacity-50 before:has-[[data-disabled]]:bg-zinc-950/5 before:has-[[data-disabled]]:shadow-none',
+                'has-data-disabled:opacity-50 has-data-disabled:before:bg-zinc-950/5 has-data-disabled:before:shadow-none',
             ])}
         >
             <HeadlessTextarea
