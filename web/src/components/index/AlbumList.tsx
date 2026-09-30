@@ -1,7 +1,8 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { getAlbums, getBannerUrl } from '../../api.ts';
+import { getAlbums } from '../../api/albums';
+import { getBannerUrl } from '../../api/media';
 import { useGroups } from '../../hooks/useGroups.ts';
 import { useDocumentTitle } from '../../hooks/useDocumentTitle.ts';
 import { queryKeys } from '../../lib/queryKeys.ts';
@@ -16,7 +17,7 @@ const browseLinks = [
 
 const AlbumList: React.FC = () => {
     useDocumentTitle('Albums');
-    const albumsQuery = useQuery({ queryKey: queryKeys.albums.list(), queryFn: () => getAlbums() });
+    const albumsQuery = useQuery({ queryKey: queryKeys.albums.list(), queryFn: ({ signal }) => getAlbums(signal) });
     const { groups, isLoading: groupsLoading, error: groupsError } = useGroups();
     const albums = albumsQuery.data ?? [];
     const isLoading = albumsQuery.isLoading || groupsLoading;

@@ -8,15 +8,19 @@ import {
 } from '../../types';
 import { ApiResponse, PaginatedResult, PaginationRequest, toPaginatedResult, toPaginationQuery } from '../standard';
 
-export const listRoles = async (params?: PaginationRequest): Promise<PaginatedResult<AdminRoleResponse>> => {
+export const listRoles = async (
+    params?: PaginationRequest,
+    signal?: AbortSignal,
+): Promise<PaginatedResult<AdminRoleResponse>> => {
     const response = await http.get<ApiResponse<AdminRoleResponse[]>>('/admin/roles', {
         params: toPaginationQuery(params),
+        signal,
     });
     return toPaginatedResult(response.data);
 };
 
-export const getRole = async (roleId: number): Promise<AdminRoleResponse> => {
-    const response = await http.get<ApiResponse<AdminRoleResponse>>(`/admin/roles/${roleId}`);
+export const getRole = async (roleId: number, signal?: AbortSignal): Promise<AdminRoleResponse> => {
+    const response = await http.get<ApiResponse<AdminRoleResponse>>(`/admin/roles/${roleId}`, { signal });
     return response.data.data;
 };
 
@@ -37,9 +41,11 @@ export const deleteRole = async (roleId: number): Promise<void> => {
 export const getRoleUsers = async (
     roleId: number,
     params?: PaginationRequest,
+    signal?: AbortSignal,
 ): Promise<PaginatedResult<UserSummary>> => {
     const response = await http.get<ApiResponse<UserSummary[]>>(`/admin/roles/${roleId}/users`, {
         params: toPaginationQuery(params),
+        signal,
     });
     return toPaginatedResult(response.data);
 };
@@ -52,7 +58,7 @@ export const removeUserFromRole = async (roleId: number, userId: number): Promis
     await http.delete(`/admin/roles/${roleId}/users/${userId}`);
 };
 
-export const getPermissionDefinitions = async () => {
-    const response = await http.get<ApiResponse<PermissionGroupDefinition[]>>('/permissions');
+export const getPermissionDefinitions = async (signal?: AbortSignal) => {
+    const response = await http.get<ApiResponse<PermissionGroupDefinition[]>>('/permissions', { signal });
     return response.data.data;
 };

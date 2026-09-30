@@ -1,5 +1,7 @@
 import { create } from 'zustand';
-import * as api from '../api';
+import { loginUser, registerUser, getCurrentUser } from '../api/auth';
+import { getAuthToken, setAuthToken } from '../api/token';
+import { errorStatus } from '../api/errors';
 import { User, LoginPayload, RegisterPayload, AuthResponse } from '../types';
 import { Role } from '../types';
 import { queryClient } from '../lib/queryClient';
@@ -28,7 +30,7 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>()((set, get) => ({
     user: null,
-    token: localStorage.getItem('authToken'),
+    token: getAuthToken(),
     isInitializing: true,
 
     isAuthenticated: () => !!(get().user && get().token),
@@ -47,16 +49,12 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
     setUser: (user) => set({ user }),
 
     setToken: (token) => {
-        if (token) {
-            localStorage.setItem('authToken', token);
-        } else {
-            localStorage.removeItem('authToken');
-        }
+        setAuthToken(token);
         set({ token });
     },
 
     clearAuth: () => {
-        localStorage.removeItem('authToken');
+        setAuthToken(null);
         // Drop cached server data so the next user never sees the previous user's data.
         queryClient.clear();
         set({ user: null, token: null });
@@ -65,14 +63,14 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
     setIsInitializing: (isInitializing) => set({ isInitializing }),
 
     login: async (payload) => {
-        const response: AuthResponse = await api.loginUser(payload);
+        const response: AuthResponse = await loginUser(payload);
         queryClient.clear();
         get().setToken(response.token);
         set({ user: response.user as AuthenticatedUser });
     },
 
     register: async (payload) => {
-        await api.registerUser(payload);
+        await registerUser(payload);
     },
 
     logout: () => {
@@ -85,11 +83,11 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
             return;
         }
         try {
-            const user: User = await api.getCurrentUser();
+            const user: User = await getCurrentUser();
             set({ user: user as AuthenticatedUser });
-        } catch (error: any) {
+        } catch (error: unknown) {
             // Only an invalid/expired token signs the user out; network blips and 5xx keep the session.
-            if (error?.status === 401) {
+            if (errorStatus(error) === 401) {
                 get().clearAuth();
             }
         }

@@ -1,3 +1,5 @@
+import { errorStatus } from '../api/errors';
+
 /**
  * Generates a random integer between min and max (inclusive)
  */
@@ -23,7 +25,7 @@ export function safeRedirectPath(from: unknown, fallback: string): string {
  */
 export function withRateLimitMessage(err: unknown): Error {
     const error = err instanceof Error ? err : new Error(String(err));
-    if ((error as Error & { status?: number }).status === 429) {
+    if (errorStatus(err) === 429) {
         return new Error('Too many attempts. Please wait a few minutes and try again.');
     }
     return error;

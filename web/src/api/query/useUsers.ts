@@ -9,7 +9,7 @@ import { refreshAuthUser } from '../../store/useAuthStore';
 export const useUsers = (params?: PaginationRequest) => {
     return useQuery<PaginatedResult<AdminUserResponse>>({
         queryKey: queryKeys.users.list(params),
-        queryFn: () => listUsers(params),
+        queryFn: ({ signal }) => listUsers(params, signal),
     });
 };
 
@@ -25,7 +25,7 @@ export const useAllUsers = (options?: { enabled?: boolean }) => {
 export const useUser = (userId: number) => {
     return useQuery<AdminUserResponse>({
         queryKey: queryKeys.users.detail(userId),
-        queryFn: () => getUser(userId),
+        queryFn: ({ signal }) => getUser(userId, signal),
         enabled: !!userId,
     });
 };

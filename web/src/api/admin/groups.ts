@@ -16,8 +16,8 @@ export interface GroupUpdatePayload {
     is_hidden?: boolean;
 }
 
-export const listGroups = async (): Promise<AlbumGroup[]> => {
-    const response = await http.get<ApiResponse<AlbumGroup[]>>('/admin/groups/');
+export const listGroups = async (signal?: AbortSignal): Promise<AlbumGroup[]> => {
+    const response = await http.get<ApiResponse<AlbumGroup[]>>('/admin/groups/', { signal });
     return response.data.data;
 };
 

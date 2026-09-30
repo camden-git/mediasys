@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { FileInfo } from '../../types.ts';
-import { getThumbnailUrl } from '../../api.ts';
+import { getThumbnailUrl } from '../../api/media';
 
 interface JustifiedImageGridItemProps {
     image: FileInfo;

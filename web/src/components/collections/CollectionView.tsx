@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { useParams } from 'react-router-dom';
-import { getBannerUrl } from '../../api.ts';
+import { getBannerUrl } from '../../api/media';
 import { PhotoIcon } from '@heroicons/react/16/solid';
 import { useCollection, useCollectionPhotos } from '../../hooks/useCollections.ts';
 import { useDocumentTitle } from '../../hooks/useDocumentTitle.ts';

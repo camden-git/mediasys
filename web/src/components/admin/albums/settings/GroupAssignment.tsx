@@ -22,7 +22,7 @@ export function GroupAssignment() {
         isError: groupsFailed,
         error: groupsError,
         refetch: refetchGroups,
-    } = useQuery({ queryKey: queryKeys.groups.adminList(), queryFn: listGroups });
+    } = useQuery({ queryKey: queryKeys.groups.adminList(), queryFn: ({ signal }) => listGroups(signal) });
     const [selectedGroupId, setSelectedGroupId] = useState<string>(album.group_id?.toString() ?? '');
     const [isSaving, setIsSaving] = useState(false);
 

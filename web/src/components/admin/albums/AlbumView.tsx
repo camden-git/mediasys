@@ -1,7 +1,7 @@
 import React from 'react';
 import { useAlbumData } from '../../../store/albumContextHooks';
 import { formatDistanceToNow } from 'date-fns';
-import { getBannerUrl } from '../../../api.ts';
+import { getBannerUrl } from '../../../api/media';
 import { Heading } from '../../elements/Heading';
 import { DescriptionList, DescriptionItem } from '../../elements/DescriptionList';
 

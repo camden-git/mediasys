@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { getBannerUrl } from '../../api.ts';
+import { getBannerUrl } from '../../api/media';
 import LoadingSpinner from '../elements/LoadingSpinner.tsx';
 import { SparklesIcon, PhotoIcon } from '@heroicons/react/16/solid';
 import { useGroup } from '../../hooks/useGroups.ts';

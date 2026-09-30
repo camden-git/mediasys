@@ -23,8 +23,8 @@ interface CollectionUpdatePayload {
     sort_order?: string;
 }
 
-export const listCollections = async (): Promise<AdminCollectionResponse[]> => {
-    const response = await http.get<ApiResponse<AdminCollectionResponse[]>>('/admin/collections/');
+export const listCollections = async (signal?: AbortSignal): Promise<AdminCollectionResponse[]> => {
+    const response = await http.get<ApiResponse<AdminCollectionResponse[]>>('/admin/collections/', { signal });
     return response.data.data;
 };
 
@@ -48,9 +48,7 @@ export const deleteCollection = async (id: number): Promise<void> => {
 export const addCollectionBanner = async (id: number, file: File): Promise<CollectionBanner> => {
     const formData = new FormData();
     formData.append('banner_image', file);
-    const response = await http.post<ApiResponse<CollectionBanner>>(`/admin/collections/${id}/banners`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    const response = await http.post<ApiResponse<CollectionBanner>>(`/admin/collections/${id}/banners`, formData);
     return response.data.data;
 };
 

@@ -4,9 +4,11 @@ import { ApiResponse, PaginatedResult, PaginationRequest, toPaginatedResult, toP
 
 export const listInviteCodes = async (
     params?: PaginationRequest,
+    signal?: AbortSignal,
 ): Promise<PaginatedResult<AdminInviteCodeResponse>> => {
     const response = await http.get<ApiResponse<AdminInviteCodeResponse[]>>('/admin/invite-codes', {
         params: toPaginationQuery(params),
+        signal,
     });
     return toPaginatedResult(response.data);
 };

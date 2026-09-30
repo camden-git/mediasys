@@ -1,27 +1,3 @@
-export interface ApiErrorDetail {
-    code: string;
-    status: string;
-    detail: string;
-}
-
-/**
- * Converts an error into a human readable response. The backend always returns errors as
- * {"errors": [{code, status, detail}]}, so this just surfaces the first detail message,
- * falling back to a generic error message if the response doesn't match that shape.
- */
-export function httpErrorToHuman(error: any): string {
-    const detail = error?.response?.data?.errors?.[0]?.detail;
-    if (typeof detail === 'string' && detail) {
-        return detail;
-    }
-
-    if (error?.message) {
-        return error.message;
-    }
-
-    return 'An unexpected error occurred.';
-}
-
 interface PaginationMetaResponse {
     total: number;
     count: number;

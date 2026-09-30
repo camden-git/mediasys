@@ -7,6 +7,6 @@ import { queryKeys } from '../../lib/queryKeys';
 export const useInviteCodes = (params?: PaginationRequest) => {
     return useQuery<PaginatedResult<AdminInviteCodeResponse>>({
         queryKey: queryKeys.inviteCodes.list(params),
-        queryFn: () => listInviteCodes(params),
+        queryFn: ({ signal }) => listInviteCodes(params, signal),
     });
 };

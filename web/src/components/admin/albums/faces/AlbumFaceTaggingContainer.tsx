@@ -4,7 +4,8 @@ import { Text } from '../../../elements/Text';
 import PageContentBlock from '../../../elements/PageContentBlock.tsx';
 import LoadingSpinner from '../../../elements/LoadingSpinner';
 import { UntaggedFaceResult } from '../../../../types';
-import { getUntaggedFaces } from '../../../../api';
+import { getUntaggedFaces } from '../../../../api/faces';
+import { errorMessage, isAbortError } from '../../../../api/errors';
 import { useAlbumData } from '../../../../store/albumContextHooks';
 import FaceThumbnail from '../../faces/shared/FaceThumbnail';
 import FaceLightboxModal from '../../faces/shared/FaceLightboxModal';
@@ -27,7 +28,7 @@ const AlbumFaceTaggingContainer: React.FC = () => {
         getUntaggedFaces({ limit: 100, album_id: albumId }, ctrl.signal)
             .then(setFaces)
             .catch((e) => {
-                if (e.name !== 'AbortError') setError(e.message);
+                if (!isAbortError(e)) setError(errorMessage(e, 'Failed to load faces'));
             })
             .finally(() => {
                 if (!ctrl.signal.aborted) setLoading(false);

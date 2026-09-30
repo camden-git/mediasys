@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Person } from '../../types.ts';
-import { getPeople } from '../../api.ts';
+import { getPeople } from '../../api/people';
+import { errorMessage, isAbortError } from '../../api/errors';
 import LoadingSpinner from '../elements/LoadingSpinner.tsx';
 import { UserCircleIcon } from '@heroicons/react/24/outline';
 
@@ -16,9 +17,9 @@ const PeoplePage: React.FC = () => {
             try {
                 const data = await getPeople(controller.signal);
                 setPeople(data);
-            } catch (err: any) {
-                if (err.name !== 'AbortError') {
-                    setError(err.message || 'Failed to load people');
+            } catch (err: unknown) {
+                if (!isAbortError(err)) {
+                    setError(errorMessage(err, 'Failed to load people'));
                 }
             } finally {
                 setIsLoading(false);

@@ -1,8 +1,14 @@
-import axios, { AxiosInstance, AxiosResponse } from 'axios';
+import axios, { AxiosError, AxiosInstance, AxiosResponse } from 'axios';
 import { handleUnauthorized } from './unauthorized';
-import { ApiErrorDetail, httpErrorToHuman } from './standard';
+import { ApiError, ApiErrorDetail, messageForStatus } from './errors';
+import { getAuthToken } from './token';
+import type { ApiResponse } from './standard';
 
-const getAuthToken = (): string | null => localStorage.getItem('authToken');
+/**
+ * The one HTTP client for the JSON API (axios: per-request timeouts, upload support and AbortSignal
+ * cancellation, all behind the interceptors below). Every request gets the auth header and counts
+ * towards the progress bar, and every failure rejects with an ApiError.
+ */
 
 type ProgressCbs = { onStart: () => void; onComplete: () => void };
 let _progressCbs: ProgressCbs | null = null;
@@ -23,6 +29,7 @@ const progressDone = () => {
 };
 
 const http: AxiosInstance = axios.create({
+    baseURL: import.meta.env.VITE_API_URL,
     timeout: 20000,
     headers: {
         Accept: 'application/json',
@@ -32,88 +39,75 @@ const http: AxiosInstance = axios.create({
 http.interceptors.request.use((req) => {
     progressStart();
 
-    // Add auth token if available
     const token = getAuthToken();
     if (token) {
         req.headers.Authorization = `Bearer ${token}`;
     }
-
-    // Construct the full URL like the original fetch implementation
-    if (req.url && !req.url.startsWith('http')) {
-        req.url = `${import.meta.env.VITE_API_URL}${req.url}`;
-    }
-
-    // Ensure multipart form-data requests are not forced to JSON
-    if (req.data instanceof FormData) {
-        // Let the browser set the proper multipart boundary
-        if (req.headers && 'Content-Type' in req.headers) {
-            delete (req.headers as any)['Content-Type'];
-        }
-    } else if (!req.headers['Content-Type']) {
-        req.headers['Content-Type'] = 'application/json';
-    }
-
+    // Content-Type is left to axios: JSON for object bodies, multipart (with boundary) for FormData,
+    // and nothing at all for bodiless requests.
     return req;
 });
+
+/** Parses the standard `{errors: [{code, status, detail}]}` body, tolerating JSON delivered as a string. */
+const parseErrorDetails = (body: unknown): ApiErrorDetail[] => {
+    let data = body;
+    if (typeof data === 'string') {
+        try {
+            data = JSON.parse(data);
+        } catch {
+            return []; // e.g. an HTML page from a proxy
+        }
+    }
+    const errors = (data as { errors?: unknown } | null | undefined)?.errors;
+    return Array.isArray(errors) ? (errors as ApiErrorDetail[]).filter((e) => typeof e?.detail === 'string') : [];
+};
+
+// Endpoint-specific wording for the auth forms when the server gave no detail.
+const authFallbackMessage = (url: string | undefined, status: number | undefined): string | undefined => {
+    const lowerUrl = (url ?? '').toLowerCase();
+    if (lowerUrl.includes('/auth/login') && status === 401) {
+        return 'No account matching those credentials could be found.';
+    }
+    if (lowerUrl.includes('/auth/register') && (status === 400 || status === 403)) {
+        return 'Registration failed. Please verify your input and invite code.';
+    }
+    return undefined;
+};
+
+const toApiError = (error: unknown): ApiError => {
+    if (error instanceof ApiError) return error;
+
+    if (axios.isCancel(error)) {
+        return new ApiError('Request cancelled', { isAbort: true, cause: error });
+    }
+
+    const axiosError = error as AxiosError;
+    const status = axiosError.response?.status;
+    const errors = parseErrorDetails(axiosError.response?.data);
+
+    let message: string | undefined = errors[0]?.detail;
+    if (!message) message = authFallbackMessage(axiosError.config?.url, status);
+    if (!message) {
+        message = axiosError.code === 'ECONNABORTED' ? messageForStatus(408) : messageForStatus(status);
+    }
+
+    return new ApiError(message, { status, errors, cause: error });
+};
 
 http.interceptors.response.use(
     (resp: AxiosResponse) => {
         progressDone();
-
         return resp;
     },
-    (error) => {
+    (error: unknown) => {
         progressDone();
-
-        // The backend always returns errors as {"errors": [{code, status, detail}]}, so if the
-        // response body came back as a JSON string for some reason, parse it before extracting.
-        let responseData = error.response?.data;
-        if (typeof responseData === 'string') {
-            try {
-                responseData = JSON.parse(responseData);
-            } catch {
-                responseData = undefined;
-            }
-        }
-
-        const standardizedErrors: ApiErrorDetail[] | null =
-            responseData?.errors && Array.isArray(responseData.errors) && responseData.errors.length > 0
-                ? (responseData.errors as ApiErrorDetail[])
-                : null;
-
-        const normalizedError = {
-            ...error,
-            response: error.response ? { ...error.response, data: responseData } : undefined,
-        };
-
-        let errorMessage = httpErrorToHuman(normalizedError);
-
-        // Endpoint-aware fallbacks if extraction failed
-        const status = error.response?.status as number | undefined;
-        const urlStr: string | undefined = error?.config?.url;
-        const lowerUrl = (urlStr || '').toLowerCase();
-        if ((!errorMessage || errorMessage.startsWith('HTTP error')) && status) {
-            if (lowerUrl.includes('/auth/login') && status === 401) {
-                errorMessage = 'No account matching those credentials could be found.';
-            }
-            if (lowerUrl.includes('/auth/register') && (status === 400 || status === 403)) {
-                errorMessage = 'Registration failed. Please verify your input and invite code.';
-            }
-        }
-
-        if (!errorMessage) {
-            errorMessage = `HTTP error! status: ${status || 'unknown'}`;
-        }
-
-        handleUnauthorized(urlStr, status);
-
-        const customError = new Error(errorMessage);
-        (customError as any).status = status;
-        if (standardizedErrors) {
-            (customError as any).errors = standardizedErrors;
-        }
-        throw customError;
+        const apiError = toApiError(error);
+        handleUnauthorized((error as AxiosError).config?.url, apiError.status);
+        throw apiError;
     },
 );
+
+/** Unwraps the `{data: ...}` envelope of a successful response. */
+export const unwrap = <T>(resp: AxiosResponse<ApiResponse<T>>): T => resp.data.data;
 
 export default http;

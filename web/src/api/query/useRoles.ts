@@ -8,7 +8,7 @@ import { queryKeys } from '../../lib/queryKeys';
 export const useRoles = (params?: PaginationRequest, options?: { enabled?: boolean }) => {
     return useQuery<PaginatedResult<AdminRoleResponse>>({
         queryKey: queryKeys.roles.list(params),
-        queryFn: () => listRoles(params),
+        queryFn: ({ signal }) => listRoles(params, signal),
         enabled: options?.enabled ?? true,
     });
 };
@@ -25,7 +25,7 @@ export const useAllRoles = (options?: { enabled?: boolean }) => {
 export const useRoleUsers = (roleId: number, params: PaginationRequest) => {
     return useQuery<PaginatedResult<UserSummary>>({
         queryKey: queryKeys.roles.users(roleId, params),
-        queryFn: () => getRoleUsers(roleId, params),
+        queryFn: ({ signal }) => getRoleUsers(roleId, params, signal),
         enabled: !!roleId,
         placeholderData: keepPreviousData,
     });
@@ -43,7 +43,7 @@ export const useAllRoleUsers = (roleId: number, options?: { enabled?: boolean })
 export const useRole = (roleId: number) => {
     return useQuery<AdminRoleResponse>({
         queryKey: queryKeys.roles.detail(roleId),
-        queryFn: () => getRole(roleId),
+        queryFn: ({ signal }) => getRole(roleId, signal),
         enabled: !!roleId,
     });
 };
@@ -51,6 +51,6 @@ export const useRole = (roleId: number) => {
 export const usePermissionDefinitions = () => {
     return useQuery<PermissionGroupDefinition[]>({
         queryKey: queryKeys.roles.permissionDefinitions(),
-        queryFn: () => getPermissionDefinitions(),
+        queryFn: ({ signal }) => getPermissionDefinitions(signal),
     });
 };

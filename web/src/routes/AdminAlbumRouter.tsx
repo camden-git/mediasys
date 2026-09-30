@@ -37,7 +37,7 @@ const AdminAlbumRouter: React.FC = () => {
     const { slug } = useParams<{ slug: string }>();
     const { data: albumsData } = useQuery({
         queryKey: queryKeys.albums.list(),
-        queryFn: listAlbums,
+        queryFn: ({ signal }) => listAlbums(signal),
     });
     const albums = albumsData ?? [];
 
@@ -47,7 +47,7 @@ const AdminAlbumRouter: React.FC = () => {
         error,
     } = useQuery({
         queryKey: queryKeys.albums.bySlug(slug!),
-        queryFn: () => getAlbumBySlug(slug!),
+        queryFn: ({ signal }) => getAlbumBySlug(slug!, signal),
         enabled: !!slug,
     });
     const albumName = album?.name;

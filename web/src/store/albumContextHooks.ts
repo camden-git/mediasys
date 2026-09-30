@@ -11,7 +11,7 @@ export const useAlbumData = (): AdminAlbumResponse => {
     const { slug } = useParams<{ slug: string }>();
     const { data } = useQuery({
         queryKey: queryKeys.albums.bySlug(slug!),
-        queryFn: () => getAlbumBySlug(slug!),
+        queryFn: ({ signal }) => getAlbumBySlug(slug!, signal),
         enabled: !!slug,
     });
     return data!;

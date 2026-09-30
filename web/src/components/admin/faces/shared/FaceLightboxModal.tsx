@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { XMarkIcon, ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import { UntaggedFaceResult } from '../../../../types';
-import { getPreviewImageUrl, getOriginalImageUrl } from '../../../../api';
+import { getPreviewImageUrl, getOriginalImageUrl } from '../../../../api/media';
 import FaceTaggingPanel from './FaceTaggingPanel';
 
 interface ContainLayout {

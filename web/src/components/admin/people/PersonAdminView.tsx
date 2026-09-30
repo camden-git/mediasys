@@ -15,8 +15,8 @@ import {
     addPersonAlias,
     deletePersonAlias,
     setPersonKeyPhoto,
-    getPersonKeyPhotoUrl,
-} from '../../../api';
+} from '../../../api/people';
+import { getPersonKeyPhotoUrl } from '../../../api/media';
 
 const PersonAdminView: React.FC = () => {
     const { id } = useParams<{ id: string }>();

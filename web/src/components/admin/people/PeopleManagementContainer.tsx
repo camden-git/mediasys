@@ -9,7 +9,7 @@ import { Dialog, DialogActions, DialogDescription, DialogTitle } from '../../ele
 import PageContentBlock from '../../elements/PageContentBlock.tsx';
 import LoadingSpinner from '../../elements/LoadingSpinner';
 import { Person } from '../../../types';
-import { getPeople, createPerson, deletePerson } from '../../../api';
+import { getPeople, createPerson, deletePerson } from '../../../api/people';
 
 const PeopleManagementContainer: React.FC = () => {
     const navigate = useNavigate();

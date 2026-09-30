@@ -1,4 +1,5 @@
 import http from '../http';
+import { ApiError, isAbortError } from '../errors';
 import { Album, AlbumBanner, DirectoryListing } from '../../types';
 import { User } from '../../types';
 import { ApiResponse } from '../standard';
@@ -7,6 +8,8 @@ export interface AdminAlbumResponse extends Omit<Album, 'banners'> {
     is_hidden: boolean;
     sort_order: string;
     banners: AlbumBanner[];
+    zip_path?: string;
+    zip_error?: string;
 }
 
 export interface CreateAlbumPayload {
@@ -27,13 +30,15 @@ export interface UpdateAlbumPayload {
     sort_order?: string;
 }
 
-export const listAlbums = async (): Promise<AdminAlbumResponse[]> => {
-    const response = await http.get<ApiResponse<AdminAlbumResponse[]>>('/admin/albums');
+export const listAlbums = async (signal?: AbortSignal): Promise<AdminAlbumResponse[]> => {
+    const response = await http.get<ApiResponse<AdminAlbumResponse[]>>('/admin/albums', { signal });
     return response.data.data;
 };
 
-export const getAlbumBySlug = async (slug: string): Promise<AdminAlbumResponse> => {
-    const response = await http.get<ApiResponse<AdminAlbumResponse>>(`/admin/albums/${slug}`);
+export const getAlbumBySlug = async (slug: string, signal?: AbortSignal): Promise<AdminAlbumResponse> => {
+    const response = await http.get<ApiResponse<AdminAlbumResponse>>(`/admin/albums/${encodeURIComponent(slug)}`, {
+        signal,
+    });
     return response.data.data;
 };
 
@@ -54,9 +59,7 @@ export const deleteAlbum = async (id: number): Promise<void> => {
 export const addAlbumBanner = async (id: number, file: File): Promise<AlbumBanner> => {
     const formData = new FormData();
     formData.append('banner_image', file);
-    const response = await http.post<ApiResponse<AlbumBanner>>(`/admin/albums/${id}/banners`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    const response = await http.post<ApiResponse<AlbumBanner>>(`/admin/albums/${id}/banners`, formData);
     return response.data.data;
 };
 
@@ -90,7 +93,7 @@ const uploadBatchWithRetry = async (
     { signal, timeout, maxRetries }: { signal?: AbortSignal; timeout: number; maxRetries: number },
 ): Promise<UploadResult> => {
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
-        if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+        if (signal?.aborted) throw new ApiError('Request cancelled', { isAbort: true });
         try {
             const formData = new FormData();
             for (const item of batch) {
@@ -103,14 +106,8 @@ const uploadBatchWithRetry = async (
             });
             return resp.data.data;
         } catch (err: unknown) {
-            const isAbort = err instanceof DOMException && err.name === 'AbortError';
-            const is4xx =
-                typeof err === 'object' &&
-                err !== null &&
-                typeof (err as any).status === 'number' &&
-                (err as any).status >= 400 &&
-                (err as any).status < 500;
-            if (isAbort || is4xx || attempt === maxRetries) throw err;
+            const isClientError = err instanceof ApiError && err.isClientError;
+            if (isAbortError(err) || isClientError || attempt === maxRetries) throw err;
             await sleep(Math.min(1000 * 2 ** attempt, 10_000)); // 1s, 2s, 4s … max 10s
         }
     }
@@ -158,8 +155,7 @@ export const uploadAlbumImagesBatched = async (
                 uploadedTotal += result?.uploaded ?? 0;
                 if (result?.failed) failedTotal.push(...result.failed);
             } catch (err: unknown) {
-                const isAbort = err instanceof DOMException && err.name === 'AbortError';
-                if (isAbort) return;
+                if (isAbortError(err)) return;
                 for (const item of batch) {
                     failedTotal.push({
                         path: item.relativePath || item.file.name,
@@ -179,8 +175,8 @@ export const uploadAlbumImagesBatched = async (
     return { uploaded: uploadedTotal, failed: failedTotal };
 };
 
-export const listAlbumImages = async (id: number): Promise<DirectoryListing> => {
-    const resp = await http.get<ApiResponse<DirectoryListing>>(`/admin/albums/${id}/images`);
+export const listAlbumImages = async (id: number, signal?: AbortSignal): Promise<DirectoryListing> => {
+    const resp = await http.get<ApiResponse<DirectoryListing>>(`/admin/albums/${id}/images`, { signal });
     return resp.data.data;
 };
 
@@ -219,13 +215,15 @@ export interface UpdateUserAlbumPermissionsPayload {
     permissions: string[];
 }
 
-export const getAlbumUsers = async (albumId: number): Promise<AlbumUserPermissionResponse[]> => {
-    const response = await http.get<ApiResponse<AlbumUserPermissionResponse[]>>(`/admin/albums/${albumId}/users`);
+export const getAlbumUsers = async (albumId: number, signal?: AbortSignal): Promise<AlbumUserPermissionResponse[]> => {
+    const response = await http.get<ApiResponse<AlbumUserPermissionResponse[]>>(`/admin/albums/${albumId}/users`, {
+        signal,
+    });
     return response.data.data;
 };
 
-export const getAvailableUsers = async (albumId: number): Promise<User[]> => {
-    const response = await http.get<ApiResponse<User[]>>(`/admin/albums/${albumId}/users/available`);
+export const getAvailableUsers = async (albumId: number, signal?: AbortSignal): Promise<User[]> => {
+    const response = await http.get<ApiResponse<User[]>>(`/admin/albums/${albumId}/users/available`, { signal });
     return response.data.data;
 };
 

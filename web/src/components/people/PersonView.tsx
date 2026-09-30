@@ -1,7 +1,9 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Person, FileInfo, PersonImageResult } from '../../types.ts';
-import { getPersonById, getPersonImages, getPreviewImagePath } from '../../api.ts';
+import { getPersonById, getPersonImages } from '../../api/people';
+import { errorMessage, isAbortError } from '../../api/errors';
+import { getPreviewImagePath } from '../../api/media';
 import AdvancedImageGrid from '../album/AdvancedImageGrid.tsx';
 import ImageLightbox from '../album/ImageLightbox.tsx';
 import LoadingSpinner from '../elements/LoadingSpinner.tsx';
@@ -34,9 +36,9 @@ const PersonView: React.FC = () => {
                 setImages(page.items);
                 setTotal(page.total);
                 setHasMore(page.has_more);
-            } catch (err: any) {
-                if (err.name !== 'AbortError') {
-                    setError(err.message || 'Failed to load person data');
+            } catch (err: unknown) {
+                if (!isAbortError(err)) {
+                    setError(errorMessage(err, 'Failed to load person data'));
                 }
             } finally {
                 setIsLoading(false);
@@ -74,8 +76,8 @@ const PersonView: React.FC = () => {
             setImages((prev) => [...prev, ...page.items]);
             setTotal(page.total);
             setHasMore(page.has_more);
-        } catch (err: any) {
-            setError(err.message || 'Failed to load more photos');
+        } catch (err: unknown) {
+            setError(errorMessage(err, 'Failed to load more photos'));
         } finally {
             setIsLoadingMore(false);
         }

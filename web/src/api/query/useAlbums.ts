@@ -12,7 +12,7 @@ import { queryKeys } from '../../lib/queryKeys';
 export const useAdminAlbums = () => {
     const { data, error, isLoading } = useQuery<AdminAlbumResponse[]>({
         queryKey: queryKeys.albums.list(),
-        queryFn: listAlbums,
+        queryFn: ({ signal }) => listAlbums(signal),
     });
     return { albums: data ?? [], isLoading, error };
 };
@@ -20,7 +20,7 @@ export const useAdminAlbums = () => {
 export const useAlbumUsers = (albumId: number | null) => {
     const { data, error, isLoading, refetch } = useQuery<AlbumUserPermissionResponse[]>({
         queryKey: queryKeys.albums.users(albumId!),
-        queryFn: () => getAlbumUsers(albumId!),
+        queryFn: ({ signal }) => getAlbumUsers(albumId!, signal),
         enabled: !!albumId,
     });
     return { users: data ?? [], isLoading, error, mutate: refetch };
@@ -29,7 +29,7 @@ export const useAlbumUsers = (albumId: number | null) => {
 export const useAvailableUsers = (albumId: number | null) => {
     const { data, error, isLoading, refetch } = useQuery<User[]>({
         queryKey: queryKeys.albums.availableUsers(albumId!),
-        queryFn: () => getAvailableUsers(albumId!),
+        queryFn: ({ signal }) => getAvailableUsers(albumId!, signal),
         enabled: !!albumId,
     });
     return { users: data ?? [], isLoading, error, mutate: refetch };

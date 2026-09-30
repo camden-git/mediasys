@@ -8,7 +8,7 @@ const PHOTOS_PAGE_SIZE = 120;
 export function useCollections() {
     const { data, error, isLoading } = useQuery<Collection[]>({
         queryKey: queryKeys.collections.list(),
-        queryFn: () => listPublicCollections(),
+        queryFn: ({ signal }) => listPublicCollections(signal),
     });
     return { collections: data ?? [], isLoading, error };
 }
@@ -16,7 +16,7 @@ export function useCollections() {
 export function useCollection(slug: string | undefined) {
     const { data, error, isLoading } = useQuery<Collection>({
         queryKey: queryKeys.collections.detail(slug!),
-        queryFn: () => getPublicCollection(slug!),
+        queryFn: ({ signal }) => getPublicCollection(slug!, signal),
         enabled: !!slug,
     });
     return { collection: data ?? null, isLoading, error };
@@ -27,8 +27,7 @@ export function useCollectionPhotos(slug: string | undefined) {
         queryKey: queryKeys.collections.photos(slug!),
         queryFn: ({ pageParam, signal }) => getCollectionPhotos(slug!, pageParam, PHOTOS_PAGE_SIZE, signal),
         initialPageParam: 0,
-        getNextPageParam: (last, pages) =>
-            last.has_more ? pages.reduce((n, p) => n + (p.files?.length ?? 0), 0) : undefined,
+        getNextPageParam: (last, pages) => (last.has_more ? pages.reduce((n, p) => n + p.files.length, 0) : undefined),
         enabled: !!slug,
     });
 }

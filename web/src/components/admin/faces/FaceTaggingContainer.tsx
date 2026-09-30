@@ -4,7 +4,8 @@ import { Text } from '../../elements/Text';
 import PageContentBlock from '../../elements/PageContentBlock.tsx';
 import LoadingSpinner from '../../elements/LoadingSpinner';
 import { UntaggedFaceResult } from '../../../types';
-import { getUntaggedFaces, UntaggedFaceParams } from '../../../api';
+import { getUntaggedFaces, UntaggedFaceParams } from '../../../api/faces';
+import { errorMessage, isAbortError } from '../../../api/errors';
 import FaceThumbnail from './shared/FaceThumbnail';
 import FaceLightboxModal from './shared/FaceLightboxModal';
 
@@ -55,8 +56,8 @@ const FaceTaggingContainer: React.FC = () => {
                 setHasMore(f.length >= (params.limit ?? DEFAULT_FILTERS.limit!));
             })
             .catch((e) => {
-                if (e.name === 'AbortError') return;
-                setError(e.message);
+                if (isAbortError(e)) return;
+                setError(errorMessage(e, 'Failed to load faces'));
                 setHasMore(false);
             })
             .finally(() => {

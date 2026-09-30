@@ -3,7 +3,10 @@ import { Button } from '../../../elements/Button';
 import { Input } from '../../../elements/Input';
 import { Combobox, ComboboxLabel, ComboboxOption } from '../../../elements/Combobox';
 import { UntaggedFaceResult, Person } from '../../../../types';
-import { tagFace, deleteFace, createPerson, suggestFace, searchPeople, getPersonKeyPhotoUrl } from '../../../../api';
+import { tagFace, deleteFace, suggestFace } from '../../../../api/faces';
+import { createPerson, searchPeople } from '../../../../api/people';
+import { getPersonKeyPhotoUrl } from '../../../../api/media';
+import { isAbortError } from '../../../../api/errors';
 import { Avatar } from '../../../elements/Avatar';
 
 type CreateOption = { __create: true; name: string };
@@ -79,7 +82,7 @@ const FaceTaggingPanel: React.FC<FaceTaggingPanelProps> = ({ face, onTagged, onD
             searchPeople(q, 5, ctrl.signal)
                 .then((results) => setPersonOptions(results))
                 .catch((e) => {
-                    if (e.name !== 'AbortError') console.error('People search error:', e);
+                    if (!isAbortError(e)) console.error('People search error:', e);
                 });
         }, 100);
     };

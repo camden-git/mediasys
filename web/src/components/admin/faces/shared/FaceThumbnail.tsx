@@ -1,5 +1,5 @@
 import React from 'react';
-import { getFaceThumbnailUrl } from '../../../../api';
+import { getFaceThumbnailUrl } from '../../../../api/media';
 
 interface FaceThumbnailProps {
     faceId: number;

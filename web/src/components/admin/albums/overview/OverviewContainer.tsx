@@ -1,6 +1,6 @@
 import React from 'react';
 import { useAlbumData } from '../../../../store/albumContextHooks';
-import { getBannerUrl, getPreviewImageUrl } from '../../../../api.ts';
+import { getBannerUrl, getPreviewImageUrl } from '../../../../api/media';
 import { Can } from '../../../elements/Can';
 import { Heading } from '../../../elements/Heading.tsx';
 import { CameraIcon, MapPinIcon, PhotoIcon } from '@heroicons/react/16/solid';
@@ -9,7 +9,8 @@ import AdvancedImageGrid from '../../../album/AdvancedImageGrid.tsx';
 import { FileInfo } from '../../../../types.ts';
 import { ListBulletIcon, RectangleStackIcon, Squares2X2Icon, TrashIcon } from '@heroicons/react/20/solid';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../../elements/Table';
-import { getThumbnailUrl } from '../../../../api.ts';
+import { getThumbnailUrl } from '../../../../api/media';
+import { useAuthStore } from '../../../../store/useAuthStore';
 import { queryClient } from '../../../../lib/queryClient';
 import { queryKeys } from '../../../../lib/queryKeys';
 import UploadZone from './UploadZone.tsx';
@@ -32,7 +33,7 @@ const OverviewContainer: React.FC = () => {
     const [items, setItems] = React.useState<Record<string, ItemState>>({});
     const [isUploading, setIsUploading] = React.useState(false);
     const apiUrl = (import.meta as any).env.VITE_API_URL as string | undefined;
-    const authToken = localStorage.getItem('authToken');
+    const authToken = useAuthStore((s) => s.token);
 
     // Upload size / ETA tracking
     const fileSizesRef = React.useRef<Record<string, number>>({});

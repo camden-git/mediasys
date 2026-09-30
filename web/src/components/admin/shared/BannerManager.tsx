@@ -2,7 +2,7 @@ import React, { useRef } from 'react';
 import { PhotoIcon } from '@heroicons/react/24/outline';
 import { ChevronDownIcon, ChevronUpIcon, TrashIcon } from '@heroicons/react/24/solid';
 import { Button } from '../../elements/Button';
-import { getBannerUrl } from '../../../api';
+import { getBannerUrl } from '../../../api/media';
 
 const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 

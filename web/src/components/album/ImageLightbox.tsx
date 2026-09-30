@@ -1,13 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FileInfo, FaceData } from '../../types.ts';
-import {
-    getOriginalImageUrl,
-    getThumbnailUrl,
-    getPreviewImageUrl,
-    getFacesForImage,
-    getPersonKeyPhotoUrl,
-} from '../../api.ts';
+import { getOriginalImageUrl, getThumbnailUrl, getPreviewImageUrl, getPersonKeyPhotoUrl } from '../../api/media';
+import { getFacesForImage } from '../../api/faces';
 import MetadataPanel from './MetadataPanel';
 import LoadingSpinner from '../elements/LoadingSpinner';
 import {

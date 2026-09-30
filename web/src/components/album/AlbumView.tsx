@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { getAlbumDownloadUrl, getBannerUrl, getOriginalImageUrl } from '../../api.ts';
+import { getAlbumDownloadUrl, getBannerUrl, getOriginalImageUrl } from '../../api/media';
 import { FileInfo } from '../../types.ts';
 import { CameraIcon, MapPinIcon, PhotoIcon, ArrowDownIcon, ShareIcon, SparklesIcon } from '@heroicons/react/16/solid';
 import { useFlash } from '../../hooks/useFlash.ts';

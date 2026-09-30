@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { getBannerUrl } from '../../api.ts';
+import { getBannerUrl } from '../../api/media';
 import LoadingSpinner from '../elements/LoadingSpinner.tsx';
 import { useCollections } from '../../hooks/useCollections.ts';
 import { useDocumentTitle } from '../../hooks/useDocumentTitle.ts';

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Formik, Form } from 'formik';
 import * as Yup from 'yup';
 import { CreateAlbumPayload, createAlbum as createAlbumAPI } from '../../../api/admin/albums';
+import { errorMessage, errorStatus } from '../../../api/errors';
 import { useUIStore } from '../../../store/useUIStore';
 import { invalidateAlbums } from '../../../lib/queryClient';
 import FlashMessageRender from '../../elements/FlashMessageRender';
@@ -66,8 +67,8 @@ const CreateAlbumForm: React.FC = () => {
                             message: 'Album created successfully',
                         });
                         navigate('/admin/albums');
-                    } catch (err: any) {
-                        if (err?.status === 409) {
+                    } catch (err: unknown) {
+                        if (errorStatus(err) === 409) {
                             setFieldTouched('slug', true, false);
                             setFieldError('slug', 'An album with this slug already exists.');
                             setSubmitting(false);
@@ -77,7 +78,7 @@ const CreateAlbumForm: React.FC = () => {
                             key: 'album-create-error',
                             type: 'error',
                             title: 'Error',
-                            message: err.message || 'Failed to create album',
+                            message: errorMessage(err, 'Failed to create album'),
                         });
                     } finally {
                         setSubmitting(false);
