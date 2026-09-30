@@ -478,12 +478,18 @@ func (r *RetinaFaceDetector) DetectFacesAndExtractEmbeddings(img gocv.Mat, recog
 
 	if recognitionModel != nil && recognitionModel.Enabled {
 		for i := range detections {
-			faceRegion := img.Region(image.Rect(
-				detections[i].X, detections[i].Y,
-				detections[i].X+detections[i].W, detections[i].Y+detections[i].H,
-			))
-			embedding, err := recognitionModel.ExtractEmbedding(faceRegion)
-			faceRegion.Close()
+			var embedding []float32
+			var err error
+			if len(detections[i].Landmarks) == 5 {
+				embedding, err = recognitionModel.ExtractEmbeddingAligned(img, detections[i].Landmarks)
+			} else {
+				faceRegion := img.Region(image.Rect(
+					detections[i].X, detections[i].Y,
+					detections[i].X+detections[i].W, detections[i].Y+detections[i].H,
+				))
+				embedding, err = recognitionModel.ExtractEmbedding(faceRegion)
+				faceRegion.Close()
+			}
 			if err != nil {
 				return nil, fmt.Errorf("face %d: %w", i, err)
 			}

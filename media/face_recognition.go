@@ -113,7 +113,7 @@ func NewFaceRecognitionModel(modelPath string, modelName string) *FaceRecognitio
 		ModelName:   modelName,
 		InputSizeW:  inputSizeW,
 		InputSizeH:  inputSizeH,
-		ScaleFactor: 1.0,
+		ScaleFactor: 1.0 / stdVal.Val1,
 		MeanVal:     meanVal,
 		StdVal:      stdVal,
 	}
@@ -127,7 +127,8 @@ func (f *FaceRecognitionModel) Close() {
 	}
 }
 
-// ExtractEmbedding extracts a face embedding from a face region
+// ExtractEmbedding extracts a face embedding from an unaligned face crop. Prefer
+// ExtractEmbeddingAligned when landmarks are available.
 func (f *FaceRecognitionModel) ExtractEmbedding(faceRegion gocv.Mat) ([]float32, error) {
 	if f == nil || !f.Enabled {
 		return nil, errors.New("face recognition model is not enabled")
@@ -135,22 +136,48 @@ func (f *FaceRecognitionModel) ExtractEmbedding(faceRegion gocv.Mat) ([]float32,
 	if faceRegion.Empty() {
 		return nil, errors.New("empty face region")
 	}
+	resized := gocv.NewMat()
+	defer resized.Close()
+	gocv.Resize(faceRegion, &resized, image.Pt(f.InputSizeW, f.InputSizeH), 0, 0, gocv.InterpolationLinear)
+	return f.embed(resized)
+}
 
-	processed := f.preprocessFace(faceRegion)
-	if processed.Empty() {
-		return nil, errors.New("preprocessing produced an empty face image")
+// ExtractEmbeddingAligned warps the face in img onto the standard ArcFace
+// template using its five landmarks before extracting the embedding.
+func (f *FaceRecognitionModel) ExtractEmbeddingAligned(img gocv.Mat, landmarks []Point2D) ([]float32, error) {
+	if f == nil || !f.Enabled {
+		return nil, errors.New("face recognition model is not enabled")
 	}
-	defer processed.Close()
+	if img.Empty() {
+		return nil, errors.New("empty image")
+	}
+	aligned, err := alignFace(img, landmarks, f.InputSizeW)
+	if err != nil {
+		return nil, fmt.Errorf("face alignment failed: %w", err)
+	}
+	defer aligned.Close()
+	return f.embed(aligned)
+}
+
+// embed runs the network on a BGR face image already at the model input size.
+func (f *FaceRecognitionModel) embed(face gocv.Mat) ([]float32, error) {
+	rgb := face
+	if face.Channels() == 3 {
+		rgb = gocv.NewMat()
+		defer rgb.Close()
+		gocv.CvtColor(face, &rgb, gocv.ColorBGRToRGB)
+	}
 
 	var blob gocv.Mat
-	if f.ModelName == "arcface" || f.ModelName == "facenet" {
+	if f.ModelName == "arcface" {
 		// arcface.onnx bakes (pixel - 127.5) * 0.0078125 normalization into the graph
 		// itself (Sub/Mul nodes on the "data" input), so pass raw 0-255 pixel values
 		// here rather than pre-scaling to 0-1 — otherwise the network's internal
 		// subtraction wipes out nearly all of the input signal.
-		blob = gocv.BlobFromImage(processed, 1.0, image.Pt(f.InputSizeW, f.InputSizeH), gocv.NewScalar(0, 0, 0, 0), false, false)
+		blob = gocv.BlobFromImage(rgb, 1.0, image.Pt(f.InputSizeW, f.InputSizeH), gocv.NewScalar(0, 0, 0, 0), false, false)
 	} else {
-		blob = gocv.BlobFromImage(processed, f.ScaleFactor, image.Pt(f.InputSizeW, f.InputSizeH), f.MeanVal, false, false)
+		// other models expect (pixel - mean) / std applied outside the graph
+		blob = gocv.BlobFromImage(rgb, f.ScaleFactor, image.Pt(f.InputSizeW, f.InputSizeH), f.MeanVal, false, false)
 	}
 	defer blob.Close()
 
@@ -164,35 +191,6 @@ func (f *FaceRecognitionModel) ExtractEmbedding(faceRegion gocv.Mat) ([]float32,
 	}
 
 	return f.normalizeEmbedding(embedding), nil
-}
-
-// preprocessFace prepares a face region for embedding extraction
-func (f *FaceRecognitionModel) preprocessFace(faceRegion gocv.Mat) gocv.Mat {
-	if faceRegion.Empty() {
-		return gocv.Mat{}
-	}
-
-	// ArcFace expects RGB input
-	var processed gocv.Mat
-	if faceRegion.Channels() == 3 {
-		processed = gocv.NewMat()
-		gocv.CvtColor(faceRegion, &processed, gocv.ColorBGRToRGB)
-	} else {
-		processed = faceRegion.Clone()
-	}
-
-	aligned := gocv.NewMat()
-	gocv.Resize(processed, &aligned, image.Pt(f.InputSizeW, f.InputSizeH), 0, 0, gocv.InterpolationLinear)
-	processed.Close()
-
-	if f.ModelName == "arcface" || f.ModelName == "facenet" {
-		normalized := gocv.NewMat()
-		aligned.ConvertTo(&normalized, gocv.MatTypeCV32F)
-		aligned.Close()
-		return normalized
-	}
-
-	return aligned
 }
 
 // extractEmbeddingVector extracts the embedding vector from model output
