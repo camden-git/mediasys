@@ -105,7 +105,8 @@ func (h *AdminAlbumHandler) UploadImages(w http.ResponseWriter, r *http.Request)
 	}
 
 	folder := strings.Trim(album.FolderPath, "/")
-	var relPathsQueue []string
+	// relative_path applies only to the file part that immediately follows it
+	pendingRel, hasPendingRel := "", false
 	saved := 0
 	failed := []map[string]string{}
 	for {
@@ -121,18 +122,23 @@ func (h *AdminAlbumHandler) UploadImages(w http.ResponseWriter, r *http.Request)
 
 		switch part.FormName() {
 		case "relative_path":
+			if hasPendingRel {
+				WriteAPIError(w, http.StatusBadRequest, "MalformedUpload", "relative_path must be immediately followed by its file")
+				return
+			}
 			data, _ := io.ReadAll(io.LimitReader(part, 4096))
-			relPathsQueue = append(relPathsQueue, strings.TrimSpace(string(data)))
+			pendingRel, hasPendingRel = strings.TrimSpace(string(data)), true
 			continue
 		case "files":
 		default:
+			hasPendingRel = false
 			continue
 		}
 
 		filename := part.FileName()
 		rawRel := ""
-		if len(relPathsQueue) > 0 {
-			rawRel, relPathsQueue = relPathsQueue[0], relPathsQueue[1:]
+		if hasPendingRel {
+			rawRel, hasPendingRel = pendingRel, false
 		}
 		rel, ok := cleanUploadPath(rawRel, filename)
 		if !ok {
