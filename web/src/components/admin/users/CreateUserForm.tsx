@@ -1,16 +1,15 @@
 import React, { useState } from 'react';
 import { Button } from '../../elements/Button';
 import { Dialog, DialogActions, DialogBody, DialogTitle, DialogDescription } from '../../elements/Dialog';
-import { Field, FieldGroup, Label } from '../../elements/Fieldset';
-import { CheckboxField, Checkbox } from '../../elements/Checkbox';
+import { FieldGroup } from '../../elements/Fieldset';
 import FormikFieldComponent from '../../elements/FormikField';
 import { Formik, Form } from 'formik';
 import * as Yup from 'yup';
-import { Role, UserCreatePayload } from '../../../types';
+import { UserCreatePayload } from '../../../types';
 import { createUser } from '../../../api/admin/users';
 import { useFlash } from '../../../hooks/useFlash';
 import { Can } from '../../elements/Can';
-import { useRoles } from '../../../api/query/useRoles';
+import RolePicker from './RolePicker';
 import { useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '../../../lib/queryKeys';
 
@@ -26,42 +25,6 @@ interface CreateUserFormProps {
     isOpen: boolean;
     onClose: () => void;
 }
-
-interface RolePickerProps {
-    selected: number[];
-    disabled: boolean;
-    onChange: (ids: number[]) => void;
-}
-
-const RolePicker: React.FC<RolePickerProps> = ({ selected, disabled, onChange }) => {
-    const { data: rolesResult, isError } = useRoles({ perPage: 100 });
-    const roles = rolesResult?.items ?? [];
-
-    return (
-        <Field>
-            <Label>Roles</Label>
-            {isError && (
-                <p className='mt-2 text-sm text-red-600'>
-                    Failed to load roles. The user can be created without roles.
-                </p>
-            )}
-            <div className='mt-3 grid max-h-60 grid-cols-2 gap-2 overflow-y-auto rounded border border-zinc-950/10 p-2 dark:border-white/10'>
-                {roles.map((role: Role) => (
-                    <CheckboxField key={role.id}>
-                        <Checkbox
-                            checked={selected.includes(role.id)}
-                            onChange={(checked) =>
-                                onChange(checked ? [...selected, role.id] : selected.filter((id) => id !== role.id))
-                            }
-                            disabled={disabled}
-                        />
-                        <Label>{role.name}</Label>
-                    </CheckboxField>
-                ))}
-            </div>
-        </Field>
-    );
-};
 
 const CreateUserForm: React.FC<CreateUserFormProps> = ({ isOpen, onClose }) => {
     const [isSubmitting, setIsSubmitting] = useState(false);

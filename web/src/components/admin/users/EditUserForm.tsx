@@ -2,18 +2,21 @@ import React, { useEffect, useState } from 'react';
 import { Button } from '../../elements/Button';
 import { Dialog, DialogActions, DialogBody, DialogTitle, DialogDescription } from '../../elements/Dialog';
 import { Field, FieldGroup, Label, ErrorMessage as FieldErrorMessage } from '../../elements/Fieldset';
-import { CheckboxField, Checkbox } from '../../elements/Checkbox';
+import { Can } from '../../elements/Can';
+import RolePicker from './RolePicker';
 import { Input } from '../../elements/Input';
 import { Formik, Form, ErrorMessage } from 'formik';
 import * as Yup from 'yup';
-import { AdminUserResponse, Role, UserUpdatePayload } from '../../../types';
+import { AdminUserResponse, UserUpdatePayload } from '../../../types';
 import { useUpdateUser } from '../../../api/query/useUsers';
-import { useRoles } from '../../../api/query/useRoles';
 import { useFlash } from '../../../hooks/useFlash';
 
 const UserUpdateSchema = Yup.object().shape({
     username: Yup.string().required('Username is required.'),
-    password: Yup.string().min(8, 'Password must be at least 8 characters if provided.'),
+    // an emptied field means "keep the current password", not a too-short one
+    password: Yup.string()
+        .transform((v) => (v === '' ? undefined : v))
+        .min(8, 'Password must be at least 8 characters if provided.'),
     first_name: Yup.string().optional(),
     last_name: Yup.string().optional(),
     role_ids: Yup.array().of(Yup.number()),
@@ -27,8 +30,6 @@ interface EditUserFormProps {
 
 const EditUserForm: React.FC<EditUserFormProps> = ({ isOpen, onClose, user }) => {
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const { data: rolesResult, isLoading: isLoadingRoles } = useRoles({ perPage: 100 });
-    const roles = rolesResult?.items ?? [];
     const { clearFlashes, clearAndAddHttpError, addFlash } = useFlash();
     const updateUser = useUpdateUser();
 
@@ -61,7 +62,11 @@ const EditUserForm: React.FC<EditUserFormProps> = ({ isOpen, onClose, user }) =>
                     setIsSubmitting(true);
 
                     try {
-                        await updateUser.mutateAsync({ id: user.id, payload: values });
+                        const { password, ...rest } = values;
+                        await updateUser.mutateAsync({
+                            id: user.id,
+                            payload: password ? { ...rest, password } : rest,
+                        });
 
                         addFlash({
                             key: 'edit-user-form',
@@ -143,36 +148,21 @@ const EditUserForm: React.FC<EditUserFormProps> = ({ isOpen, onClose, user }) =>
                                     />
                                     <ErrorMessage name='password' component={FieldErrorMessage} />
                                 </Field>
-                                <Field>
-                                    <Label>Roles</Label>
-                                    <div className='mt-3 grid max-h-60 grid-cols-2 gap-2 overflow-y-auto rounded border border-zinc-950/10 p-2 dark:border-white/10'>
-                                        {roles.map((role: Role) => (
-                                            <CheckboxField key={role.id}>
-                                                <Checkbox
-                                                    checked={values.role_ids?.includes(role.id) || false}
-                                                    onChange={(checked) => {
-                                                        const current = values.role_ids || [];
-                                                        setFieldValue(
-                                                            'role_ids',
-                                                            checked
-                                                                ? [...current, role.id]
-                                                                : current.filter((id) => id !== role.id),
-                                                        );
-                                                    }}
-                                                    disabled={isSubmitting}
-                                                />
-                                                <Label>{role.name}</Label>
-                                            </CheckboxField>
-                                        ))}
-                                    </div>
-                                </Field>
+                                {/* /admin/roles needs role.* permissions, so the picker is hidden without them */}
+                                <Can permission='role.*'>
+                                    <RolePicker
+                                        selected={values.role_ids || []}
+                                        disabled={isSubmitting}
+                                        onChange={(ids) => setFieldValue('role_ids', ids)}
+                                    />
+                                </Can>
                             </FieldGroup>
                         </DialogBody>
                         <DialogActions>
                             <Button plain onClick={onClose} disabled={isSubmitting}>
                                 Cancel
                             </Button>
-                            <Button type='submit' disabled={isSubmitting || isLoadingRoles}>
+                            <Button type='submit' disabled={isSubmitting}>
                                 {isSubmitting ? 'Saving...' : 'Save Changes'}
                             </Button>
                         </DialogActions>
