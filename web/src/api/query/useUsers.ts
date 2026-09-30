@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { listUsers, getUser, updateUser } from '../admin/users';
+import { fetchAllPages } from '../admin/paginate';
 import { AdminUserResponse, UserUpdatePayload } from '../../types';
 import { PaginatedResult, PaginationRequest } from '../standard';
 import { queryKeys } from '../../lib/queryKeys';
@@ -9,6 +10,15 @@ export const useUsers = (params?: PaginationRequest) => {
     return useQuery<PaginatedResult<AdminUserResponse>>({
         queryKey: queryKeys.users.list(params),
         queryFn: () => listUsers(params),
+    });
+};
+
+// Every user, across all pages
+export const useAllUsers = (options?: { enabled?: boolean }) => {
+    return useQuery<AdminUserResponse[]>({
+        queryKey: queryKeys.users.allItems(),
+        queryFn: () => fetchAllPages(listUsers),
+        enabled: options?.enabled ?? true,
     });
 };
 

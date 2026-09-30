@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { DescriptionList, DescriptionTerm, DescriptionDetails } from '../../elements/DescriptionList';
 import { ErrorMessage } from '../../elements/Fieldset';
@@ -10,16 +10,13 @@ import EditRoleForm from './EditRoleForm';
 import { useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '../../../lib/queryKeys';
 import { refreshAuthUser } from '../../../store/useAuthStore';
-import { useRole } from '../../../api/query/useRoles';
-import { useUsers } from '../../../api/query/useUsers';
+import { useRole, useRoleUsers } from '../../../api/query/useRoles';
+import AddUserToRoleDialog from './AddUserToRoleDialog';
 import { useFlash } from '../../../hooks/useFlash';
 import FlashMessageRender from '../../elements/FlashMessageRender';
-import { getRoleUsers, addUserToRole, removeUserFromRole } from '../../../api/admin/roles';
+import { addUserToRole, removeUserFromRole } from '../../../api/admin/roles';
 import LoadingSpinner from '../../elements/LoadingSpinner';
-import { Select } from '../../elements/Select.tsx';
 import { Text } from '../../elements/Text.tsx';
-import { PaginatedResult } from '../../../api/standard';
-import { UserSummary } from '../../../types';
 import { PaginationControls } from '../../elements/PaginationControls';
 import { Dialog, DialogActions, DialogDescription, DialogTitle } from '../../elements/Dialog';
 
@@ -28,50 +25,30 @@ const RoleView: React.FC = () => {
     const roleId = id ? parseInt(id, 10) : 0;
 
     const { data: role, error } = useRole(roleId);
-    const { data: allUsersResult } = useUsers({ perPage: 500 });
-    const allUsers = allUsersResult?.items ?? [];
     const { addFlash, clearFlashes, clearAndAddHttpError } = useFlash();
     const queryClient = useQueryClient();
 
-    const [userResult, setUserResult] = useState<PaginatedResult<UserSummary> | null>(null);
-    const [isLoadingUsers, setIsLoadingUsers] = useState(false);
-    const [userError, setUserError] = useState<string | null>(null);
     const [userPage, setUserPage] = useState(1);
     const userPerPage = 25;
+
+    // single fetch path for the members list; membership changes invalidate it via queryKeys.roles.all()
+    const {
+        data: userResult,
+        isLoading: isLoadingUsers,
+        error: userQueryError,
+    } = useRoleUsers(roleId, { page: userPage, perPage: userPerPage });
+    const userError = userQueryError ? userQueryError.message || 'Failed to load users' : null;
 
     const [isEditModalOpen, setEditModalOpen] = useState(false);
     const [isAddUserModalOpen, setAddUserModalOpen] = useState(false);
     const [userForRemove, setUserForRemove] = useState<{ id: number; username: string } | null>(null);
+    const [isRemoving, setIsRemoving] = useState(false);
 
     const refreshRoleMembership = (userId: number) => {
         void queryClient.invalidateQueries({ queryKey: queryKeys.roles.all() });
         void queryClient.invalidateQueries({ queryKey: queryKeys.users.all() });
         refreshAuthUser(userId);
     };
-
-    const loadRoleUsers = useCallback(
-        async (pageToLoad: number) => {
-            if (!roleId) return;
-
-            setIsLoadingUsers(true);
-            setUserError(null);
-            try {
-                const result = await getRoleUsers(roleId, { page: pageToLoad, perPage: userPerPage });
-                setUserResult(result);
-            } catch (error: any) {
-                setUserError(error.message || 'Failed to load users');
-            } finally {
-                setIsLoadingUsers(false);
-            }
-        },
-        [roleId],
-    );
-
-    useEffect(() => {
-        if (roleId) {
-            loadRoleUsers(userPage);
-        }
-    }, [roleId, userPage, loadRoleUsers]);
 
     useEffect(() => {
         if (!error) {
@@ -90,11 +67,10 @@ const RoleView: React.FC = () => {
         return <LoadingSpinner />;
     }
 
-    const handleAddUserToRole = async (userId: number) => {
+    const handleAddUserToRole = async (userId: number): Promise<void> => {
         try {
             await addUserToRole(roleId, userId);
             refreshRoleMembership(userId);
-            await loadRoleUsers(userPage);
             addFlash({
                 key: 'role-view',
                 type: 'success',
@@ -115,11 +91,11 @@ const RoleView: React.FC = () => {
     };
 
     const confirmRemoveUser = async () => {
-        if (!userForRemove) return;
+        if (!userForRemove || isRemoving) return;
+        setIsRemoving(true);
         try {
             await removeUserFromRole(roleId, userForRemove.id);
             refreshRoleMembership(userForRemove.id);
-            await loadRoleUsers(userPage);
             addFlash({
                 key: 'role-view',
                 type: 'success',
@@ -132,6 +108,7 @@ const RoleView: React.FC = () => {
                 message: error.message || 'Failed to remove user from role.',
             });
         } finally {
+            setIsRemoving(false);
             setUserForRemove(null);
         }
     };
@@ -253,7 +230,8 @@ const RoleView: React.FC = () => {
             <ContentBlock className='mt-6'>
                 <div className='flex items-center justify-between'>
                     <Heading level={3}>Users in this Role</Heading>
-                    <Can permission='role.edit.users'>
+                    {/* the picker lists every user, which needs user.list on top of role.edit.users */}
+                    <Can permission={['role.edit.users', 'user.list']} requireAll>
                         <Button onClick={() => setAddUserModalOpen(true)}>Add User</Button>
                     </Can>
                 </div>
@@ -335,43 +313,17 @@ const RoleView: React.FC = () => {
                         className='mt-4'
                         pagination={userPagination}
                         currentPage={userPage}
-                        onPageChange={(page) => {
-                            setUserPage(page);
-                            loadRoleUsers(page);
-                        }}
+                        onPageChange={setUserPage}
                     />
                 )}
             </ContentBlock>
 
-            <Dialog open={isAddUserModalOpen} onClose={setAddUserModalOpen} size='sm'>
-                <DialogTitle>Add User to Role</DialogTitle>
-                <DialogActions>
-                    {!allUsersResult ? (
-                        <p className='text-sm text-gray-500'>Loading users...</p>
-                    ) : (
-                        <Select
-                            onChange={async (e) => {
-                                const userId = parseInt(e.target.value, 10);
-                                if (userId) {
-                                    await handleAddUserToRole(userId);
-                                }
-                            }}
-                        >
-                            <option value=''>Select a user...</option>
-                            {allUsers
-                                .filter((user) => !users.some((roleUser) => roleUser.id === user.id))
-                                .map((user) => (
-                                    <option key={user.id} value={user.id}>
-                                        {user.username}
-                                    </option>
-                                ))}
-                        </Select>
-                    )}
-                    <Button plain onClick={() => setAddUserModalOpen(false)}>
-                        Cancel
-                    </Button>
-                </DialogActions>
-            </Dialog>
+            <AddUserToRoleDialog
+                isOpen={isAddUserModalOpen}
+                roleId={roleId}
+                onClose={() => setAddUserModalOpen(false)}
+                onAdd={handleAddUserToRole}
+            />
 
             <Dialog open={!!userForRemove} onClose={() => setUserForRemove(null)} size='sm'>
                 <DialogTitle>Remove User</DialogTitle>
@@ -379,11 +331,11 @@ const RoleView: React.FC = () => {
                     Are you sure you want to remove {userForRemove?.username} from this role?
                 </DialogDescription>
                 <DialogActions>
-                    <Button plain onClick={() => setUserForRemove(null)}>
+                    <Button plain onClick={() => setUserForRemove(null)} disabled={isRemoving}>
                         Cancel
                     </Button>
-                    <Button color='red' onClick={confirmRemoveUser}>
-                        Remove
+                    <Button color='red' onClick={confirmRemoveUser} disabled={isRemoving}>
+                        {isRemoving ? 'Removing...' : 'Remove'}
                     </Button>
                 </DialogActions>
             </Dialog>

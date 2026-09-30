@@ -12,12 +12,16 @@ export const queryKeys = {
     roles: {
         all: () => ['roles'] as const,
         list: (p?: PaginationRequest) => [...queryKeys.roles.all(), 'list', p ?? {}] as const,
+        allItems: () => [...queryKeys.roles.all(), 'all-items'] as const,
         detail: (id: number) => [...queryKeys.roles.all(), id] as const,
+        users: (id: number, p?: PaginationRequest) => [...queryKeys.roles.detail(id), 'users', p ?? {}] as const,
+        allUsers: (id: number) => [...queryKeys.roles.detail(id), 'all-users'] as const,
         permissionDefinitions: () => ['permission-definitions'] as const,
     },
     users: {
         all: () => ['users'] as const,
         list: (p?: PaginationRequest) => [...queryKeys.users.all(), 'list', p ?? {}] as const,
+        allItems: () => [...queryKeys.users.all(), 'all-items'] as const,
         detail: (id: number) => [...queryKeys.users.all(), id] as const,
     },
     inviteCodes: {
