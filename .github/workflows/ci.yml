@@ -125,5 +125,8 @@ jobs:
       - name: lint
         run: ./node_modules/.bin/eslint .
 
+      - name: test
+        run: ./node_modules/.bin/vitest run
+
       - name: build
         run: ./node_modules/.bin/vite build
