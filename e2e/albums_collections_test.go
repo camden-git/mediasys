@@ -293,3 +293,86 @@ func TestImageTagsUsePerAlbumPermission(t *testing.T) {
 		t.Fatalf("admin tag: expected 201, got %d %s", resp.StatusCode, resp.Body)
 	}
 }
+
+// TestCollectionsExcludeHiddenAlbums verifies public collections never surface photos or
+// inherited banners from hidden albums.
+func TestCollectionsExcludeHiddenAlbums(t *testing.T) {
+	env := requireShared(t)
+	s := randomSuffix()
+	tag := map[string]any{"tag_key": "coll-hidden", "tag_value": s}
+
+	// setupAlbum creates an album with one image carrying tag and one banner, and
+	// returns the image path and banner path.
+	setupAlbum := func(name string, hidden bool) (string, string) {
+		album := createAlbum(t, env.adminToken, name+" "+s, strings.ToLower(name)+"-"+s, "")
+		secCleanupDelete(t, fmt.Sprintf("/api/admin/albums/%d", album.ID))
+		if hidden {
+			if resp := doJSON(t, http.MethodPut, fmt.Sprintf("/api/admin/albums/%d", album.ID), env.adminToken, map[string]any{"is_hidden": true}); resp.StatusCode != http.StatusOK {
+				t.Fatalf("hide album: %d %s", resp.StatusCode, resp.Body)
+			}
+		}
+		imgPath := uploadImage(t, env.adminToken, album.ID, "c.jpg")
+		if resp := doJSON(t, http.MethodPost, "/api/admin/images/tags?path="+url.QueryEscape(imgPath), env.adminToken, tag); resp.StatusCode != http.StatusCreated {
+			t.Fatalf("tag image: %d %s", resp.StatusCode, resp.Body)
+		}
+
+		var buf bytes.Buffer
+		mw := multipart.NewWriter(&buf)
+		part, _ := mw.CreateFormFile("banner_image", "banner.jpg")
+		_, _ = part.Write(generateJPEG(t, 64, 32))
+		_ = mw.Close()
+		if resp := doRequest(t, http.MethodPost, fmt.Sprintf("/api/admin/albums/%d/banners", album.ID), env.adminToken, &buf, mw.FormDataContentType()); resp.StatusCode >= 300 {
+			t.Fatalf("add banner: %d %s", resp.StatusCode, resp.Body)
+		}
+		var pub struct {
+			Banners []string `json:"banners"`
+		}
+		doRequest(t, http.MethodGet, "/api/albums/"+album.Slug, "", nil, "").decodeData(t, &pub)
+		if len(pub.Banners) != 1 {
+			t.Fatalf("expected 1 banner on %s, got %v", album.Slug, pub.Banners)
+		}
+		return imgPath, pub.Banners[0]
+	}
+	visibleImage, visibleBanner := setupAlbum("CollVis", false)
+	_, hiddenBanner := setupAlbum("CollHid", true)
+
+	slug := "coll-hidden-" + s
+	resp := doJSON(t, http.MethodPost, "/api/admin/collections", env.adminToken, map[string]any{"name": "Coll Hidden " + s, "slug": slug, "is_public": true})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create collection: %d %s", resp.StatusCode, resp.Body)
+	}
+	var coll struct {
+		ID uint `json:"id"`
+	}
+	resp.decodeData(t, &coll)
+	collPath := fmt.Sprintf("/api/admin/collections/%d", coll.ID)
+	secCleanupDelete(t, collPath)
+	if resp := doJSON(t, http.MethodPut, collPath+"/filters", env.adminToken, map[string]any{"filters": []any{tag}}); resp.StatusCode >= 300 {
+		t.Fatalf("set filters: %d %s", resp.StatusCode, resp.Body)
+	}
+	if resp := doJSON(t, http.MethodPut, collPath+"/banners/inherit", env.adminToken, map[string]any{"inherit": true}); resp.StatusCode >= 300 {
+		t.Fatalf("inherit banners: %d %s", resp.StatusCode, resp.Body)
+	}
+
+	t.Run("photos", func(t *testing.T) {
+		var listing directoryListing
+		doRequest(t, http.MethodGet, "/api/collections/"+slug+"/photos", "", nil, "").decodeData(t, &listing)
+		if listing.Total != 1 || len(listing.Files) != 1 || listing.Files[0].Path != "/"+visibleImage {
+			t.Fatalf("expected only %s, got total=%d files=%v", visibleImage, listing.Total, namesOf(listing.Files))
+		}
+	})
+
+	t.Run("inherited banners", func(t *testing.T) {
+		var got struct {
+			Banners []string `json:"banners"`
+		}
+		doRequest(t, http.MethodGet, "/api/collections/"+slug, "", nil, "").decodeData(t, &got)
+		if len(got.Banners) != 1 || got.Banners[0] != visibleBanner {
+			t.Fatalf("expected only banner %s, got %v", visibleBanner, got.Banners)
+		}
+		share := doRequest(t, http.MethodGet, "/api/share/collections/"+slug, "", nil, "")
+		if strings.Contains(string(share.Body), hiddenBanner) {
+			t.Fatalf("share page leaks hidden album banner: %s", share.Body)
+		}
+	})
+}

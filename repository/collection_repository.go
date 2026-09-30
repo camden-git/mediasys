@@ -135,8 +135,12 @@ func (r *GormCollectionRepository) SetInheritBanners(collectionID uint, inherit 
 	}))
 }
 
-// GetInheritedBannerPaths returns banner image paths from all albums that
-// contain images in this collection.
+// visibleAlbumIDsSQL selects the IDs of albums that are not soft-deleted or hidden. Collections
+// are public, so they must never surface images or banners of hidden albums.
+const visibleAlbumIDsSQL = "SELECT id FROM albums WHERE deleted_at IS NULL AND is_hidden = false"
+
+// GetInheritedBannerPaths returns banner image paths from all visible (not hidden)
+// albums that contain images in this collection.
 func (r *GormCollectionRepository) GetInheritedBannerPaths(collectionID uint) ([]string, error) {
 	subSQL, args, err := r.buildFilterSubquery(collectionID)
 	if err != nil {
@@ -150,7 +154,7 @@ func (r *GormCollectionRepository) GetInheritedBannerPaths(collectionID uint) ([
 	var result []string
 	err = r.db.Table("album_banners").
 		Joins("JOIN albums ON album_banners.album_id = albums.id").
-		Where("albums.deleted_at IS NULL AND albums.id IN (?)",
+		Where("albums.deleted_at IS NULL AND albums.is_hidden = false AND albums.id IN (?)",
 			r.db.Model(&models.Image{}).Distinct("album_id").Where(whereSQL, args...)).
 		Order("albums.id, album_banners.sort_order").
 		Pluck("album_banners.image_path", &result).Error
@@ -283,7 +287,8 @@ func (r *GormCollectionRepository) buildFilterSubquery(collectionID uint) (strin
 }
 
 // ListImages returns a sorted, paginated page of images matching the collection's tag
-// filters, plus the total number of matching images. The filter is applied as a
+// filters, plus the total number of matching images. Images in hidden albums are
+// excluded since collections are public. The filter is applied as a
 // subquery join (images.original_path IN (SELECT ... FROM image_tags ...)) so the
 // matching path set never needs to round-trip through Go, and sorting/paging happen
 // in SQL.
@@ -297,7 +302,7 @@ func (r *GormCollectionRepository) ListImages(collectionID uint, sortOrder strin
 	}
 
 	whereSQL := fmt.Sprintf("original_path IN (%s)", subSQL)
-	db := r.db.Model(&models.Image{}).Where(whereSQL, args...)
+	db := r.db.Model(&models.Image{}).Where(whereSQL, args...).Where("album_id IN (" + visibleAlbumIDsSQL + ")")
 
 	var total int64
 	if err := db.Count(&total).Error; err != nil {
