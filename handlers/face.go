@@ -56,7 +56,7 @@ func (fh *FaceHandler) AddFace(w http.ResponseWriter, r *http.Request) {
 		}
 		pid := uint(*req.PersonID)
 		personIDUint = &pid
-		if _, err := fh.PersonRepo.GetByID(*personIDUint); err != nil {
+		if _, err := fh.PersonRepo.GetBasic(*personIDUint); err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				WriteAPIError(w, http.StatusBadRequest, "PersonNotFound", "Person with provided person_id not found")
 			} else {
@@ -212,7 +212,7 @@ func (fh *FaceHandler) UpdateFace(w http.ResponseWriter, r *http.Request) {
 
 	if personIDProvided && personIDUpdate != nil {
 		// *personIDUpdate is uint here because personIDUpdate is *uint
-		if _, err := fh.PersonRepo.GetByID(*personIDUpdate); err != nil { // Use PersonRepo
+		if _, err := fh.PersonRepo.GetBasic(*personIDUpdate); err != nil { // Use PersonRepo
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				WriteAPIError(w, http.StatusBadRequest, "PersonNotFound", "Person with provided person_id not found")
 			} else {
@@ -463,7 +463,7 @@ func (fh *FaceHandler) TagFace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify person exists
-	if _, err := fh.PersonRepo.GetByID(req.PersonID); err != nil {
+	if _, err := fh.PersonRepo.GetBasic(req.PersonID); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			WriteAPIError(w, http.StatusBadRequest, "PersonNotFound", "Person not found")
 		} else {
@@ -524,7 +524,7 @@ func (fh *FaceHandler) AutoTagFace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// the suggestion may reference a person that has since been deleted
-	if _, err := fh.PersonRepo.GetByID(*personID); err != nil {
+	if _, err := fh.PersonRepo.GetBasic(*personID); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			WriteAPIError(w, http.StatusNotFound, "PersonNotFound", "No suitable person found for this face")
 		} else {

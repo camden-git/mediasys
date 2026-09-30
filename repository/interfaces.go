@@ -43,6 +43,8 @@ type AlbumRepositoryInterface interface {
 // PersonRepositoryInterface defines the methods for person data operations
 type PersonRepositoryInterface interface {
 	Create(person *models.Person) error
+	CreateWithAliases(person *models.Person, aliases []string) error
+	GetBasic(id uint) (*models.Person, error)
 	GetByID(id uint) (*models.Person, error)
 	GetPublicByID(id uint) (*models.Person, error)
 	ListAll() ([]models.Person, error)

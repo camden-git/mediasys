@@ -3,6 +3,7 @@ package repository
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/camden-git/mediasysbackend/database"
@@ -36,6 +37,47 @@ func (r *PersonRepository) Create(person *models.Person) error {
 		return fmt.Errorf("failed to create person %s: %w", person.PrimaryName, err)
 	}
 	return nil
+}
+
+// escapeLike escapes LIKE/ILIKE wildcards so user input matches literally.
+func escapeLike(s string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
+}
+
+// CreateWithAliases creates a person and their initial aliases in one transaction.
+func (r *PersonRepository) CreateWithAliases(person *models.Person, aliases []string) error {
+	return r.DB.Transaction(func(tx *gorm.DB) error {
+		now := time.Now().Unix()
+		if person.CreatedAt == 0 {
+			person.CreatedAt = now
+		}
+		if person.UpdatedAt == 0 {
+			person.UpdatedAt = now
+		}
+		if err := tx.Create(person).Error; err != nil {
+			return fmt.Errorf("failed to create person %s: %w", person.PrimaryName, err)
+		}
+		for _, name := range aliases {
+			alias := models.Alias{PersonID: person.ID, Name: name}
+			if err := tx.Create(&alias).Error; err != nil {
+				return fmt.Errorf("failed to add alias '%s' for person ID %d: %w", name, person.ID, err)
+			}
+		}
+		return nil
+	})
+}
+
+// GetBasic retrieves a person's own columns only (no aliases or faces); use it as a
+// cheap existence check.
+func (r *PersonRepository) GetBasic(id uint) (*models.Person, error) {
+	var person models.Person
+	if err := r.DB.First(&person, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("failed to get person by ID %d: %w", id, err)
+	}
+	return &person, nil
 }
 
 // GetByID retrieves a person by their ID, preloading Aliases and Faces
@@ -182,7 +224,7 @@ func (r *PersonRepository) DeleteAlias(aliasID uint) error {
 // Returns a slice of unique person IDs
 func (r *PersonRepository) FindPersonIDsByNameOrAlias(query string) ([]uint, error) {
 	var ids []uint
-	likeQuery := "%" + query + "%"
+	likeQuery := "%" + escapeLike(query) + "%"
 
 	err := r.DB.Model(&models.Person{}).Where("primary_name ILIKE ?", likeQuery).Pluck("id", &ids).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -260,7 +302,7 @@ func (r *PersonRepository) FindImagesByPersonIDs(personIDs []uint) ([]PersonImag
 // SearchByNameOrAlias searches for people by primary name or alias, returning up to limit results.
 func (r *PersonRepository) SearchByNameOrAlias(query string, limit int) ([]models.Person, error) {
 	var people []models.Person
-	likeQuery := "%" + query + "%"
+	likeQuery := "%" + escapeLike(query) + "%"
 	err := r.DB.Preload("Aliases").
 		Joins("LEFT JOIN aliases ON aliases.person_id = people.id").
 		Where("people.primary_name ILIKE ? OR aliases.name ILIKE ?", likeQuery, likeQuery).

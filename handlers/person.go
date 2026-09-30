@@ -37,37 +37,31 @@ func (ph *PersonHandler) CreatePerson(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if strings.TrimSpace(req.PrimaryName) == "" {
+	req.PrimaryName = strings.TrimSpace(req.PrimaryName)
+	if req.PrimaryName == "" {
 		WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Missing required field: primary_name")
 		return
+	}
+
+	// trim and de-duplicate the initial aliases
+	var aliases []string
+	seen := make(map[string]bool, len(req.Aliases))
+	for _, aliasName := range req.Aliases {
+		aliasName = strings.TrimSpace(aliasName)
+		if aliasName != "" && !seen[aliasName] {
+			seen[aliasName] = true
+			aliases = append(aliases, aliasName)
+		}
 	}
 
 	person := models.Person{
 		PrimaryName: req.PrimaryName,
 	}
 
-	err := ph.PersonRepo.Create(&person)
-	if err != nil {
-		// GORM might return a more specific error for unique constraints
+	if err := ph.PersonRepo.CreateWithAliases(&person, aliases); err != nil {
 		log.Printf("Error creating person '%s': %v", req.PrimaryName, err)
 		WriteAPIError(w, http.StatusInternalServerError, "PersonCreateError", "Failed to create person")
 		return
-	}
-
-	// add aliases if provided
-	if len(req.Aliases) > 0 {
-		for _, aliasName := range req.Aliases {
-			if strings.TrimSpace(aliasName) != "" {
-				alias := models.Alias{
-					PersonID: person.ID,
-					Name:     aliasName,
-				}
-				aliasErr := ph.PersonRepo.AddAlias(&alias)
-				if aliasErr != nil {
-					log.Printf("Error adding initial alias '%s' for person %d: %v", aliasName, person.ID, aliasErr)
-				}
-			}
-		}
 	}
 
 	createdPerson, fetchErr := ph.PersonRepo.GetByID(person.ID)
@@ -129,12 +123,13 @@ func (ph *PersonHandler) UpdatePerson(w http.ResponseWriter, r *http.Request) {
 		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request body: "+err.Error())
 		return
 	}
-	if strings.TrimSpace(req.PrimaryName) == "" {
+	req.PrimaryName = strings.TrimSpace(req.PrimaryName)
+	if req.PrimaryName == "" {
 		WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Missing required field: primary_name")
 		return
 	}
 
-	personToUpdate, err := ph.PersonRepo.GetByID(uint(personID))
+	personToUpdate, err := ph.PersonRepo.GetBasic(uint(personID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			WriteAPIError(w, http.StatusNotFound, "PersonNotFound", "Person not found")
@@ -210,7 +205,7 @@ func (ph *PersonHandler) AddAlias(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = ph.PersonRepo.GetByID(uint(personID))
+	_, err = ph.PersonRepo.GetBasic(uint(personID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			WriteAPIError(w, http.StatusNotFound, "PersonNotFound", "Person not found")
@@ -228,7 +223,8 @@ func (ph *PersonHandler) AddAlias(w http.ResponseWriter, r *http.Request) {
 		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request body: "+err.Error())
 		return
 	}
-	if strings.TrimSpace(req.Name) == "" {
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Name == "" {
 		WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Missing required field: name")
 		return
 	}
@@ -320,7 +316,7 @@ func (ph *PersonHandler) SetKeyPhoto(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	person, err := ph.PersonRepo.GetByID(uint(personID))
+	person, err := ph.PersonRepo.GetBasic(uint(personID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			WriteAPIError(w, http.StatusNotFound, "PersonNotFound", "person not found")
