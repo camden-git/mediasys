@@ -64,11 +64,11 @@ func (r *GormCollectionRepository) Update(collectionID uint, name, slug string, 
 		"sort_order":   sortOrder,
 		"updated_at":   time.Now().Unix(),
 	}
-	return r.db.Model(&models.Collection{}).Where("id = ?", collectionID).Updates(updates).Error
+	return requireRowsAffected(r.db.Model(&models.Collection{}).Where("id = ?", collectionID).Updates(updates))
 }
 
 func (r *GormCollectionRepository) Delete(id uint) error {
-	return r.db.Delete(&models.Collection{}, id).Error
+	return requireRowsAffected(r.db.Delete(&models.Collection{}, id))
 }
 
 // GetBanners returns all banners for a collection ordered by sort_order.
@@ -112,10 +112,10 @@ func (r *GormCollectionRepository) ReorderCollectionBanners(collectionID uint, o
 
 // SetInheritBanners sets the inherit_banners_from_albums flag on a collection.
 func (r *GormCollectionRepository) SetInheritBanners(collectionID uint, inherit bool) error {
-	return r.db.Model(&models.Collection{}).Where("id = ?", collectionID).Updates(map[string]interface{}{
+	return requireRowsAffected(r.db.Model(&models.Collection{}).Where("id = ?", collectionID).Updates(map[string]interface{}{
 		"inherit_banners_from_albums": inherit,
 		"updated_at":                  time.Now().Unix(),
-	}).Error
+	}))
 }
 
 // GetInheritedBannerPaths returns banner image paths from all albums that
