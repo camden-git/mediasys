@@ -108,9 +108,9 @@ func (r *AlbumRepository) FolderPathConflicts(folder string) (bool, error) {
 	return count > 0, nil
 }
 
-// Update updates an existing album's name, description, hidden status, and location
+// Update updates an existing album's name, description, hidden status, location and sort order in one write
 // other fields are updated by specific methods
-func (r *AlbumRepository) Update(albumID uint, name string, description *string, isHidden *bool, location *string) error {
+func (r *AlbumRepository) Update(albumID uint, name string, description *string, isHidden *bool, location *string, sortOrder *string) error {
 	now := time.Now().Unix()
 	updates := map[string]interface{}{
 		"updated_at": now,
@@ -130,6 +130,12 @@ func (r *AlbumRepository) Update(albumID uint, name string, description *string,
 		} else {
 			updates["location"] = *location
 		}
+	}
+	if sortOrder != nil {
+		if !database.IsValidSortOrder(*sortOrder) {
+			return fmt.Errorf("invalid sort order: %s", *sortOrder)
+		}
+		updates["sort_order"] = *sortOrder
 	}
 
 	// if only updated_at is present, no actual fields were changed
@@ -151,7 +157,11 @@ func (r *AlbumRepository) Update(albumID uint, name string, description *string,
 	return nil
 }
 
-// RequestZip updates album status to indicate a zip generation is pending
+// ErrZipInProgress is returned by RequestZip when an archive is already pending or processing.
+var ErrZipInProgress = errors.New("album zip generation already in progress")
+
+// RequestZip marks the album's archive as pending. The update is conditional so
+// concurrent requests cannot both start a job; the loser gets ErrZipInProgress.
 func (r *AlbumRepository) RequestZip(albumID uint) error {
 	now := time.Now().Unix()
 	updates := map[string]interface{}{
@@ -160,12 +170,21 @@ func (r *AlbumRepository) RequestZip(albumID uint) error {
 		"zip_error":             gorm.Expr("NULL"),
 		"updated_at":            now,
 	}
-	result := r.DB.Model(&models.Album{}).Where("id = ?", albumID).Updates(updates)
+	result := r.DB.Model(&models.Album{}).
+		Where("id = ? AND zip_status NOT IN ?", albumID, []string{database.StatusPending, database.StatusProcessing}).
+		Updates(updates)
 	if result.Error != nil {
 		return fmt.Errorf("failed to request zip for album ID %d: %w", albumID, result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
+		var count int64
+		if err := r.DB.Model(&models.Album{}).Where("id = ?", albumID).Count(&count).Error; err != nil {
+			return fmt.Errorf("failed to request zip for album ID %d: %w", albumID, err)
+		}
+		if count == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return ErrZipInProgress
 	}
 	return nil
 }
@@ -290,12 +309,10 @@ func (r *AlbumRepository) ReorderBanners(albumID uint, orderedIDs []uint) error 
 }
 
 // UpdateSortOrder updates the sort order for an album
-// assumes sortOrder string is validated externally (e.g., by a service layer or IsValidSortOrder)
 func (r *AlbumRepository) UpdateSortOrder(albumID uint, sortOrder string) error {
-	// TODO: add validation for sortOrder if not handled before this call
-	// if !database.IsValidSortOrder(sortOrder) {
-	// 	return fmt.Errorf("invalid sort order: %s", sortOrder)
-	// }
+	if !database.IsValidSortOrder(sortOrder) {
+		return fmt.Errorf("invalid sort order: %s", sortOrder)
+	}
 	now := time.Now().Unix()
 	result := r.DB.Model(&models.Album{}).Where("id = ?", albumID).Updates(map[string]interface{}{
 		"sort_order": sortOrder,

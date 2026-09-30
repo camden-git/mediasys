@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/camden-git/mediasysbackend/config"
+	"github.com/camden-git/mediasysbackend/database"
 	"github.com/camden-git/mediasysbackend/media"
 	"github.com/camden-git/mediasysbackend/models"
 	"github.com/camden-git/mediasysbackend/realtime"
@@ -170,7 +171,12 @@ func (h *AdminAlbumHandler) GetAlbum(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	banners, _ := h.AlbumRepo.GetBanners(album.ID)
+	banners, err := h.AlbumRepo.GetBanners(album.ID)
+	if err != nil {
+		log.Printf("Error loading banners for album %d: %v", album.ID, err)
+		WriteAPIError(w, http.StatusInternalServerError, "BannerFetchError", "Failed to load album banners")
+		return
+	}
 	adminAlbum := convertAlbumToAdminResponse(album, banners)
 	// populate artists with names
 	if ids, err := h.ImageRepo.GetDistinctUploaderIDsByAlbum(album.ID); err == nil && len(ids) > 0 {
@@ -215,6 +221,11 @@ func (h *AdminAlbumHandler) CreateAlbum(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if _, err := strconv.ParseUint(req.Slug, 10, 64); err == nil {
+		WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Slug cannot be all digits (it would be mistaken for an album ID)")
+		return
+	}
+
 	folderPathForDB, ok := normalizeFolderPath(req.FolderPath, req.Slug)
 	if !ok {
 		WriteAPIError(w, http.StatusBadRequest, "ValidationError", "folder_path is invalid")
@@ -245,12 +256,16 @@ func (h *AdminAlbumHandler) CreateAlbum(w http.ResponseWriter, r *http.Request) 
 		newAlbum.Location = req.Location
 	}
 	if req.SortOrder != nil {
+		if !database.IsValidSortOrder(*req.SortOrder) {
+			WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Invalid sort_order")
+			return
+		}
 		newAlbum.SortOrder = *req.SortOrder
 	}
 
 	err = h.AlbumRepo.Create(&newAlbum)
 	if err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "unique") {
+		if isUniqueViolation(err) {
 			WriteAPIError(w, http.StatusConflict, "AlbumConflict", "Album name, slug, or folder path already exists")
 		} else {
 			log.Printf("Error creating album '%s' (slug '%s'): %v", req.Name, req.Slug, err)
@@ -294,63 +309,25 @@ func (h *AdminAlbumHandler) UpdateAlbum(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	var nameUpdate string
-	var descUpdate *string
-	var isHiddenUpdate *bool
-	var locationUpdate *string
-	updateRequested := false
-
-	if req.Name != nil {
-		nameUpdate = *req.Name
-		updateRequested = true
-	} else {
-		nameUpdate = album.Name
+	if req.SortOrder != nil && !database.IsValidSortOrder(*req.SortOrder) {
+		WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Invalid sort_order")
+		return
 	}
 
-	if req.Description != nil {
-		descUpdate = req.Description
-		updateRequested = true
-	} else {
-		descUpdate = album.Description
-	}
-
-	if req.IsHidden != nil {
-		isHiddenUpdate = req.IsHidden
-		updateRequested = true
-	} else {
-		isHiddenUpdate = &album.IsHidden
-	}
-
-	if req.Location != nil {
-		locationUpdate = req.Location
-		updateRequested = true
-	} else {
-		locationUpdate = album.Location
-	}
-
-	if updateRequested {
-		err = h.AlbumRepo.Update(album.ID, nameUpdate, descUpdate, isHiddenUpdate, locationUpdate)
+	if req.Name != nil || req.Description != nil || req.IsHidden != nil || req.Location != nil || req.SortOrder != nil {
+		name := album.Name
+		if req.Name != nil {
+			name = *req.Name
+		}
+		err = h.AlbumRepo.Update(album.ID, name, req.Description, req.IsHidden, req.Location, req.SortOrder)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				WriteAPIError(w, http.StatusNotFound, "AlbumNotFound", "Album not found during update")
-			} else if strings.Contains(strings.ToLower(err.Error()), "unique") {
+			} else if isUniqueViolation(err) {
 				WriteAPIError(w, http.StatusConflict, "AlbumConflict", "Album name already exists")
 			} else {
 				log.Printf("Error updating album %d/%s: %v", album.ID, album.Slug, err)
 				WriteAPIError(w, http.StatusInternalServerError, "AlbumUpdateError", "Failed to update album")
-			}
-			return
-		}
-	}
-
-	if req.SortOrder != nil {
-		err = h.AlbumRepo.UpdateSortOrder(album.ID, *req.SortOrder)
-		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				WriteAPIError(w, http.StatusNotFound, "AlbumNotFound", "Album not found during sort order update")
-			} else {
-				log.Printf("Error updating sort order for album %d/%s: %v", album.ID, album.Slug, err)
-				WriteAPIError(w, http.StatusInternalServerError, "AlbumUpdateError", "Failed to update sort order")
 			}
 			return
 		}
@@ -363,7 +340,12 @@ func (h *AdminAlbumHandler) UpdateAlbum(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	updatedBanners, _ := h.AlbumRepo.GetBanners(updatedAlbum.ID)
+	updatedBanners, err := h.AlbumRepo.GetBanners(updatedAlbum.ID)
+	if err != nil {
+		log.Printf("Error loading banners for album %d: %v", updatedAlbum.ID, err)
+		WriteAPIError(w, http.StatusInternalServerError, "BannerFetchError", "Failed to load album banners")
+		return
+	}
 	WriteAPIResponse(w, http.StatusOK, convertAlbumToAdminResponse(updatedAlbum, updatedBanners))
 }
 

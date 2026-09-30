@@ -28,7 +28,7 @@ type AlbumRepositoryInterface interface {
 	GetByID(id uint) (*models.Album, error)
 	GetBySlug(slug string) (*models.Album, error)
 	FolderPathConflicts(folder string) (bool, error)
-	Update(albumID uint, name string, description *string, isHidden *bool, location *string) error
+	Update(albumID uint, name string, description *string, isHidden *bool, location *string, sortOrder *string) error
 	RequestZip(albumID uint) error
 	InvalidateZip(albumID uint) (*string, error)
 	MarkZipProcessing(albumID uint) error

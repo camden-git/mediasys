@@ -100,7 +100,7 @@ func (h *AdminAlbumGroupHandler) CreateGroup(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := h.GroupRepo.Create(group); err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "unique") {
+		if isUniqueViolation(err) {
 			WriteAPIError(w, http.StatusConflict, "GroupConflict", "Album group name or slug already exists")
 		} else {
 			log.Printf("Error creating album group '%s': %v", req.Name, err)
@@ -168,7 +168,7 @@ func (h *AdminAlbumGroupHandler) UpdateGroup(w http.ResponseWriter, r *http.Requ
 	if err := h.GroupRepo.Update(uint(id), name, slug, description, isHidden); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			WriteAPIError(w, http.StatusNotFound, "GroupNotFound", "Album group not found during update")
-		} else if strings.Contains(strings.ToLower(err.Error()), "unique") {
+		} else if isUniqueViolation(err) {
 			WriteAPIError(w, http.StatusConflict, "GroupConflict", "Album group name or slug already exists")
 		} else {
 			log.Printf("Error updating album group %d: %v", id, err)

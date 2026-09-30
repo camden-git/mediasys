@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/camden-git/mediasysbackend/database"
+	"github.com/camden-git/mediasysbackend/repository"
 	"github.com/camden-git/mediasysbackend/workers"
 	"github.com/go-chi/chi/v5"
 	"gorm.io/gorm"
@@ -33,6 +34,14 @@ func (ah *AlbumHandler) RequestAlbumZipGeneration(w http.ResponseWriter, r *http
 
 	err = ah.AlbumRepo.RequestZip(album.ID)
 	if err != nil {
+		if errors.Is(err, repository.ErrZipInProgress) {
+			WriteAPIError(w, http.StatusConflict, "AlbumZipConflict", "Album ZIP generation is already pending or processing.")
+			return
+		}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			WriteAPIError(w, http.StatusNotFound, "AlbumNotFound", "Album not found")
+			return
+		}
 		log.Printf("Error marking album zip pending for ID %d: %v", album.ID, err)
 		WriteAPIError(w, http.StatusInternalServerError, "AlbumZipRequestError", "Failed to request ZIP generation")
 		return
@@ -73,7 +82,10 @@ func (ah *AlbumHandler) serveAlbumZip(w http.ResponseWriter, r *http.Request, id
 
 	if album.ZipStatus != database.StatusDone || album.ZipPath == nil || *album.ZipPath == "" {
 		if album.ZipStatus == database.StatusPending || album.ZipStatus == database.StatusProcessing {
-			WriteAPIError(w, http.StatusAccepted, "AlbumZipPending", "ZIP archive is currently being generated. Please try again later.")
+			writeJSON(w, http.StatusAccepted, map[string]string{
+				"status":  album.ZipStatus,
+				"message": "ZIP archive is currently being generated. Please try again later.",
+			})
 		} else if album.ZipStatus == database.StatusError && album.ZipError != nil {
 			WriteAPIError(w, http.StatusConflict, "AlbumZipError", fmt.Sprintf("ZIP generation failed: %s", *album.ZipError))
 		} else {
