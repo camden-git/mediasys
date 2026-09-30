@@ -1,68 +1,59 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Link } from 'react-router-dom';
-import { getAlbums, getBannerUrl, getGroups } from '../../api.ts';
-import { Album, AlbumGroup } from '../../types.ts';
+import { useQuery } from '@tanstack/react-query';
+import { getAlbums, getBannerUrl } from '../../api.ts';
+import { useGroups } from '../../hooks/useGroups.ts';
+import { useDocumentTitle } from '../../hooks/useDocumentTitle.ts';
+import { queryKeys } from '../../lib/queryKeys.ts';
+import LoadingSpinner from '../elements/LoadingSpinner.tsx';
 import { ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 
+const browseLinks = [
+    { label: 'Groups', to: '/groups' },
+    { label: 'Collections', to: '/collections' },
+    { label: 'People', to: '/people' },
+];
+
 const AlbumList: React.FC = () => {
-    const [albums, setAlbums] = useState<Album[]>([]);
-    const [groups, setGroups] = useState<AlbumGroup[]>([]);
-    const [isLoading, setIsLoading] = useState<boolean>(true);
-    const [error, setError] = useState<string | null>(null);
-
-    useEffect(() => {
-        const fetchData = async () => {
-            setIsLoading(true);
-            setError(null);
-            try {
-                const [fetchedAlbums, fetchedGroups] = await Promise.all([getAlbums(), getGroups()]);
-                setAlbums(fetchedAlbums);
-                setGroups(fetchedGroups);
-            } catch (err: any) {
-                console.error('Failed to fetch data:', err);
-                setError(err.message || 'Failed to fetch albums');
-            } finally {
-                setIsLoading(false);
-            }
-        };
-
-        fetchData();
-    }, []);
+    useDocumentTitle('Albums');
+    const albumsQuery = useQuery({ queryKey: queryKeys.albums.list(), queryFn: () => getAlbums() });
+    const { groups, isLoading: groupsLoading, error: groupsError } = useGroups();
+    const albums = albumsQuery.data ?? [];
+    const isLoading = albumsQuery.isLoading || groupsLoading;
+    const fetchError = albumsQuery.error ?? groupsError;
+    const error = fetchError ? fetchError.message || 'Failed to fetch albums' : null;
 
     return (
         <div className='container mx-auto p-4'>
+            <h1 className='mb-4 text-3xl font-bold text-gray-950 dark:text-white'>Mediasys</h1>
+            <nav aria-label='Browse' className='mb-8 flex gap-4 text-sm font-medium'>
+                {browseLinks.map(({ label, to }) => (
+                    <Link
+                        key={to}
+                        to={to}
+                        className='text-zinc-700 underline decoration-zinc-400 hover:decoration-zinc-700 dark:text-zinc-300 dark:decoration-zinc-600 dark:hover:decoration-zinc-300'
+                    >
+                        {label}
+                    </Link>
+                ))}
+            </nav>
             {error && (
                 <>
                     <div className='mx-auto flex justify-center'>
                         <ExclamationTriangleIcon className='mr-3 h-6 w-6 text-red-500' />
-                        <p className='font-300 my-auto text-red-400'>Failed to get albums</p>
+                        <p className='my-auto font-light text-red-400'>Failed to get albums</p>
                     </div>
-                    <p className='m-auto ml-3 justify-center text-center font-light text-gray-600'>{error}</p>
+                    <p className='m-auto ml-3 justify-center text-center font-light text-gray-600 dark:text-gray-400'>
+                        {error}
+                    </p>
                 </>
             )}
             {isLoading && (
                 <div className='mx-auto flex justify-center'>
-                    <svg
-                        className='mr-3 h-6 w-6 animate-spin text-white'
-                        xmlns='http://www.w3.org/2000/svg'
-                        fill='none'
-                        viewBox='0 0 24 24'
-                    >
-                        <circle
-                            className='text-gray-400'
-                            cx='12'
-                            cy='12'
-                            r='10'
-                            stroke='currentColor'
-                            strokeWidth='4'
-                        ></circle>
-                        <path
-                            className='opacity-50'
-                            fill='currentColor'
-                            d='M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z'
-                        ></path>
-                    </svg>
-                    <p className='my-auto font-light text-gray-600'>Loading albums</p>
+                    <span className='mr-3'>
+                        <LoadingSpinner />
+                    </span>
+                    <p className='my-auto font-light text-gray-600 dark:text-gray-400'>Loading albums</p>
                 </div>
             )}
 
@@ -70,7 +61,7 @@ const AlbumList: React.FC = () => {
                 <>
                     {groups.length > 0 && (
                         <div className='mb-10'>
-                            <h2 className='mb-4 text-2xl font-bold'>Collections</h2>
+                            <h2 className='mb-4 text-2xl font-bold text-gray-950 dark:text-white'>Groups</h2>
                             <div className='grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4'>
                                 {groups.map((group) => (
                                     <Link
@@ -88,9 +79,11 @@ const AlbumList: React.FC = () => {
                                             <div className='h-32 w-full bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600' />
                                         )}
                                         <div className='p-4'>
-                                            <h3 className='mb-1 truncate font-semibold'>{group.name}</h3>
+                                            <h3 className='mb-1 truncate font-semibold text-gray-950 dark:text-white'>
+                                                {group.name}
+                                            </h3>
                                             {group.description && (
-                                                <p className='line-clamp-2 text-xs text-gray-500 italic'>
+                                                <p className='line-clamp-2 text-xs text-gray-500 italic dark:text-gray-400'>
                                                     {group.description}
                                                 </p>
                                             )}
@@ -106,22 +99,27 @@ const AlbumList: React.FC = () => {
                         </div>
                     )}
 
-                    <h1 className='mb-4 text-2xl font-bold'>Albums</h1>
+                    <h2 className='mb-4 text-2xl font-bold text-gray-950 dark:text-white'>Albums</h2>
                     <div className='grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4'>
                         {albums.length === 0 && (
-                            <p className='col-span-full text-center text-gray-500'>No albums found.</p>
+                            <p className='col-span-full text-center text-gray-500 dark:text-gray-400'>
+                                No albums found.
+                            </p>
                         )}
                         {albums.map((album) => (
                             <Link
                                 key={album.id}
                                 to={`/album/${album.slug}`}
-                                className='block overflow-hidden rounded-lg bg-white shadow transition-shadow duration-200 hover:shadow-md'
+                                className='block overflow-hidden rounded-lg bg-white shadow transition-shadow duration-200 hover:shadow-md dark:bg-zinc-800'
                             >
                                 <div className='p-4'>
-                                    <h2 className='mb-2 truncate text-xl font-semibold'>{album.name}</h2>
-                                    <p className='mb-1 text-sm text-gray-600'>/{album.folder_path}</p>
+                                    <h3 className='mb-2 truncate text-xl font-semibold text-gray-950 dark:text-white'>
+                                        {album.name}
+                                    </h3>
                                     {album.description && (
-                                        <p className='truncate text-xs text-gray-500 italic'>{album.description}</p>
+                                        <p className='truncate text-xs text-gray-500 italic dark:text-gray-400'>
+                                            {album.description}
+                                        </p>
                                     )}
                                 </div>
                             </Link>
