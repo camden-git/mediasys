@@ -3,8 +3,10 @@ import { Link } from 'react-router-dom';
 import { getBannerUrl } from '../../api.ts';
 import LoadingSpinner from '../elements/LoadingSpinner.tsx';
 import { useGroups } from '../../hooks/useGroups.ts';
+import { useDocumentTitle } from '../../hooks/useDocumentTitle.ts';
 
 const GroupsPage: React.FC = () => {
+    useDocumentTitle('Groups');
     const { groups, isLoading, error } = useGroups();
 
     if (isLoading) return <LoadingSpinner />;
@@ -12,8 +14,8 @@ const GroupsPage: React.FC = () => {
 
     return (
         <div className='mx-auto max-w-6xl px-4 py-12'>
-            <h1 className='mb-8 text-3xl font-bold text-gray-950 dark:text-white'>Event Collections</h1>
-            {groups.length === 0 && <p className='text-gray-500 dark:text-gray-400'>No collections yet.</p>}
+            <h1 className='mb-8 text-3xl font-bold text-gray-950 dark:text-white'>Groups</h1>
+            {groups.length === 0 && <p className='text-gray-500 dark:text-gray-400'>No groups yet.</p>}
             <div className='grid gap-6 sm:grid-cols-2 lg:grid-cols-3'>
                 {groups.map((group) => (
                     <Link

@@ -3,8 +3,10 @@ import { Link } from 'react-router-dom';
 import { getBannerUrl } from '../../api.ts';
 import LoadingSpinner from '../elements/LoadingSpinner.tsx';
 import { useCollections } from '../../hooks/useCollections.ts';
+import { useDocumentTitle } from '../../hooks/useDocumentTitle.ts';
 
 const CollectionsPage: React.FC = () => {
+    useDocumentTitle('Collections');
     const { collections, isLoading, error } = useCollections();
 
     if (isLoading) return <LoadingSpinner />;

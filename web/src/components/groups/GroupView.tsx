@@ -4,10 +4,12 @@ import { getBannerUrl } from '../../api.ts';
 import LoadingSpinner from '../elements/LoadingSpinner.tsx';
 import { SparklesIcon, PhotoIcon } from '@heroicons/react/16/solid';
 import { useGroup } from '../../hooks/useGroups.ts';
+import { useDocumentTitle } from '../../hooks/useDocumentTitle.ts';
 
 const GroupView: React.FC = () => {
     const { slug } = useParams<{ slug: string }>();
     const { group, isLoading, error } = useGroup(slug);
+    useDocumentTitle(group?.name);
 
     if (isLoading) return <LoadingSpinner />;
     if (error) return <p className='p-8 text-red-500'>{error.message || 'Failed to load group'}</p>;
