@@ -12,9 +12,15 @@ export const getPublicCollection = async (slug: string): Promise<Collection> => 
     return response.data.data;
 };
 
-export const getCollectionPhotos = async (slug: string, offset = 0, limit = 120): Promise<DirectoryListing> => {
+export const getCollectionPhotos = async (
+    slug: string,
+    offset = 0,
+    limit = 120,
+    signal?: AbortSignal,
+): Promise<DirectoryListing> => {
     const response = await http.get<ApiResponse<DirectoryListing>>(`/collections/${slug}/photos`, {
         params: { offset, limit },
+        signal,
     });
     return response.data.data;
 };

@@ -1,108 +1,38 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo } from 'react';
 import { useParams } from 'react-router-dom';
-import { FileInfo } from '../../types.ts';
-import { getCollectionPhotos } from '../../api/collections.ts';
 import { getBannerUrl } from '../../api.ts';
 import { PhotoIcon } from '@heroicons/react/16/solid';
-import { useCollection } from '../../hooks/useCollections.ts';
+import { useCollection, useCollectionPhotos } from '../../hooks/useCollections.ts';
+import { useDocumentTitle } from '../../hooks/useDocumentTitle.ts';
+import { usePaginatedLightbox } from '../../hooks/usePaginatedLightbox.ts';
 import LoadingSpinner from '../elements/LoadingSpinner.tsx';
 import PhotoPageLayout from '../album/PhotoPageLayout.tsx';
-
-const PAGE_SIZE = 120;
 
 const CollectionView: React.FC = () => {
     const { slug } = useParams<{ slug: string }>();
     const { collection, isLoading: collectionLoading, error: collectionError } = useCollection(slug);
+    const {
+        data,
+        isLoading: photosLoading,
+        error: photosError,
+        hasNextPage,
+        isFetchingNextPage,
+        fetchNextPage,
+    } = useCollectionPhotos(slug);
 
-    const [files, setFiles] = useState<FileInfo[]>([]);
-    const [total, setTotal] = useState(0);
-    const [hasMore, setHasMore] = useState(false);
-    const [photosLoading, setPhotosLoading] = useState(true);
-    const [photosError, setPhotosError] = useState<string | null>(null);
-    const [selectedImage, setSelectedImage] = useState<FileInfo | null>(null);
+    useDocumentTitle(collection?.name);
 
-    const isFetchingRef = useRef(false);
-    const hasUserScrolledRef = useRef(false);
-    const prefillCountRef = useRef(0);
-    const sentinelRef = useRef<HTMLDivElement | null>(null);
-
-    const fetchInitial = useCallback(async (s: string) => {
-        setFiles([]);
-        setTotal(0);
-        setHasMore(false);
-        setPhotosLoading(true);
-        setPhotosError(null);
-        prefillCountRef.current = 0;
-        hasUserScrolledRef.current = false;
-        try {
-            const data = await getCollectionPhotos(s, 0, PAGE_SIZE);
-            setFiles(data.files ?? []);
-            setTotal(data.total ?? 0);
-            setHasMore(data.has_more ?? false);
-        } catch (err: any) {
-            if (err.name !== 'AbortError') setPhotosError(err.message || 'Failed to load photos');
-        } finally {
-            setPhotosLoading(false);
-        }
-    }, []);
-
-    const loadMore = useCallback(async () => {
-        if (!slug || isFetchingRef.current || !hasMore) return;
-        isFetchingRef.current = true;
-        try {
-            const data = await getCollectionPhotos(slug, files.length, PAGE_SIZE);
-            setFiles((prev) => [...prev, ...(data.files ?? [])]);
-            setHasMore(data.has_more ?? false);
-            setTotal(data.total ?? 0);
-        } catch {
-            // ignore
-        } finally {
-            isFetchingRef.current = false;
-        }
-    }, [slug, files.length, hasMore]);
-
-    useEffect(() => {
-        if (slug) fetchInitial(slug);
-    }, [slug, fetchInitial]);
-
-    useEffect(() => {
-        const onScroll = () => {
-            if (window.scrollY > 0) hasUserScrolledRef.current = true;
-        };
-        window.addEventListener('scroll', onScroll, { passive: true });
-        return () => window.removeEventListener('scroll', onScroll);
-    }, []);
-
-    useEffect(() => {
-        if (!sentinelRef.current) return;
-        const el = sentinelRef.current;
-        const observer = new IntersectionObserver(
-            (entries) => {
-                if (entries[0].isIntersecting && hasUserScrolledRef.current) void loadMore();
-            },
-            { rootMargin: '0px 0px 300px 0px', threshold: 0.01 },
-        );
-        observer.observe(el);
-        return () => observer.disconnect();
-    }, [loadMore]);
-
-    // Prefill: load once without scroll if content doesn't fill viewport
-    useEffect(() => {
-        if (!hasMore) return;
-        const viewportH = window.innerHeight || 0;
-        const contentH = document.documentElement.scrollHeight || 0;
-        if (contentH <= viewportH + 40 && prefillCountRef.current < 1) {
-            prefillCountRef.current += 1;
-            void loadMore();
-        }
-    }, [files.length, hasMore, loadMore]);
-
+    const files = useMemo(() => data?.pages.flatMap((p) => p.files ?? []) ?? [], [data]);
+    const total = data?.pages[data.pages.length - 1]?.total ?? 0;
     const imageFiles = useMemo(() => files.filter((f) => !f.is_dir && f.thumbnail_path), [files]);
 
-    const selectedIndex = useMemo(() => {
-        if (!selectedImage) return -1;
-        return imageFiles.findIndex((f) => f.path === selectedImage.path);
-    }, [selectedImage, imageFiles]);
+    const lightbox = usePaginatedLightbox({
+        images: imageFiles,
+        hasMore: !!hasNextPage,
+        isFetchingMore: isFetchingNextPage,
+        fetchMore: fetchNextPage,
+        resetKey: slug,
+    });
 
     if (collectionLoading) return <LoadingSpinner />;
     if (collectionError)
@@ -139,22 +69,18 @@ const CollectionView: React.FC = () => {
             metadata={collectionMetadata}
             images={imageFiles}
             isLoading={photosLoading}
-            error={photosError}
-            hasMore={hasMore}
-            sentinelRef={sentinelRef}
-            selectedImage={selectedImage}
-            selectedIndex={selectedIndex}
+            error={photosError ? photosError.message || 'Failed to load photos' : null}
+            hasMore={!!hasNextPage}
+            sentinelRef={lightbox.sentinelRef}
+            selectedImage={lightbox.selectedImage}
+            selectedIndex={lightbox.selectedIndex}
             totalImages={total}
-            onImageClick={setSelectedImage}
-            onClose={() => setSelectedImage(null)}
-            onPrev={() => {
-                if (selectedIndex > 0) setSelectedImage(imageFiles[selectedIndex - 1]);
-            }}
-            onNext={() => {
-                if (selectedIndex < imageFiles.length - 1) setSelectedImage(imageFiles[selectedIndex + 1]);
-            }}
-            canPrev={selectedIndex > 0}
-            canNext={selectedIndex >= 0 && selectedIndex < imageFiles.length - 1}
+            onImageClick={lightbox.onImageClick}
+            onClose={lightbox.onClose}
+            onPrev={lightbox.onPrev}
+            onNext={lightbox.onNext}
+            canPrev={lightbox.canPrev}
+            canNext={lightbox.canNext}
             emptyMessage="No photos match this collection's filters."
         />
     );

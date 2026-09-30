@@ -28,11 +28,14 @@ export const queryKeys = {
         all: () => ['groups'] as const,
         list: () => [...queryKeys.groups.all(), 'list'] as const,
         detail: (slug: string) => [...queryKeys.groups.all(), slug] as const,
+        photos: (slug: string, minRating?: number) =>
+            [...queryKeys.groups.all(), slug, 'photos', minRating ?? null] as const,
     },
     collections: {
         all: () => ['collections'] as const,
         list: () => [...queryKeys.collections.all(), 'list'] as const,
         detail: (slug: string) => [...queryKeys.collections.all(), slug] as const,
+        photos: (slug: string) => [...queryKeys.collections.all(), slug, 'photos'] as const,
     },
     publicAlbum: {
         all: () => ['public-album'] as const,
