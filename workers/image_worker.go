@@ -438,12 +438,13 @@ func (ip *ImageProcessor) processDetection(job ImageJob, faceDetector *media.DNN
 					return fmt.Errorf("failed to read image for detection")
 				}
 				defer mat.Close()
+				var dErr error
 				if recognitionModel != nil && recognitionModel.Enabled {
-					detections = retinaFaceDetector.DetectFacesAndExtractEmbeddings(mat, recognitionModel)
+					detections, dErr = retinaFaceDetector.DetectFacesAndExtractEmbeddings(mat, recognitionModel)
 				} else {
-					detections = retinaFaceDetector.DetectFaces(mat)
+					detections, dErr = retinaFaceDetector.DetectFaces(mat)
 				}
-				return nil
+				return dErr
 			case faceDetector != nil && faceDetector.Enabled:
 				var dErr error
 				detections, dErr = media.DetectFacesAndAnimals(localPath, faceDetector)

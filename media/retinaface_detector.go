@@ -1,6 +1,8 @@
 package media
 
 import (
+	"errors"
+	"fmt"
 	"image"
 	"log"
 	"math"
@@ -163,9 +165,12 @@ func (r *RetinaFaceDetector) Close() {
 }
 
 // DetectFaces runs face detection using RetinaFace
-func (r *RetinaFaceDetector) DetectFaces(img gocv.Mat) []DetectionResult {
-	if r == nil || !r.Enabled || img.Empty() {
-		return nil
+func (r *RetinaFaceDetector) DetectFaces(img gocv.Mat) ([]DetectionResult, error) {
+	if r == nil || !r.Enabled {
+		return nil, errors.New("retinaface detector is not enabled")
+	}
+	if img.Empty() {
+		return nil, errors.New("empty image")
 	}
 
 	imgHeight := float32(img.Rows())
@@ -186,8 +191,7 @@ func (r *RetinaFaceDetector) DetectFaces(img gocv.Mat) []DetectionResult {
 		}
 	}
 	if len(outputNames) < 3 {
-		log.Printf("detection(retinaface): model has %d output layers (need ≥3): %v", len(outputNames), outputNames)
-		return nil
+		return nil, fmt.Errorf("retinaface model has %d output layers (need at least 3): %v", len(outputNames), outputNames)
 	}
 
 	// Fetch all outputs in one pass: separate Forward(name) calls reuse internal
@@ -224,23 +228,21 @@ func (r *RetinaFaceDetector) DetectFaces(img gocv.Mat) []DetectionResult {
 		for i, m := range mats {
 			totals[i] = m.Total()
 		}
-		log.Printf("detection(retinaface): could not identify outputs (numPriors=%d, totals=%v, names=%v)", numPriors, totals, outputNames)
-		return nil
+		return nil, fmt.Errorf("retinaface: could not identify outputs (numPriors=%d, totals=%v, names=%v)", numPriors, totals, outputNames)
 	}
 
 	return r.parseRetinaFaceOutput(*boxesMat, *scoresMat, *landmarksMat, imgWidth, imgHeight)
 }
 
 // parseRetinaFaceOutput parses the RetinaFace model outputs (boxes, scores, landmarks)
-func (r *RetinaFaceDetector) parseRetinaFaceOutput(boxes, scores, landmarks gocv.Mat, imgWidth, imgHeight float32) []DetectionResult {
+func (r *RetinaFaceDetector) parseRetinaFaceOutput(boxes, scores, landmarks gocv.Mat, imgWidth, imgHeight float32) ([]DetectionResult, error) {
 	// Derive numDetections from total element count (Total() works; Size()[1] doesn't for 3D blobs).
 	// boxes has numPriors×4 elements → numDetections = Total()/4
 	numDetections := boxes.Total() / 4
 
 	priors := r.Priors
 	if len(priors) != numDetections {
-		log.Printf("detection(retinaface): prior count %d != numDetections %d", len(priors), numDetections)
-		return nil
+		return nil, fmt.Errorf("retinaface: prior count %d != numDetections %d", len(priors), numDetections)
 	}
 
 	// Flatten each 3-D tensor [1, N, K] → [N, K] so GetFloatAt works as [row, col].
@@ -305,8 +307,7 @@ func (r *RetinaFaceDetector) parseRetinaFaceOutput(boxes, scores, landmarks gocv
 	}
 
 	detections = r.nonMaxSuppression(detections)
-	log.Printf("detection(retinaface): found %d faces (conf≥%.2f)", len(detections), r.ConfThreshold)
-	return detections
+	return detections, nil
 }
 
 // validateLandmarkGeometry filters phantom detections that span two nearby faces.
@@ -416,10 +417,14 @@ func (r *RetinaFaceDetector) calculateIoU(a, b DetectionResult) float32 {
 	return intersection / union
 }
 
-// DetectFacesAndExtractEmbeddings detects faces and extracts embeddings
-func (r *RetinaFaceDetector) DetectFacesAndExtractEmbeddings(img gocv.Mat, recognitionModel *FaceRecognitionModel) []DetectionResult {
-	detections := r.DetectFaces(img)
-	log.Printf("detection(retinaface): Found %d faces, recognition model enabled: %v", len(detections), recognitionModel != nil && recognitionModel.Enabled)
+// DetectFacesAndExtractEmbeddings detects faces and extracts embeddings. When a
+// recognition model is enabled, failing to embed any face is an error so faces
+// are never stored without an embedding.
+func (r *RetinaFaceDetector) DetectFacesAndExtractEmbeddings(img gocv.Mat, recognitionModel *FaceRecognitionModel) ([]DetectionResult, error) {
+	detections, err := r.DetectFaces(img)
+	if err != nil {
+		return nil, err
+	}
 
 	if recognitionModel != nil && recognitionModel.Enabled {
 		for i := range detections {
@@ -427,14 +432,15 @@ func (r *RetinaFaceDetector) DetectFacesAndExtractEmbeddings(img gocv.Mat, recog
 				detections[i].X, detections[i].Y,
 				detections[i].X+detections[i].W, detections[i].Y+detections[i].H,
 			))
-			embedding := recognitionModel.ExtractEmbedding(faceRegion)
+			embedding, err := recognitionModel.ExtractEmbedding(faceRegion)
 			faceRegion.Close()
-			if embedding != nil {
-				detections[i].Embedding = embedding
-				detections[i].ModelName = recognitionModel.ModelName
+			if err != nil {
+				return nil, fmt.Errorf("face %d: %w", i, err)
 			}
+			detections[i].Embedding = embedding
+			detections[i].ModelName = recognitionModel.ModelName
 		}
 	}
 
-	return detections
+	return detections, nil
 }

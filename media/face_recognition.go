@@ -1,6 +1,8 @@
 package media
 
 import (
+	"errors"
+	"fmt"
 	"image"
 	"log"
 	"math"
@@ -126,15 +128,17 @@ func (f *FaceRecognitionModel) Close() {
 }
 
 // ExtractEmbedding extracts a face embedding from a face region
-func (f *FaceRecognitionModel) ExtractEmbedding(faceRegion gocv.Mat) []float32 {
-	if f == nil || !f.Enabled || faceRegion.Empty() {
-		return nil
+func (f *FaceRecognitionModel) ExtractEmbedding(faceRegion gocv.Mat) ([]float32, error) {
+	if f == nil || !f.Enabled {
+		return nil, errors.New("face recognition model is not enabled")
+	}
+	if faceRegion.Empty() {
+		return nil, errors.New("empty face region")
 	}
 
 	processed := f.preprocessFace(faceRegion)
 	if processed.Empty() {
-		log.Printf("recognition: preprocessFace returned empty matrix")
-		return nil
+		return nil, errors.New("preprocessing produced an empty face image")
 	}
 	defer processed.Close()
 
@@ -156,11 +160,10 @@ func (f *FaceRecognitionModel) ExtractEmbedding(faceRegion gocv.Mat) []float32 {
 
 	embedding := f.extractEmbeddingVector(output)
 	if len(embedding) == 0 {
-		log.Printf("recognition: empty embedding from model output shape %v", output.Size())
-		return nil
+		return nil, fmt.Errorf("empty embedding from model output shape %v", output.Size())
 	}
 
-	return f.normalizeEmbedding(embedding)
+	return f.normalizeEmbedding(embedding), nil
 }
 
 // preprocessFace prepares a face region for embedding extraction

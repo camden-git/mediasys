@@ -1,6 +1,7 @@
 package media
 
 import (
+	"errors"
 	"fmt"
 	"image"
 	"log"
@@ -103,9 +104,12 @@ func (d *DNNFaceDetector) Close() {
 }
 
 // DetectFaces runs face detection using the loaded DNN model
-func (d *DNNFaceDetector) DetectFaces(img gocv.Mat) []DetectionResult {
-	if d == nil || !d.Enabled || img.Empty() {
-		return nil
+func (d *DNNFaceDetector) DetectFaces(img gocv.Mat) ([]DetectionResult, error) {
+	if d == nil || !d.Enabled {
+		return nil, errors.New("dnn detector is not enabled")
+	}
+	if img.Empty() {
+		return nil, errors.New("empty image")
 	}
 
 	imgHeight := float32(img.Rows())
@@ -122,18 +126,14 @@ func (d *DNNFaceDetector) DetectFaces(img gocv.Mat) []DetectionResult {
 
 	sizes := detectionsMat.Size()
 	if len(sizes) != 4 || sizes[0] != 1 || sizes[1] != 1 {
-		log.Printf("detection(dnn): Warning - Unexpected output matrix dimensions: %v", sizes)
-
 		if len(sizes) < 3 {
-			log.Printf("detection(dnn): Error - Output matrix dimensions too small to parse")
-			return results
+			return nil, fmt.Errorf("dnn: unexpected output matrix dimensions %v", sizes)
 		}
 	}
 
 	numDetections := sizes[2]
 	if numDetections == 0 {
-		// log.Printf("detection(dnn): No detections in output matrix.")
-		return results // No detections found
+		return results, nil
 	}
 
 	// reshape the Mat to 2D: [N, 7] for easier access with GetFloatAt(row, col)
@@ -168,13 +168,12 @@ func (d *DNNFaceDetector) DetectFaces(img gocv.Mat) []DetectionResult {
 		}
 	}
 
-	return results
+	return results, nil
 }
 
 func DetectFacesAndAnimals(imagePath string, faceDetector *DNNFaceDetector) ([]DetectionResult, error) {
 	if faceDetector == nil || !faceDetector.Enabled {
-		log.Println("detection(dnn): face detector not provided or not enabled")
-		return nil, nil
+		return nil, errors.New("dnn face detector not provided or not enabled")
 	}
 
 	img := gocv.IMRead(imagePath, gocv.IMReadColor)
@@ -183,8 +182,5 @@ func DetectFacesAndAnimals(imagePath string, faceDetector *DNNFaceDetector) ([]D
 	}
 	defer img.Close()
 
-	detections := faceDetector.DetectFaces(img)
-	log.Printf("detection(dnn): found %d face(s) in %s", len(detections), imagePath)
-
-	return detections, nil
+	return faceDetector.DetectFaces(img)
 }
