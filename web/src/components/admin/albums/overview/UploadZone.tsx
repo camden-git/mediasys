@@ -43,6 +43,15 @@ const UploadZone: React.FC<UploadZoneProps> = ({ disabled, onFiles }) => {
     const fileInputRef = React.useRef<HTMLInputElement>(null);
     const folderInputRef = React.useRef<HTMLInputElement>(null);
 
+    // dragenter/dragleave fire for every child element crossed, so count them to avoid flicker
+    const dragDepth = React.useRef(0);
+
+    const handleDragEnter = (e: React.DragEvent) => {
+        e.preventDefault();
+        dragDepth.current += 1;
+        if (!disabled) setIsDragOver(true);
+    };
+
     const handleDragOver = (e: React.DragEvent) => {
         e.preventDefault();
         if (!disabled) setIsDragOver(true);
@@ -50,11 +59,13 @@ const UploadZone: React.FC<UploadZoneProps> = ({ disabled, onFiles }) => {
 
     const handleDragLeave = (e: React.DragEvent) => {
         e.preventDefault();
-        setIsDragOver(false);
+        dragDepth.current = Math.max(0, dragDepth.current - 1);
+        if (dragDepth.current === 0) setIsDragOver(false);
     };
 
     const handleDrop = async (e: React.DragEvent) => {
         e.preventDefault();
+        dragDepth.current = 0;
         setIsDragOver(false);
         if (disabled) return;
 
@@ -97,6 +108,7 @@ const UploadZone: React.FC<UploadZoneProps> = ({ disabled, onFiles }) => {
 
     return (
         <div
+            onDragEnter={handleDragEnter}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
