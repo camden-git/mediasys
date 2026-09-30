@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
@@ -76,7 +75,11 @@ func (h *AdminAlbumGroupHandler) CreateGroup(w http.ResponseWriter, r *http.Requ
 		Description *string `json:"description"`
 		IsHidden    *bool   `json:"is_hidden"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
+		if isBodyTooLarge(err) {
+			WriteAPIError(w, http.StatusRequestEntityTooLarge, "PayloadTooLarge", "Request body is too large")
+			return
+		}
 		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request body: "+err.Error())
 		return
 	}
@@ -138,7 +141,11 @@ func (h *AdminAlbumGroupHandler) UpdateGroup(w http.ResponseWriter, r *http.Requ
 		Description *string `json:"description"`
 		IsHidden    *bool   `json:"is_hidden"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
+		if isBodyTooLarge(err) {
+			WriteAPIError(w, http.StatusRequestEntityTooLarge, "PayloadTooLarge", "Request body is too large")
+			return
+		}
 		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request body: "+err.Error())
 		return
 	}
@@ -300,7 +307,11 @@ func (h *AdminAlbumGroupHandler) SetAlbumGroup(w http.ResponseWriter, r *http.Re
 	var req struct {
 		GroupID *uint `json:"group_id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
+		if isBodyTooLarge(err) {
+			WriteAPIError(w, http.StatusRequestEntityTooLarge, "PayloadTooLarge", "Request body is too large")
+			return
+		}
 		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request body: "+err.Error())
 		return
 	}

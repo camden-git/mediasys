@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
@@ -82,7 +81,11 @@ func (h *AdminImageTagHandler) AddManualTag(w http.ResponseWriter, r *http.Reque
 		TagKey   string `json:"tag_key"`
 		TagValue string `json:"tag_value"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
+		if isBodyTooLarge(err) {
+			WriteAPIError(w, http.StatusRequestEntityTooLarge, "PayloadTooLarge", "Request body is too large")
+			return
+		}
 		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request body: "+err.Error())
 		return
 	}
@@ -111,7 +114,11 @@ func (h *AdminImageTagHandler) RemoveManualTag(w http.ResponseWriter, r *http.Re
 		TagKey   string `json:"tag_key"`
 		TagValue string `json:"tag_value"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
+		if isBodyTooLarge(err) {
+			WriteAPIError(w, http.StatusRequestEntityTooLarge, "PayloadTooLarge", "Request body is too large")
+			return
+		}
 		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request body: "+err.Error())
 		return
 	}
@@ -177,7 +184,11 @@ func (h *AdminImageTagHandler) SetAlbumDefaultTags(w http.ResponseWriter, r *htt
 			TagValue string `json:"tag_value"`
 		} `json:"tags"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
+		if isBodyTooLarge(err) {
+			WriteAPIError(w, http.StatusRequestEntityTooLarge, "PayloadTooLarge", "Request body is too large")
+			return
+		}
 		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request body: "+err.Error())
 		return
 	}

@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
@@ -30,7 +29,11 @@ func (ph *PersonHandler) CreatePerson(w http.ResponseWriter, r *http.Request) {
 		Aliases     []string `json:"aliases"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
+		if isBodyTooLarge(err) {
+			WriteAPIError(w, http.StatusRequestEntityTooLarge, "PayloadTooLarge", "Request body is too large")
+			return
+		}
 		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request body: "+err.Error())
 		return
 	}
@@ -186,7 +189,11 @@ func (ph *PersonHandler) UpdatePerson(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		PrimaryName string `json:"primary_name"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
+		if isBodyTooLarge(err) {
+			WriteAPIError(w, http.StatusRequestEntityTooLarge, "PayloadTooLarge", "Request body is too large")
+			return
+		}
 		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request body: "+err.Error())
 		return
 	}
@@ -286,7 +293,11 @@ func (ph *PersonHandler) AddAlias(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name string `json:"name"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
+		if isBodyTooLarge(err) {
+			WriteAPIError(w, http.StatusRequestEntityTooLarge, "PayloadTooLarge", "Request body is too large")
+			return
+		}
 		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request body: "+err.Error())
 		return
 	}
@@ -378,7 +389,11 @@ func (ph *PersonHandler) SetKeyPhoto(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		FaceID uint `json:"face_id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
+		if isBodyTooLarge(err) {
+			WriteAPIError(w, http.StatusRequestEntityTooLarge, "PayloadTooLarge", "Request body is too large")
+			return
+		}
 		WriteAPIError(w, http.StatusBadRequest, "InvalidBody", "invalid request body")
 		return
 	}

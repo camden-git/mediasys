@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
@@ -13,6 +14,10 @@ const (
 
 	// maxBannerUploadSize caps a banner upload request body.
 	maxBannerUploadSize = 20 << 20
+
+	// maxJSONBodySize caps the body of JSON endpoints, which only carry small
+	// payloads. The reverse proxy allows unbounded bodies for uploads.
+	maxJSONBodySize = 64 << 10
 )
 
 // parseListWindow reads the offset/limit query parameters of a public listing.
@@ -46,4 +51,18 @@ func parseBannerForm(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 	return true
+}
+
+// decodeJSONBody caps the request body at maxJSONBodySize and decodes it into
+// dst. On failure callers should check isBodyTooLarge on the error so oversized
+// bodies get a 413 instead of a generic 400.
+func decodeJSONBody(w http.ResponseWriter, r *http.Request, dst any) error {
+	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBodySize)
+	return json.NewDecoder(r.Body).Decode(dst)
+}
+
+// isBodyTooLarge reports whether err came from exceeding a MaxBytesReader limit.
+func isBodyTooLarge(err error) bool {
+	var tooLarge *http.MaxBytesError
+	return errors.As(err, &tooLarge)
 }

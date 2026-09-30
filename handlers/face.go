@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"encoding/json"
 	"errors"
 	"log"
 	"math"
@@ -55,7 +54,11 @@ func (fh *FaceHandler) AddFace(w http.ResponseWriter, r *http.Request) {
 		Y2        int    `json:"y2"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
+		if isBodyTooLarge(err) {
+			WriteAPIError(w, http.StatusRequestEntityTooLarge, "PayloadTooLarge", "Request body is too large")
+			return
+		}
 		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request body: "+err.Error())
 		return
 	}
@@ -185,7 +188,11 @@ func (fh *FaceHandler) UpdateFace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var reqMap map[string]interface{}
-	if err := json.NewDecoder(r.Body).Decode(&reqMap); err != nil {
+	if err := decodeJSONBody(w, r, &reqMap); err != nil {
+		if isBodyTooLarge(err) {
+			WriteAPIError(w, http.StatusRequestEntityTooLarge, "PayloadTooLarge", "Request body is too large")
+			return
+		}
 		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request body: "+err.Error())
 		return
 	}
@@ -491,7 +498,11 @@ func (fh *FaceHandler) TagFace(w http.ResponseWriter, r *http.Request) {
 		PersonID uint `json:"person_id"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
+		if isBodyTooLarge(err) {
+			WriteAPIError(w, http.StatusRequestEntityTooLarge, "PayloadTooLarge", "Request body is too large")
+			return
+		}
 		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request body: "+err.Error())
 		return
 	}

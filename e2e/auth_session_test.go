@@ -461,3 +461,19 @@ func TestCORSPreflightOnPeopleAndFaceRoutes(t *testing.T) {
 		}
 	}
 }
+
+func TestOversizedJSONBodyRejected(t *testing.T) {
+	env := requireShared(t)
+	big := `{"username":"` + strings.Repeat("a", 128<<10) + `","password":"x"}`
+	cases := []struct{ path, token string }{
+		{"/api/auth/login", ""},
+		{"/api/auth/register", ""},
+		{"/api/admin/users", env.adminToken},
+	}
+	for _, c := range cases {
+		r := doRequest(t, http.MethodPost, c.path, c.token, strings.NewReader(big), "application/json")
+		if r.StatusCode != http.StatusRequestEntityTooLarge {
+			t.Fatalf("%s: expected 413, got %d %s", c.path, r.StatusCode, r.Body)
+		}
+	}
+}

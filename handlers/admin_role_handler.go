@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -170,7 +169,11 @@ func (h *AdminRoleHandler) GetRole(w http.ResponseWriter, r *http.Request) {
 // @Security BearerAuth
 func (h *AdminRoleHandler) CreateRole(w http.ResponseWriter, r *http.Request) {
 	var payload RoleCreatePayload
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+	if err := decodeJSONBody(w, r, &payload); err != nil {
+		if isBodyTooLarge(err) {
+			WriteAPIError(w, http.StatusRequestEntityTooLarge, "PayloadTooLarge", "Request body is too large")
+			return
+		}
 		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request payload: "+err.Error())
 		return
 	}
@@ -286,7 +289,11 @@ func (h *AdminRoleHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var payload RoleUpdatePayload
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+	if err := decodeJSONBody(w, r, &payload); err != nil {
+		if isBodyTooLarge(err) {
+			WriteAPIError(w, http.StatusRequestEntityTooLarge, "PayloadTooLarge", "Request body is too large")
+			return
+		}
 		WriteAPIError(w, http.StatusBadRequest, "InvalidPayload", "Invalid request payload: "+err.Error())
 		return
 	}
