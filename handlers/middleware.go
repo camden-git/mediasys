@@ -40,44 +40,9 @@ func parseAuthClaims(tokenString string) (*authClaims, error) {
 // It verifies the token and, if valid, fetches the user and adds them to the request context.
 func AuthMiddleware(userRepo repository.UserRepository, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			WriteAPIError(w, http.StatusUnauthorized, "AuthHeaderMissing", "Authorization header required")
-			return
-		}
-
-		parts := strings.Split(authHeader, " ")
-		if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
-			WriteAPIError(w, http.StatusUnauthorized, "AuthHeaderFormat", "Authorization header format must be Bearer {token}")
-			return
-		}
-		tokenString := parts[1]
-
-		claims, err := parseAuthClaims(tokenString)
-		if err != nil {
-			WriteAPIError(w, http.StatusUnauthorized, "InvalidToken", "Invalid or expired token")
-			return
-		}
-
-		userIDStr := claims.Subject
-		var userID uint
-		// Convert userIDStr (which is fmt.Sprint(user.ID)) back to uint
-		if _, err := fmt.Sscan(userIDStr, &userID); err != nil {
-			WriteAPIError(w, http.StatusUnauthorized, "InvalidTokenSubject", "Invalid user ID in token")
-			// Log this error server-side as it indicates a malformed token subject
-			fmt.Printf("Error parsing userID from token subject '%s': %v\n", userIDStr, err)
-			return
-		}
-
-		user, err := userRepo.GetByID(userID)
-		if err != nil {
-			// This could happen if the user was deleted after the token was issued.
-			WriteAPIError(w, http.StatusUnauthorized, "UserNotFound", "User not found")
-			return
-		}
-
-		if user.TokenVersion != claims.TokenVersion {
-			WriteAPIError(w, http.StatusUnauthorized, "InvalidToken", "Token has been revoked")
+		user, authErr := authenticateRequest(userRepo, r)
+		if authErr != nil {
+			WriteAPIError(w, http.StatusUnauthorized, authErr.code, authErr.message)
 			return
 		}
 
@@ -85,6 +50,64 @@ func AuthMiddleware(userRepo repository.UserRepository, next http.Handler) http.
 		ctx := context.WithValue(r.Context(), UserContextKey, user)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+type authError struct {
+	code    string
+	message string
+}
+
+// authenticateRequest verifies the request's bearer token and loads its user.
+func authenticateRequest(userRepo repository.UserRepository, r *http.Request) (*models.User, *authError) {
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" {
+		return nil, &authError{"AuthHeaderMissing", "Authorization header required"}
+	}
+
+	parts := strings.Split(authHeader, " ")
+	if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
+		return nil, &authError{"AuthHeaderFormat", "Authorization header format must be Bearer {token}"}
+	}
+	tokenString := parts[1]
+
+	claims, err := parseAuthClaims(tokenString)
+	if err != nil {
+		return nil, &authError{"InvalidToken", "Invalid or expired token"}
+	}
+
+	userIDStr := claims.Subject
+	var userID uint
+	// Convert userIDStr (which is fmt.Sprint(user.ID)) back to uint
+	if _, err := fmt.Sscan(userIDStr, &userID); err != nil {
+		// Log this error server-side as it indicates a malformed token subject
+		fmt.Printf("Error parsing userID from token subject '%s': %v\n", userIDStr, err)
+		return nil, &authError{"InvalidTokenSubject", "Invalid user ID in token"}
+	}
+
+	user, err := userRepo.GetByID(userID)
+	if err != nil {
+		// This could happen if the user was deleted after the token was issued.
+		return nil, &authError{"UserNotFound", "User not found"}
+	}
+
+	if user.TokenVersion != claims.TokenVersion {
+		return nil, &authError{"InvalidToken", "Token has been revoked"}
+	}
+	return user, nil
+}
+
+// optionalRequestUser returns the user authenticated by the request's bearer token, or nil
+// if the request is anonymous or its token is invalid. It is for public routes that grant
+// authenticated users extra access.
+func optionalRequestUser(userRepo repository.UserRepository, r *http.Request) *models.User {
+	if userRepo == nil || r.Header.Get("Authorization") == "" {
+		return nil
+	}
+	user, authErr := authenticateRequest(userRepo, r)
+	if authErr != nil {
+		return nil
+	}
+	return user
 }
 
 // RequireGlobalPermission is a middleware that checks if the authenticated user has

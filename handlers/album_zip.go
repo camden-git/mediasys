@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/camden-git/mediasysbackend/database"
+	"github.com/camden-git/mediasysbackend/models"
 	"github.com/camden-git/mediasysbackend/repository"
 	"github.com/camden-git/mediasysbackend/workers"
 	"github.com/go-chi/chi/v5"
@@ -60,16 +61,18 @@ func (ah *AlbumHandler) RequestAlbumZipGeneration(w http.ResponseWriter, r *http
 
 func (ah *AlbumHandler) DownloadAlbumZipByID(w http.ResponseWriter, r *http.Request) {
 	identifier := chi.URLParam(r, "id")
-	ah.serveAlbumZip(w, r, identifier)
+	album, err := ah.getAlbumByIdentifier(identifier)
+	ah.serveAlbumZip(w, r, identifier, album, err)
 }
 
 func (ah *AlbumHandler) DownloadAlbumZip(w http.ResponseWriter, r *http.Request) {
 	identifier := chi.URLParam(r, "album_identifier")
-	ah.serveAlbumZip(w, r, identifier)
+	album, _, err := ah.getPublicAlbumByIdentifier(r, identifier)
+	ah.serveAlbumZip(w, r, identifier, album, err)
 }
 
-func (ah *AlbumHandler) serveAlbumZip(w http.ResponseWriter, r *http.Request, identifier string) {
-	album, err := ah.getAlbumByIdentifier(identifier)
+// serveAlbumZip serves the archive of album, which was looked up by identifier with the given error.
+func (ah *AlbumHandler) serveAlbumZip(w http.ResponseWriter, r *http.Request, identifier string, album *models.Album, err error) {
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			WriteAPIError(w, http.StatusNotFound, "AlbumNotFound", "Album not found")

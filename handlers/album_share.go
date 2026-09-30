@@ -15,7 +15,7 @@ import (
 func (ah *AlbumHandler) ShareAlbumHTML(w http.ResponseWriter, r *http.Request) {
 	identifier := chi.URLParam(r, "album_identifier")
 
-	album, err := ah.getAlbumByIdentifier(identifier)
+	album, _, err := ah.getPublicAlbumByIdentifier(r, identifier)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			writeShareNotFound(w)

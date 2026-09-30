@@ -14,7 +14,7 @@ import (
 func (ah *AlbumHandler) GetAlbumContents(w http.ResponseWriter, r *http.Request) {
 	identifier := chi.URLParam(r, "album_identifier")
 
-	album, err := ah.getAlbumByIdentifier(identifier)
+	album, private, err := ah.getPublicAlbumByIdentifier(r, identifier)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			WriteAPIError(w, http.StatusNotFound, "AlbumNotFound", "Album not found")
@@ -58,6 +58,6 @@ func (ah *AlbumHandler) GetAlbumContents(w http.ResponseWriter, r *http.Request)
 		Limit:   limit,
 		HasMore: offset+len(files) < total,
 	}
-	setCacheHeaders(w, 120)
+	setAlbumCacheHeaders(w, private, 120)
 	WriteAPIResponse(w, http.StatusOK, listing)
 }
