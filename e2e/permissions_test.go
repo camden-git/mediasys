@@ -79,3 +79,105 @@ func TestPerAlbumPermissions(t *testing.T) {
 		}
 	})
 }
+
+// directAlbumPermissions returns the user's direct permissions on albumID, as seen by the admin.
+func directAlbumPermissions(t *testing.T, userID, albumID uint) []string {
+	t.Helper()
+	resp := doRequest(t, http.MethodGet, fmt.Sprintf("/api/admin/users/%d", userID), requireShared(t).adminToken, nil, "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("failed to get user %d: %d %s", userID, resp.StatusCode, resp.Body)
+	}
+	var user struct {
+		AlbumPermissions []struct {
+			AlbumID     uint     `json:"album_id"`
+			Permissions []string `json:"permissions"`
+		} `json:"album_permissions"`
+	}
+	resp.decodeData(t, &user)
+	for _, p := range user.AlbumPermissions {
+		if p.AlbumID == albumID {
+			return p.Permissions
+		}
+	}
+	return nil
+}
+
+// TestAlbumMemberManagersCannotGrantWhatTheyLack verifies album member managers (per-album
+// or global) can only hand out album permissions they hold on that album themselves.
+func TestAlbumMemberManagersCannotGrantWhatTheyLack(t *testing.T) {
+	env := requireShared(t)
+	suffix := randomSuffix()
+
+	album := createAlbum(t, env.adminToken, "Grant "+suffix, "grant-"+suffix, "")
+	secCleanupDelete(t, fmt.Sprintf("/api/admin/albums/%d", album.ID))
+	usersPath := fmt.Sprintf("/api/admin/albums/%d/users", album.ID)
+
+	manager := secMakeCleanUser(t, "am_manager_"+suffix, nil, nil)
+	managerPerms := []string{"album.manage.members", "album.photo.upload"}
+	grantAlbumPermission(t, env.adminToken, album.ID, manager.ID, managerPerms)
+	managerToken := secLoginAs(t, manager.Username)
+
+	globalManager := secMakeCleanUser(t, "am_global_"+suffix, []string{"album.manage.members.global"}, nil)
+	globalToken := secLoginAs(t, globalManager.Username)
+
+	member := secMakeCleanUser(t, "am_member_"+suffix, nil, nil)
+	memberPath := fmt.Sprintf("%s/%d", usersPath, member.ID)
+
+	t.Run("cannot grant self a permission not held", func(t *testing.T) {
+		selfPath := fmt.Sprintf("%s/%d", usersPath, manager.ID)
+		secExpectForbidden(t, doJSON(t, http.MethodPut, selfPath, managerToken, map[string]any{
+			"permissions": append([]string{"album.photo.delete"}, managerPerms...),
+		}))
+		if got := directAlbumPermissions(t, manager.ID, album.ID); len(got) != len(managerPerms) {
+			t.Fatalf("manager permissions changed despite 403: %v", got)
+		}
+	})
+
+	t.Run("cannot add a member with a permission not held", func(t *testing.T) {
+		secExpectForbidden(t, doJSON(t, http.MethodPost, usersPath, managerToken, map[string]any{
+			"user_id": member.ID, "permissions": []string{"album.photo.delete"},
+		}))
+		secExpectForbidden(t, doJSON(t, http.MethodPost, usersPath, globalToken, map[string]any{
+			"user_id": member.ID, "permissions": []string{"album.view.content"},
+		}))
+		if got := directAlbumPermissions(t, member.ID, album.ID); got != nil {
+			t.Fatalf("member was added despite 403: %v", got)
+		}
+	})
+
+	t.Run("can add a member with held permissions", func(t *testing.T) {
+		resp := doJSON(t, http.MethodPost, usersPath, managerToken, map[string]any{
+			"user_id": member.ID, "permissions": []string{"album.photo.upload"},
+		})
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatalf("expected 201, got %d: %s", resp.StatusCode, resp.Body)
+		}
+	})
+
+	t.Run("cannot extend a member with a permission not held", func(t *testing.T) {
+		secExpectForbidden(t, doJSON(t, http.MethodPut, memberPath, managerToken, map[string]any{
+			"permissions": []string{"album.photo.upload", "album.photo.editmeta"},
+		}))
+		secExpectForbidden(t, doJSON(t, http.MethodPut, memberPath, globalToken, map[string]any{
+			"permissions": []string{"album.photo.upload", "album.view.content"},
+		}))
+		if got := directAlbumPermissions(t, member.ID, album.ID); len(got) != 1 || got[0] != "album.photo.upload" {
+			t.Fatalf("member permissions changed despite 403: %v", got)
+		}
+	})
+
+	t.Run("existing permissions the caller lacks can be kept", func(t *testing.T) {
+		resp := doJSON(t, http.MethodPut, memberPath, env.adminToken, map[string]any{
+			"permissions": []string{"album.photo.upload", "album.photo.delete"},
+		})
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("admin update failed: %d %s", resp.StatusCode, resp.Body)
+		}
+		resp = doJSON(t, http.MethodPut, memberPath, managerToken, map[string]any{
+			"permissions": []string{"album.photo.delete"},
+		})
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("expected 200 keeping an existing permission, got %d: %s", resp.StatusCode, resp.Body)
+		}
+	})
+}

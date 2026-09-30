@@ -302,6 +302,15 @@ func (h *AdminAlbumUserHandler) AddUserToAlbum(w http.ResponseWriter, r *http.Re
 		}
 	}
 
+	caller, ok := requestUser(w, r)
+	if !ok {
+		return
+	}
+	if msg := albumGrantDenial(caller, uint(albumID), payload.Permissions, nil); msg != "" {
+		WriteAPIError(w, http.StatusForbidden, "ForbiddenPermissionGrant", msg)
+		return
+	}
+
 	existingPerm, err := h.UserRepo.GetUserAlbumPermission(payload.UserID, uint(albumID))
 	if err == nil && existingPerm != nil {
 		WriteAPIError(w, http.StatusConflict, "AlbumUserConflict", "User already has permissions for this album")
@@ -389,6 +398,15 @@ func (h *AdminAlbumUserHandler) UpdateUserAlbumPermissions(w http.ResponseWriter
 		} else {
 			WriteAPIError(w, http.StatusInternalServerError, "AlbumUserFetchError", "Failed to retrieve user album permissions")
 		}
+		return
+	}
+
+	caller, ok := requestUser(w, r)
+	if !ok {
+		return
+	}
+	if msg := albumGrantDenial(caller, uint(albumID), payload.Permissions, userAlbumPerm.Permissions); msg != "" {
+		WriteAPIError(w, http.StatusForbidden, "ForbiddenPermissionGrant", msg)
 		return
 	}
 
