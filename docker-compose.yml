@@ -23,7 +23,7 @@ services:
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY:-mediasys}
-      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-change-me-please}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:?Set S3_SECRET_KEY in .env (see .env.example)}
     volumes:
       - storage-data:/data
     ports:
@@ -52,19 +52,34 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-mediasys}:${POSTGRES_PASSWORD:-mediasys}@postgres:5432/${POSTGRES_DB:-mediasys}?sslmode=disable
       S3_ENDPOINT: storage:9000
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:-mediasys}
-      S3_SECRET_KEY: ${S3_SECRET_KEY:-change-me-please}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?Set S3_SECRET_KEY in .env (see .env.example)}
       S3_BUCKET: ${S3_BUCKET:-mediasys}
+      S3_REGION: ${S3_REGION:-us-east-1}
       S3_USE_SSL: "false"
-      # required: the server refuses to start without a real secret (see .env.example)
-      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env (see .env.example) — try: openssl rand -hex 32}
+      PORT: "8080"
+      DATABASE_DEBUG: ${DATABASE_DEBUG:-false}
+      # required: the server refuses to start without a real secret of 32+ characters
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET (32+ characters) in .env (see .env.example) (openssl rand -hex 32 makes one)}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8080,http://localhost:5173}
       PUBLIC_URL: ${PUBLIC_URL:-}
       FACE_RECOGNITION_ENABLED: ${FACE_RECOGNITION_ENABLED:-true}
       FACE_RECOGNITION_MODEL_NAME: ${FACE_RECOGNITION_MODEL_NAME:-arcface}
+      FACE_RECOGNITION_THRESHOLD: ${FACE_RECOGNITION_THRESHOLD:-0.6}
       CUDA_ENABLED: ${CUDA_ENABLED:-false}
+      RETINAFACE_CUDA: ${RETINAFACE_CUDA:-false}
+      ARCFACE_CUDA: ${ARCFACE_CUDA:-false}
       TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
       TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
       MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-200}
+      THUMBNAIL_MAX_SIZE: ${THUMBNAIL_MAX_SIZE:-300}
+      THUMBNAIL_QUEUE_SIZE: ${THUMBNAIL_QUEUE_SIZE:-50}
+      NUM_THUMBNAIL_WORKERS: ${NUM_THUMBNAIL_WORKERS:-2}
+      NUM_DETECTION_WORKERS: ${NUM_DETECTION_WORKERS:-1}
+      DETECTION_QUEUE_SIZE: ${DETECTION_QUEUE_SIZE:-10}
+      # 0 disables the periodic memory trimmer
+      MEMORY_TRIM_INTERVAL_MINUTES: ${MEMORY_TRIM_INTERVAL_MINUTES:-30}
+      # soft memory limit read by the Go runtime, e.g. 2GiB (unset = no limit)
+      GOMEMLIMIT: ${GOMEMLIMIT:-}
     volumes:
       # face detection / recognition model files (read-only)
       - ${MODELS_DIR:-./ml-models}:/models:ro

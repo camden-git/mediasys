@@ -179,7 +179,7 @@ func LoadConfig() (Config, error) {
 	memoryTrimInterval := errs.envInt("MEMORY_TRIM_INTERVAL_MINUTES", 30, 0)
 
 	// Legacy DNN face detection
-	faceDNNConfig := getEnvOrDefault("FACE_DNN_CONFIG_PATH", "./models/deploy.prototxt.txt")
+	faceDNNConfig := getEnvOrDefault("FACE_DNN_CONFIG_PATH", "./models/deploy.prototxt")
 	faceDNNModel := getEnvOrDefault("FACE_DNN_MODEL_PATH", "./models/res10_300x300_ssd_iter_140000_fp16.caffemodel")
 
 	// New RetinaFace detection
