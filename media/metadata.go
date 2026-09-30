@@ -3,19 +3,21 @@ package media
 import (
 	"encoding/binary"
 	"fmt"
+	"html"
 	"image"
 	"io"
-	"log"
+	"math"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/rwcarlsen/goexif/exif"
 )
 
 // xmpRatingAttr matches xmp:Rating="N" attribute
-var xmpRatingAttr = regexp.MustCompile(`xmp:Rating="(-?\d+)"`)
+var xmpRatingAttr = regexp.MustCompile(`xmp:Rating=["'](-?\d+)["']`)
 
 // xmpRatingElem matches <xmp:Rating>N</xmp:Rating> element
 var xmpRatingElem = regexp.MustCompile(`<xmp:Rating>(-?\d+)</xmp:Rating>`)
@@ -29,146 +31,95 @@ var xmpRdfLi = regexp.MustCompile(`<rdf:li[^>]*>([^<]+)</rdf:li>`)
 // xmpNamespace is the XMP APP1 segment identifier string (with NUL terminator)
 const xmpNamespace = "http://ns.adobe.com/xap/1.0/\x00"
 
-// extractXMPRating reads JPEG APP1 segments looking for an embedded XMP block
-// with an xmp:Rating value. Returns nil if the file is not a JPEG or has no rating.
-func extractXMPRating(filePath string) *int {
-	f, err := os.Open(filePath)
-	if err != nil {
-		return nil
+// readXMPPacket walks the JPEG segments of r looking for the XMP APP1 block and
+// returns its XML. It returns "" for non-JPEG input or when there is no XMP.
+func readXMPPacket(r io.ReadSeeker) string {
+	if _, err := r.Seek(0, io.SeekStart); err != nil {
+		return ""
 	}
-	defer f.Close()
-
-	// check JPEG SOI marker
-	soi := make([]byte, 2)
-	if _, err := io.ReadFull(f, soi); err != nil {
-		return nil
-	}
-	if soi[0] != 0xFF || soi[1] != 0xD8 {
-		return nil // not a JPEG
+	var hdr [2]byte
+	if _, err := io.ReadFull(r, hdr[:]); err != nil || hdr[0] != 0xFF || hdr[1] != 0xD8 {
+		return "" // not a JPEG
 	}
 
-	buf := make([]byte, 4)
 	for {
-		if _, err := io.ReadFull(f, buf[:2]); err != nil {
-			return nil
+		// a marker is 0xFF, optionally preceded by any number of 0xFF fill bytes
+		if _, err := io.ReadFull(r, hdr[:1]); err != nil || hdr[0] != 0xFF {
+			return ""
 		}
-		if buf[0] != 0xFF {
-			return nil // lost sync
-		}
-		marker := buf[1]
-
-		// SOS (Start of Scan) — compressed image data follows, stop
-		if marker == 0xDA {
-			return nil
-		}
-		// Standalone markers with no length field
-		if marker == 0xD8 || marker == 0xD9 {
-			continue
+		var marker byte
+		for {
+			if _, err := io.ReadFull(r, hdr[:1]); err != nil {
+				return ""
+			}
+			if hdr[0] != 0xFF {
+				marker = hdr[0]
+				break
+			}
 		}
 
-		// read 2-byte segment length (includes the length field itself)
-		if _, err := io.ReadFull(f, buf[:2]); err != nil {
-			return nil
+		switch {
+		case marker == 0xDA: // SOS: compressed data follows, no more metadata segments
+			return ""
+		case marker == 0x00, marker == 0x01, marker >= 0xD0 && marker <= 0xD9:
+			continue // standalone markers without a length field
 		}
-		segLen := int(binary.BigEndian.Uint16(buf[:2]))
+
+		if _, err := io.ReadFull(r, hdr[:]); err != nil {
+			return ""
+		}
+		segLen := int(binary.BigEndian.Uint16(hdr[:]))
 		if segLen < 2 {
-			return nil
+			return ""
 		}
 		dataLen := segLen - 2
 
 		if marker == 0xE1 && dataLen > len(xmpNamespace) {
-			// APP1: could be XMP
 			data := make([]byte, dataLen)
-			if _, err := io.ReadFull(f, data); err != nil {
-				return nil
+			if _, err := io.ReadFull(r, data); err != nil {
+				return ""
 			}
-			if strings.HasPrefix(string(data), xmpNamespace) {
-				xmp := string(data[len(xmpNamespace):])
-				for _, re := range []*regexp.Regexp{xmpRatingAttr, xmpRatingElem} {
-					if m := re.FindStringSubmatch(xmp); m != nil {
-						n, err := strconv.Atoi(m[1])
-						if err == nil && n >= 1 && n <= 5 {
-							return &n
-						}
-					}
-				}
+			if strings.HasPrefix(string(data[:len(xmpNamespace)]), xmpNamespace) {
+				return string(data[len(xmpNamespace):])
 			}
-		} else {
-			if _, err := f.Seek(int64(dataLen), io.SeekCurrent); err != nil {
-				return nil
-			}
+		} else if _, err := r.Seek(int64(dataLen), io.SeekCurrent); err != nil {
+			return ""
 		}
 	}
 }
 
-// extractXMPKeywords reads JPEG APP1 XMP segments and extracts dc:subject keywords.
-// Returns nil if the file is not a JPEG or has no keywords.
-func extractXMPKeywords(filePath string) []string {
-	f, err := os.Open(filePath)
-	if err != nil {
+// xmpRating returns the star rating from an XMP packet. Unrated (0) and
+// rejected (-1) images have no rating.
+func xmpRating(xmp string) *int {
+	for _, re := range []*regexp.Regexp{xmpRatingAttr, xmpRatingElem} {
+		if m := re.FindStringSubmatch(xmp); m != nil {
+			n, err := strconv.Atoi(m[1])
+			if err == nil && n >= 1 && n <= 5 {
+				return &n
+			}
+			return nil
+		}
+	}
+	return nil
+}
+
+// xmpKeywords returns the unescaped dc:subject keywords from an XMP packet.
+func xmpKeywords(xmp string) []string {
+	seqMatch := xmpSubjectSeq.FindStringSubmatch(xmp)
+	if seqMatch == nil {
 		return nil
 	}
-	defer f.Close()
-
-	soi := make([]byte, 2)
-	if _, err := io.ReadFull(f, soi); err != nil {
+	items := xmpRdfLi.FindAllStringSubmatch(seqMatch[1], -1)
+	keywords := make([]string, 0, len(items))
+	for _, item := range items {
+		if kw := strings.TrimSpace(html.UnescapeString(item[1])); kw != "" {
+			keywords = append(keywords, kw)
+		}
+	}
+	if len(keywords) == 0 {
 		return nil
 	}
-	if soi[0] != 0xFF || soi[1] != 0xD8 {
-		return nil
-	}
-
-	buf := make([]byte, 4)
-	for {
-		if _, err := io.ReadFull(f, buf[:2]); err != nil {
-			return nil
-		}
-		if buf[0] != 0xFF {
-			return nil
-		}
-		marker := buf[1]
-		if marker == 0xDA {
-			return nil
-		}
-		if marker == 0xD8 || marker == 0xD9 {
-			continue
-		}
-		if _, err := io.ReadFull(f, buf[:2]); err != nil {
-			return nil
-		}
-		segLen := int(binary.BigEndian.Uint16(buf[:2]))
-		if segLen < 2 {
-			return nil
-		}
-		dataLen := segLen - 2
-
-		if marker == 0xE1 && dataLen > len(xmpNamespace) {
-			data := make([]byte, dataLen)
-			if _, err := io.ReadFull(f, data); err != nil {
-				return nil
-			}
-			if strings.HasPrefix(string(data), xmpNamespace) {
-				xmp := string(data[len(xmpNamespace):])
-				seqMatch := xmpSubjectSeq.FindStringSubmatch(xmp)
-				if seqMatch == nil {
-					return nil
-				}
-				items := xmpRdfLi.FindAllStringSubmatch(seqMatch[1], -1)
-				if len(items) == 0 {
-					return nil
-				}
-				keywords := make([]string, 0, len(items))
-				for _, item := range items {
-					keywords = append(keywords, strings.TrimSpace(item[1]))
-				}
-				return keywords
-			}
-		} else {
-			if _, err := f.Seek(int64(dataLen), io.SeekCurrent); err != nil {
-				return nil
-			}
-		}
-	}
+	return keywords
 }
 
 // helper to safely get and convert a rational tag (like Aperture, FocalLength)
@@ -232,20 +183,48 @@ func getShutterSpeed(exifData *exif.Exif) *string {
 		return nil // Cannot represent as a fraction
 	}
 
-	if num == 1 && den > 1 { // common case: 1/XXX
-		s := fmt.Sprintf("1/%d", den)
-		return &s
-	}
+	return formatShutterSpeed(num, den)
+}
 
-	// handle cases like 1/2.5 -> 1/3 or 1/2
+// formatShutterSpeed renders an exposure time: fractions of a second as 1/N
+// (10/600 -> 1/60), longer exposures in seconds.
+func formatShutterSpeed(num, den int64) *string {
+	if num <= 0 || den <= 0 {
+		return nil
+	}
 	val := float64(num) / float64(den)
-	if val >= 1.0 {
-		s := fmt.Sprintf("%.1fs", val) // e.g., 1.5s, 30.0s
-		return &s
-	} else {
-		s := fmt.Sprintf("%.4fs", val) // use float representation if not a simple fraction
+	if val <= 0.5 {
+		s := fmt.Sprintf("1/%d", int(math.Round(1/val)))
 		return &s
 	}
+	s := fmt.Sprintf("%.1fs", val) // e.g. 0.8s, 1.5s, 30.0s
+	return &s
+}
+
+// exifDateLayout is the EXIF date/time format (no zone information).
+const exifDateLayout = "2006:01:02 15:04:05"
+
+// takenAt reads the capture time. EXIF stores camera wall-clock time without a
+// reliable zone, and the frontend displays it in UTC, so the wall-clock value is
+// stored as if it were UTC; OffsetTimeOriginal is deliberately ignored.
+func takenAt(exifData *exif.Exif) *int64 {
+	for _, field := range []exif.FieldName{exif.DateTimeOriginal, exif.DateTimeDigitized, exif.DateTime} {
+		tag, err := exifData.Get(field)
+		if err != nil || tag == nil {
+			continue
+		}
+		raw, err := tag.StringVal()
+		if err != nil {
+			continue
+		}
+		t, err := time.ParseInLocation(exifDateLayout, strings.Trim(raw, "\x00 "), time.UTC)
+		if err != nil {
+			continue
+		}
+		ts := t.Unix()
+		return &ts
+	}
+	return nil
 }
 
 // GetImageMetadata extracts relevant metadata using goexif
@@ -256,53 +235,32 @@ func GetImageMetadata(filePath string) (*Metadata, error) {
 	}
 	defer file.Close()
 
-	config, format, err := image.DecodeConfig(file)
 	var width, height *int
-	if err == nil {
+	if config, _, err := image.DecodeConfig(file); err == nil {
 		w, h := config.Width, config.Height
-		width = &w
-		height = &h
-		log.Printf("metadata: Decoded dimensions for %s (format: %s): %dx%d", filePath, format, *width, *height)
-	} else {
-		log.Printf("metadata: Warning - Could not decode config for dimensions of %s: %v", filePath, err)
+		width, height = &w, &h
 	}
 
-	_, err = file.Seek(0, 0)
-	if err != nil {
+	xmp := readXMPPacket(file)
+	meta := &Metadata{Width: width, Height: height, Rating: xmpRating(xmp), Keywords: xmpKeywords(xmp)}
+
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return nil, fmt.Errorf("metadata: failed to seek file %s: %w", filePath, err)
 	}
-
 	exifData, err := exif.Decode(file)
 	if err != nil {
 		// not necessarily a fatal error, the file might just lack EXIF data
-		log.Printf("metadata: No EXIF data found or error decoding EXIF for %s: %v", filePath, err)
-		// return metadata struct with only dimensions and any XMP data
-		return &Metadata{Width: width, Height: height, Rating: extractXMPRating(filePath), Keywords: extractXMPKeywords(filePath)}, nil
+		return meta, nil
 	}
 
-	meta := &Metadata{
-		Width:        width,
-		Height:       height,
-		Aperture:     getRational(exifData, exif.FNumber),
-		ShutterSpeed: getShutterSpeed(exifData),
-		ISO:          getInt(exifData, exif.ISOSpeedRatings),
-		FocalLength:  getRational(exifData, exif.FocalLength),
-		LensMake:     getString(exifData, exif.LensMake),
-		LensModel:    getString(exifData, exif.LensModel),
-		CameraMake:   getString(exifData, exif.Make),
-		CameraModel:  getString(exifData, exif.Model),
-	}
-
-	dt, err := exifData.DateTime()
-	if err == nil {
-		ts := dt.Unix()
-		meta.TakenAt = &ts
-	} else {
-		log.Printf("metadata: Could not read DateTimeOriginal for %s: %v", filePath, err)
-	}
-
-	meta.Rating = extractXMPRating(filePath)
-	meta.Keywords = extractXMPKeywords(filePath)
-
+	meta.Aperture = getRational(exifData, exif.FNumber)
+	meta.ShutterSpeed = getShutterSpeed(exifData)
+	meta.ISO = getInt(exifData, exif.ISOSpeedRatings)
+	meta.FocalLength = getRational(exifData, exif.FocalLength)
+	meta.LensMake = getString(exifData, exif.LensMake)
+	meta.LensModel = getString(exifData, exif.LensModel)
+	meta.CameraMake = getString(exifData, exif.Make)
+	meta.CameraModel = getString(exifData, exif.Model)
+	meta.TakenAt = takenAt(exifData)
 	return meta, nil
 }
