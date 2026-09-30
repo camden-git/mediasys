@@ -87,13 +87,11 @@ export interface Album {
     location?: string;
     folder_path: string;
     banners?: string[];
-    zip_path?: string;
     zip_ready?: boolean;
     zip_size?: number;
     zip_status: string;
     zip_last_generated_at?: number;
     zip_last_requested_at?: number;
-    zip_error?: string;
     created_at: number;
     updated_at: number;
     is_hidden?: boolean;
@@ -173,10 +171,10 @@ export interface DirectoryListing {
     path: string;
     files: FileInfo[];
     parent?: string;
-    total?: number;
-    offset?: number;
-    limit?: number;
-    has_more?: boolean;
+    total: number;
+    offset: number;
+    limit: number;
+    has_more: boolean;
 }
 
 // Corresponds to backend models.Role (simplified for frontend)
@@ -209,8 +207,8 @@ export interface User {
     global_permissions?: string[];
     effective_permissions?: UserEffectivePermissions;
     // album_permissions: UserAlbumPermission[]; // Likely fetched on demand
-    created_at: string; // Assuming string format like from http.TimeFormat
-    updated_at: string;
+    created_at: string; // RFC3339
+    updated_at: string; // RFC3339
 }
 
 // For login API

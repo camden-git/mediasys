@@ -22,7 +22,7 @@ const CollectionView: React.FC = () => {
 
     useDocumentTitle(collection?.name);
 
-    const files = useMemo(() => data?.pages.flatMap((p) => p.files ?? []) ?? [], [data]);
+    const files = useMemo(() => data?.pages.flatMap((p) => p.files) ?? [], [data]);
     const total = data?.pages[data.pages.length - 1]?.total ?? 0;
     const imageFiles = useMemo(() => files.filter((f) => !f.is_dir && f.thumbnail_path), [files]);
 

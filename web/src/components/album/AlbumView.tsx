@@ -79,7 +79,7 @@ const AlbumView: React.FC = () => {
         isFetchNextPageError,
     } = listQuery;
 
-    const activeFiles = useMemo(() => listData?.pages.flatMap((p) => p.files ?? []) ?? [], [listData]);
+    const activeFiles = useMemo(() => listData?.pages.flatMap((p) => p.files) ?? [], [listData]);
     const listMeta = listData?.pages[listData.pages.length - 1];
 
     const { addFlash } = useFlash();
@@ -441,7 +441,7 @@ const AlbumView: React.FC = () => {
             while (more) {
                 const result = await fetchNextPage();
                 if (result.isError || !result.data) throw result.error ?? new Error('Failed to load all photos');
-                images = result.data.pages.flatMap((p) => p.files ?? []).filter(isImageFile);
+                images = result.data.pages.flatMap((p) => p.files).filter(isImageFile);
                 more = !!result.hasNextPage;
             }
             const chunks = chunkImagesBySize(images, MAX_SHARE_CHUNK_BYTES);

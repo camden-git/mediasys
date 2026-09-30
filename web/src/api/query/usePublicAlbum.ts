@@ -18,7 +18,7 @@ export const usePublicAlbumContents = (identifier?: string, enabled = true) =>
         queryFn: ({ pageParam, signal }) =>
             getAlbumContents(identifier!, { offset: pageParam as number, limit: PAGE_SIZE }, signal),
         initialPageParam: 0 as number,
-        getNextPageParam: (last) => (last.has_more ? (last.offset ?? 0) + (last.files?.length ?? 0) : undefined),
+        getNextPageParam: (last) => (last.has_more ? last.offset + last.files.length : undefined),
         enabled: !!identifier && enabled,
     });
 
@@ -32,6 +32,6 @@ export const usePublicAlbumHighlights = (identifier?: string, enabled = true) =>
                 signal,
             ),
         initialPageParam: 0 as number,
-        getNextPageParam: (last) => (last.has_more ? (last.offset ?? 0) + (last.files?.length ?? 0) : undefined),
+        getNextPageParam: (last) => (last.has_more ? last.offset + last.files.length : undefined),
         enabled: !!identifier && enabled,
     });
