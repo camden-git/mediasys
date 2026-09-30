@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Heading } from '../../elements/Heading';
 import { Text } from '../../elements/Text';
@@ -40,18 +40,37 @@ const PersonAdminView: React.FC = () => {
     const [addingAlias, setAddingAlias] = useState(false);
     const [aliasError, setAliasError] = useState<string | null>(null);
 
+    // guards state updates from in-flight requests after unmount
+    const mountedRef = useRef(true);
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => {
+            mountedRef.current = false;
+        };
+    }, []);
+
     useEffect(() => {
         if (!personId) return;
+        // ignore a response that arrives after the id changed or the view unmounted
+        let cancelled = false;
         setLoading(true);
         setError(null);
         Promise.all([getPersonByIdAdmin(personId), getPersonAliases(personId)])
             .then(([p, a]) => {
+                if (cancelled) return;
                 setPerson(p);
                 setNameValue(p.primary_name);
                 setAliases(a);
             })
-            .catch((e) => setError(e.message))
-            .finally(() => setLoading(false));
+            .catch((e) => {
+                if (!cancelled) setError(e.message);
+            })
+            .finally(() => {
+                if (!cancelled) setLoading(false);
+            });
+        return () => {
+            cancelled = true;
+        };
     }, [personId]);
 
     const handleSaveName = async () => {
@@ -60,12 +79,13 @@ const PersonAdminView: React.FC = () => {
         setNameError(null);
         try {
             const updated = await updatePerson(person.id, nameValue.trim());
+            if (!mountedRef.current) return;
             setPerson(updated);
             setEditingName(false);
         } catch (e: any) {
-            setNameError(e.message);
+            if (mountedRef.current) setNameError(e.message);
         } finally {
-            setSavingName(false);
+            if (mountedRef.current) setSavingName(false);
         }
     };
 
@@ -75,11 +95,11 @@ const PersonAdminView: React.FC = () => {
         setKeyPhotoError(null);
         try {
             const updated = await setPersonKeyPhoto(person.id, faceId);
-            setPerson(updated);
+            if (mountedRef.current) setPerson(updated);
         } catch (e: any) {
-            setKeyPhotoError(e.message);
+            if (mountedRef.current) setKeyPhotoError(e.message);
         } finally {
-            setKeyPhotoLoading(false);
+            if (mountedRef.current) setKeyPhotoLoading(false);
         }
     };
 
@@ -89,22 +109,24 @@ const PersonAdminView: React.FC = () => {
         setAliasError(null);
         try {
             const alias = await addPersonAlias(person.id, newAlias.trim());
+            if (!mountedRef.current) return;
             setAliases((prev) => [...prev, alias]);
             setNewAlias('');
         } catch (e: any) {
-            setAliasError(e.message);
+            if (mountedRef.current) setAliasError(e.message);
         } finally {
-            setAddingAlias(false);
+            if (mountedRef.current) setAddingAlias(false);
         }
     };
 
     const handleDeleteAlias = async (alias: Alias) => {
         if (!person) return;
+        if (!window.confirm(`Remove the alias "${alias.name}"?`)) return;
         try {
             await deletePersonAlias(person.id, alias.id);
-            setAliases((prev) => prev.filter((a) => a.id !== alias.id));
+            if (mountedRef.current) setAliases((prev) => prev.filter((a) => a.id !== alias.id));
         } catch (e: any) {
-            setAliasError(e.message);
+            if (mountedRef.current) setAliasError(e.message);
         }
     };
 
