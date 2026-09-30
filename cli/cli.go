@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
 
 	"github.com/camden-git/mediasysbackend/config"
@@ -217,6 +218,28 @@ func connect(ctx context.Context) (*gorm.DB, error) {
 
 func promptNewPassword() (string, error) {
 	fd := int(os.Stdin.Fd())
+
+	// term.ReadPassword turns echo off and would leave it off if Ctrl-C killed
+	// the process mid-prompt, so restore the terminal before exiting instead
+	state, err := term.GetState(fd)
+	if err != nil {
+		return "", err
+	}
+	done := make(chan struct{})
+	defer close(done)
+	interrupted := make(chan os.Signal, 1)
+	signal.Notify(interrupted, os.Interrupt)
+	defer signal.Stop(interrupted)
+	go func() {
+		select {
+		case <-interrupted:
+			_ = term.Restore(fd, state)
+			fmt.Println()
+			os.Exit(130)
+		case <-done:
+		}
+	}()
+
 	fmt.Print("Password: ")
 	first, err := term.ReadPassword(fd)
 	fmt.Println()
