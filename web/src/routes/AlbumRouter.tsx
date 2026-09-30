@@ -48,7 +48,7 @@ const AlbumRouter: React.FC = () => {
                 <Navbar>
                     <NavbarSection className='max-lg:hidden'>
                         {navItems.map(({ label, url }) => (
-                            <NavbarItem key={label} to={`/album/${identifier}/${url}`.replace(/\/$/, '')}>
+                            <NavbarItem key={label} to={url}>
                                 {label}
                             </NavbarItem>
                         ))}
@@ -60,7 +60,7 @@ const AlbumRouter: React.FC = () => {
                     <SidebarBody>
                         <SidebarSection>
                             {navItems.map(({ label, url }) => (
-                                <SidebarItem key={label} to={`/album/${identifier}/${url}`.replace(/\/$/, '')}>
+                                <SidebarItem key={label} to={url}>
                                     {label}
                                 </SidebarItem>
                             ))}
