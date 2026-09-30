@@ -496,6 +496,8 @@ const AlbumView: React.FC = () => {
                 onNext={handleNextImage}
                 canPrev={canPrev}
                 canNext={canNext}
+                prevImage={selectedIndex > 0 ? imageFiles[selectedIndex - 1] : null}
+                nextImage={selectedIndex >= 0 ? (imageFiles[selectedIndex + 1] ?? null) : null}
             />
         </>
     );

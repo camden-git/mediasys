@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { format } from 'date-fns';
 import { FileInfo, FaceData } from '../../types.ts';
 import {
     getOriginalImageUrl,
@@ -20,8 +19,7 @@ import {
     CheckIcon,
     ShareIcon,
 } from '@heroicons/react/24/outline';
-import { Heading } from '../elements/Heading.tsx';
-import { Text } from '../elements/Text.tsx';
+import { formatTakenAtDate } from '../../lib/takenAt.ts';
 
 interface ImageLightboxProps {
     image: FileInfo | null;
@@ -32,7 +30,11 @@ interface ImageLightboxProps {
     onNext?: () => void;
     canPrev?: boolean;
     canNext?: boolean;
+    prevImage?: FileInfo | null;
+    nextImage?: FileInfo | null;
 }
+
+const FOCUSABLE = 'a[href],button:not([disabled]),input,select,textarea,[tabindex]:not([tabindex="-1"])';
 
 const PANEL_WIDTH_NUMERIC = 384;
 
@@ -101,6 +103,8 @@ const ImageLightbox: React.FC<ImageLightboxProps> = ({
     onNext,
     canPrev = false,
     canNext = false,
+    prevImage = null,
+    nextImage = null,
 }) => {
     const [isPanelOpen, setIsPanelOpen] = useState(false);
     const [thumbnailSrc, setThumbnailSrc] = useState<string>('');
@@ -110,7 +114,30 @@ const ImageLightbox: React.FC<ImageLightboxProps> = ({
     const [badgeHovered, setBadgeHovered] = useState(false);
     const [faces, setFaces] = useState<FaceData[]>([]);
     const [isSharing, setIsSharing] = useState(false);
+    const [notice, setNotice] = useState<string | null>(null);
     const previewImgRef = useRef<HTMLImageElement | null>(null);
+    const dialogRef = useRef<HTMLDivElement | null>(null);
+    const isOpen = !!image;
+
+    // auto-dismiss transient errors
+    useEffect(() => {
+        if (!notice) return;
+        const t = window.setTimeout(() => setNotice(null), 5000);
+        return () => window.clearTimeout(t);
+    }, [notice]);
+
+    // body scroll lock, initial focus and focus restore while open
+    useEffect(() => {
+        if (!isOpen) return;
+        const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        const previousOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        dialogRef.current?.focus();
+        return () => {
+            document.body.style.overflow = previousOverflow;
+            if (opener && opener.isConnected) opener.focus();
+        };
+    }, [isOpen]);
 
     // Reset and start loading on image change
     useEffect(() => {
@@ -148,18 +175,40 @@ const ImageLightbox: React.FC<ImageLightboxProps> = ({
         };
         previewImg.src = previewUrl;
 
-        // Fetch face data
+        // Fetch face data; ignore results that arrive after navigating away
+        let cancelled = false;
         getFacesForImage(image.path)
-            .then((data) => setFaces(data))
-            .catch(() => setFaces([]));
+            .then((data) => {
+                if (!cancelled) setFaces(data);
+            })
+            .catch(() => {
+                if (!cancelled) setFaces([]);
+            });
 
         return () => {
-            if (previewImgRef.current) {
-                previewImgRef.current.onload = null;
-                previewImgRef.current.onerror = null;
-            }
+            cancelled = true;
+            // detach handlers and cancel the in-flight download
+            previewImg.onload = null;
+            previewImg.onerror = null;
+            previewImg.src = '';
+            previewImgRef.current = null;
         };
     }, [image]);
+
+    // once the current preview is ready, warm the neighbours (cancelled on rapid navigation)
+    useEffect(() => {
+        if (!previewLoaded) return;
+        const preloads = [prevImage, nextImage]
+            .filter((n): n is FileInfo => !!n)
+            .map((n) => {
+                const img = new Image();
+                img.src = getPreviewImageUrl(n.path);
+                return img;
+            });
+        return () => {
+            for (const img of preloads) img.src = '';
+        };
+    }, [previewLoaded, prevImage, nextImage]);
 
     useEffect(() => {
         if (!image) {
@@ -180,7 +229,27 @@ const ImageLightbox: React.FC<ImageLightboxProps> = ({
     }, [previewLoaded, image]);
 
     useEffect(() => {
+        if (!isOpen) return;
         const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.ctrlKey || event.metaKey || event.altKey) return;
+            if (event.key === 'Tab') {
+                const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []);
+                if (focusable.length === 0) {
+                    event.preventDefault();
+                    return;
+                }
+                const first = focusable[0];
+                const last = focusable[focusable.length - 1];
+                const active = document.activeElement;
+                if (event.shiftKey && (active === first || active === dialogRef.current)) {
+                    event.preventDefault();
+                    last.focus();
+                } else if (!event.shiftKey && active === last) {
+                    event.preventDefault();
+                    first.focus();
+                }
+                return;
+            }
             if (event.key === 'Escape') {
                 onClose();
                 return;
@@ -203,7 +272,7 @@ const ImageLightbox: React.FC<ImageLightboxProps> = ({
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [onClose, onPrev, onNext, canPrev, canNext]);
+    }, [isOpen, onClose, onPrev, onNext, canPrev, canNext]);
 
     const handleBackdropClick = (event: React.MouseEvent<HTMLDivElement>) => {
         if (event.target === event.currentTarget) onClose();
@@ -211,22 +280,31 @@ const ImageLightbox: React.FC<ImageLightboxProps> = ({
 
     const togglePanel = () => setIsPanelOpen((prev) => !prev);
 
+    const fetchOriginal = async (path: string): Promise<Blob> => {
+        const response = await fetch(getOriginalImageUrl(path), { mode: 'cors' });
+        if (!response.ok) throw new Error(`Request failed (${response.status})`);
+        return response.blob();
+    };
+
+    const saveBlob = (blob: Blob, name: string) => {
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', name);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        // give the browser time to start the download before releasing the blob
+        window.setTimeout(() => window.URL.revokeObjectURL(url), 60_000);
+    };
+
     const handleDownloadImage = async () => {
         if (!image) return;
         try {
-            const fullUrl = getOriginalImageUrl(image.path);
-            const response = await fetch(fullUrl, { mode: 'cors' });
-            const blob = await response.blob();
-            const url = window.URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.setAttribute('download', image.name || 'download.jpg');
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            window.URL.revokeObjectURL(url);
+            saveBlob(await fetchOriginal(image.path), image.name || 'download.jpg');
         } catch (error) {
             console.error('Error downloading image:', error);
+            setNotice('Failed to download the original image.');
         }
     };
 
@@ -234,29 +312,22 @@ const ImageLightbox: React.FC<ImageLightboxProps> = ({
         if (!image || isSharing) return;
         setIsSharing(true);
         try {
-            const fullUrl = getOriginalImageUrl(image.path);
-            const response = await fetch(fullUrl, { mode: 'cors' });
-            const blob = await response.blob();
+            const blob = await fetchOriginal(image.path);
             const ext = image.name.split('.').pop() ?? 'jpg';
             const file = new File([blob], image.name, { type: blob.type || `image/${ext}` });
             if (navigator.canShare && navigator.canShare({ files: [file] })) {
                 await navigator.share({ files: [file], title: image.name });
+            } else {
+                saveBlob(blob, image.name);
+                setNotice('Sharing files is not supported here, so the image was downloaded instead.');
             }
         } catch (error) {
             if ((error as Error).name !== 'AbortError') {
                 console.error('Error sharing image:', error);
+                setNotice('Failed to share the image.');
             }
         } finally {
             setIsSharing(false);
-        }
-    };
-
-    const formatDate = (timestamp?: number): string | null => {
-        if (!timestamp) return null;
-        try {
-            return format(new Date(timestamp * 1000), 'MMM d, yyyy');
-        } catch {
-            return null;
         }
     };
 
@@ -289,6 +360,8 @@ const ImageLightbox: React.FC<ImageLightboxProps> = ({
                     aria-modal='true'
                     role='dialog'
                     aria-label='Image viewer'
+                    ref={dialogRef}
+                    tabIndex={-1}
                 >
                     <motion.div
                         className='relative flex flex-1 flex-col items-stretch'
@@ -455,12 +528,12 @@ const ImageLightbox: React.FC<ImageLightboxProps> = ({
                                                 {previewLoaded ? 'Loaded Preview' : 'Loading Preview...'}
                                             </motion.span>
                                         </motion.div>
-                                        <Heading invert>{image.name}</Heading>
+                                        <h2 className='text-xl/8 font-semibold text-white'>{image.name}</h2>
                                     </div>
 
-                                    <Text>
-                                        {[formatDate(image.taken_at), cameraInfo].filter(Boolean).join('  ·  ')}
-                                    </Text>
+                                    <p className='text-sm/6 text-white/70'>
+                                        {[formatTakenAtDate(image.taken_at), cameraInfo].filter(Boolean).join('  ·  ')}
+                                    </p>
                                 </div>
                             </div>
 
@@ -483,6 +556,15 @@ const ImageLightbox: React.FC<ImageLightboxProps> = ({
                             </div>
                         </div>
                     </motion.div>
+
+                    {notice && (
+                        <div
+                            role='alert'
+                            className='absolute top-16 left-1/2 z-20 -translate-x-1/2 rounded-lg bg-red-600 px-4 py-2 text-sm text-white shadow-lg'
+                        >
+                            {notice}
+                        </div>
+                    )}
 
                     {/* Metadata panel */}
                     <AnimatePresence>

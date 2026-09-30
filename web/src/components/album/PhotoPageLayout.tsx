@@ -26,6 +26,8 @@ interface PhotoPageLayoutProps {
     onNext: () => void;
     canPrev: boolean;
     canNext: boolean;
+    prevImage?: FileInfo | null;
+    nextImage?: FileInfo | null;
     emptyMessage?: string;
     loadMoreError?: string | null;
     onRetryLoadMore?: () => void;
@@ -52,6 +54,8 @@ const PhotoPageLayout: React.FC<PhotoPageLayoutProps> = ({
     onNext,
     canPrev,
     canNext,
+    prevImage,
+    nextImage,
     emptyMessage = 'No photos here yet.',
     loadMoreError,
     onRetryLoadMore,
@@ -161,6 +165,8 @@ const PhotoPageLayout: React.FC<PhotoPageLayoutProps> = ({
                             onNext={onNext}
                             canPrev={canPrev}
                             canNext={canNext}
+                            prevImage={prevImage}
+                            nextImage={nextImage}
                         />
                     </div>
                 </div>
