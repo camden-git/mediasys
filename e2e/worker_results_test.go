@@ -59,3 +59,33 @@ func TestWorkerResultsIgnoredForStaleImage(t *testing.T) {
 		t.Fatalf("preview not marked failed: %+v %v", got, err)
 	}
 }
+
+// Images queued for face detection while it was enabled must not stay pending
+// forever once face recognition is turned off.
+func TestMarkDetectionNotRequired(t *testing.T) {
+	env := requireShared(t)
+	repo := repository.NewImageRepository(env.app.DB)
+
+	suffix := randomSuffix()
+	album := createAlbum(t, env.adminToken, "NoDetect "+suffix, "nodetect-"+suffix, "")
+	now := time.Now().Unix()
+	want := map[string]string{"pending": "notRequired", "processing": "notRequired", "done": "done", "error": "error"}
+	for status := range want {
+		path := "nodetect-" + suffix + "/" + status + ".jpg"
+		img := &models.Image{OriginalPath: path, AlbumID: album.ID, ObjectKey: "originals/" + path, DetectionStatus: status, CreatedAt: now, LastModified: now}
+		if _, err := repo.Upsert(img); err != nil {
+			t.Fatalf("Upsert %s: %v", status, err)
+		}
+	}
+
+	if _, err := repo.MarkDetectionNotRequired(); err != nil {
+		t.Fatalf("MarkDetectionNotRequired: %v", err)
+	}
+
+	for status, exp := range want {
+		got, err := repo.GetByPath("nodetect-" + suffix + "/" + status + ".jpg")
+		if err != nil || got.DetectionStatus != exp {
+			t.Fatalf("%s: got %+v (err %v), want detection_status %q", status, got, err, exp)
+		}
+	}
+}

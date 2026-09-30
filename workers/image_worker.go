@@ -156,7 +156,7 @@ func NewImageProcessor(
 	if cfg.FaceRecognitionEnabled {
 		first, err := loadDetectors(cfg)
 		if err != nil {
-			log.Printf("Face detection disabled: %v; images stay pending until models are available", err)
+			log.Printf("Face recognition is enabled but the detection models failed to load: %v; face detection is DISABLED and uploaded images will stay pending until the models are present and the server is restarted", err)
 		} else {
 			proc.detectionEnabled = true
 			startedDetection = numDetectionWorkers
@@ -165,6 +165,14 @@ func NewImageProcessor(
 				go proc.detectionWorker(i, first)
 				first = nil // only the first worker reuses the probed models
 			}
+		}
+	}
+	if !cfg.FaceRecognitionEnabled {
+		// Images queued while it was enabled would otherwise stay pending forever.
+		if n, err := imgRepo.MarkDetectionNotRequired(); err != nil {
+			log.Printf("Failed to mark pending face detection as not required: %v", err)
+		} else if n > 0 {
+			log.Printf("Face recognition is disabled; marked face detection as not required for %d image(s)", n)
 		}
 	}
 	log.Printf("Started %d image worker(s) (queue %d) and %d detection worker(s) (queue %d)",

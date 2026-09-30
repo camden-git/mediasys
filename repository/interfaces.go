@@ -77,6 +77,7 @@ type ImageRepositoryInterface interface {
 	MarkTaskError(originalPath, objectKey, taskStatusColumn string, taskErr error) error
 	RequeueTask(originalPath, taskStatusColumn string) error
 	ResetInterruptedTasks() error
+	MarkDetectionNotRequired() (int64, error)
 	ListPendingProcessing(limit int) ([]models.Image, error)
 	ListPendingDetection(limit int) ([]models.Image, error)
 	ListByAlbum(albumID uint, minRating *int) ([]models.Image, error)

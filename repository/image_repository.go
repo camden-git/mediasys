@@ -351,6 +351,16 @@ func (r *ImageRepository) ResetInterruptedTasks() error {
 	return nil
 }
 
+// MarkDetectionNotRequired settles images whose face detection was queued (or
+// interrupted mid-run) before face recognition was turned off, so they are not
+// left pending forever. It returns the number of images updated.
+func (r *ImageRepository) MarkDetectionNotRequired() (int64, error) {
+	result := r.DB.Model(&models.Image{}).
+		Where("detection_status IN ?", []string{database.StatusPending, database.StatusProcessing}).
+		Update("detection_status", database.StatusNotRequired)
+	return result.RowsAffected, result.Error
+}
+
 // ListPendingProcessing returns images that still need metadata, thumbnail or preview work.
 func (r *ImageRepository) ListPendingProcessing(limit int) ([]models.Image, error) {
 	var images []models.Image
