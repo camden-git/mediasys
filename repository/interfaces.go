@@ -55,7 +55,7 @@ type PersonRepositoryInterface interface {
 	ListAliasesByPersonID(personID uint) ([]models.Alias, error)
 	DeleteAlias(aliasID uint) error
 	FindPersonIDsByNameOrAlias(query string) ([]uint, error)
-	FindImagesByPersonIDs(personIDs []uint) ([]PersonImageResult, error)
+	FindImagesByPersonIDs(personIDs []uint, offset, limit int) ([]PersonImageResult, int64, error)
 	SearchByNameOrAlias(query string, limit int) ([]models.Person, error)
 }
 

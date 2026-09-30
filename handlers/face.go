@@ -296,7 +296,8 @@ func (fh *FaceHandler) SearchFacesByPerson(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusOK, []repository.PersonImageResult{})
 		return
 	}
-	images, err := fh.PersonRepo.FindImagesByPersonIDs(personIDs)
+	offset, limit := parsePagination(r, 100, 500)
+	images, _, err := fh.PersonRepo.FindImagesByPersonIDs(personIDs, offset, limit)
 	if err != nil {
 		log.Printf("Error finding images for person IDs %v: %v", personIDs, err)
 		WriteAPIError(w, http.StatusInternalServerError, "ImageListError", "Failed to find images associated with person")

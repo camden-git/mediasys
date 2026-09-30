@@ -199,6 +199,32 @@ export const getPersonById = async (id: number, signal?: AbortSignal): Promise<P
     return (await response.json()) as Person;
 };
 
+/** Admin variant of getPersonById that includes faces from hidden albums (requires people.manage). */
+export const getPersonByIdAdmin = async (id: number, signal?: AbortSignal): Promise<Person> => {
+    const response = await apiClient(`/people/${id}/admin`, {}, signal);
+    return (await response.json()) as Person;
+};
+
+export interface PersonImagesPage {
+    items: PersonImageResult[];
+    total: number;
+    offset: number;
+    limit: number;
+    has_more: boolean;
+}
+
+export const getPersonImages = async (
+    personId: number,
+    params: { offset?: number; limit?: number } = {},
+    signal?: AbortSignal,
+): Promise<PersonImagesPage> => {
+    const qs = new URLSearchParams();
+    if (params.offset !== undefined) qs.set('offset', String(params.offset));
+    if (params.limit !== undefined) qs.set('limit', String(params.limit));
+    const response = await apiClient(`/people/${personId}/images?${qs}`, {}, signal);
+    return (await response.json()) as PersonImagesPage;
+};
+
 export const searchFacesByName = async (query: string, signal?: AbortSignal): Promise<PersonImageResult[]> => {
     const response = await apiClient(`/search/faces?query=${encodeURIComponent(query)}`, {}, signal);
     return (await response.json()) as PersonImageResult[];

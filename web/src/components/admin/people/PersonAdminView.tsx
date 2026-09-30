@@ -9,7 +9,7 @@ import LoadingSpinner from '../../elements/LoadingSpinner';
 import FaceThumbnail from '../faces/shared/FaceThumbnail';
 import { Person, Alias } from '../../../types';
 import {
-    getPersonById,
+    getPersonByIdAdmin,
     updatePerson,
     getPersonAliases,
     addPersonAlias,
@@ -44,7 +44,7 @@ const PersonAdminView: React.FC = () => {
         if (!personId) return;
         setLoading(true);
         setError(null);
-        Promise.all([getPersonById(personId), getPersonAliases(personId)])
+        Promise.all([getPersonByIdAdmin(personId), getPersonAliases(personId)])
             .then(([p, a]) => {
                 setPerson(p);
                 setNameValue(p.primary_name);

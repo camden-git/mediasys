@@ -1,11 +1,13 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Person, FileInfo, PersonImageResult } from '../../types.ts';
-import { getPersonById, searchFacesByName, getPreviewImagePath } from '../../api.ts';
+import { getPersonById, getPersonImages, getPreviewImagePath } from '../../api.ts';
 import AdvancedImageGrid from '../album/AdvancedImageGrid.tsx';
 import ImageLightbox from '../album/ImageLightbox.tsx';
 import LoadingSpinner from '../elements/LoadingSpinner.tsx';
 import { UserCircleIcon, ArrowLeftIcon } from '@heroicons/react/24/outline';
+
+const PAGE_SIZE = 60;
 
 const PersonView: React.FC = () => {
     const { personId } = useParams<{ personId: string }>();
@@ -13,6 +15,9 @@ const PersonView: React.FC = () => {
     const [images, setImages] = useState<PersonImageResult[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [total, setTotal] = useState(0);
+    const [hasMore, setHasMore] = useState(false);
+    const [isLoadingMore, setIsLoadingMore] = useState(false);
     const [selectedImage, setSelectedImage] = useState<FileInfo | null>(null);
 
     useEffect(() => {
@@ -25,8 +30,10 @@ const PersonView: React.FC = () => {
             try {
                 const personData = await getPersonById(Number(personId), controller.signal);
                 setPerson(personData);
-                const results = await searchFacesByName(personData.primary_name, controller.signal);
-                setImages(results);
+                const page = await getPersonImages(personData.id, { offset: 0, limit: PAGE_SIZE }, controller.signal);
+                setImages(page.items);
+                setTotal(page.total);
+                setHasMore(page.has_more);
             } catch (err: any) {
                 if (err.name !== 'AbortError') {
                     setError(err.message || 'Failed to load person data');
@@ -44,18 +51,35 @@ const PersonView: React.FC = () => {
     // thumbnail_path stays a relative path; consumers prefix the backend URL.
     const imageFiles: FileInfo[] = useMemo(
         () =>
-            images.map(({ image_path: path, thumbnail_path }) => ({
+            images.map(({ image_path: path, thumbnail_path, width, height }) => ({
                 name: path.split('/').pop() ?? path,
                 path: '/' + path,
                 is_dir: false,
                 size: 0,
                 mod_time: 0,
                 thumbnail_path: thumbnail_path || getPreviewImagePath(path),
+                width,
+                height,
             })),
         [images],
     );
 
     const selectedIndex = selectedImage ? imageFiles.findIndex((f) => f.path === selectedImage.path) : -1;
+
+    const handleLoadMore = useCallback(async () => {
+        if (!person) return;
+        setIsLoadingMore(true);
+        try {
+            const page = await getPersonImages(person.id, { offset: images.length, limit: PAGE_SIZE });
+            setImages((prev) => [...prev, ...page.items]);
+            setTotal(page.total);
+            setHasMore(page.has_more);
+        } catch (err: any) {
+            setError(err.message || 'Failed to load more photos');
+        } finally {
+            setIsLoadingMore(false);
+        }
+    }, [person, images.length]);
 
     const handleImageClick = useCallback((img: FileInfo) => {
         setSelectedImage(img);
@@ -83,7 +107,7 @@ const PersonView: React.FC = () => {
                 <div>
                     <h1 className='text-3xl font-bold text-gray-950 dark:text-white'>{person.primary_name}</h1>
                     <p className='mt-1 text-sm text-gray-500 dark:text-gray-400'>
-                        {images.length} photo{images.length !== 1 ? 's' : ''} found
+                        {total} photo{total !== 1 ? 's' : ''} found
                     </p>
                 </div>
             </div>
@@ -99,6 +123,19 @@ const PersonView: React.FC = () => {
                     boxSpacing={4}
                     onImageClick={handleImageClick}
                 />
+            )}
+
+            {hasMore && (
+                <div className='mt-6 flex justify-center'>
+                    <button
+                        type='button'
+                        onClick={handleLoadMore}
+                        disabled={isLoadingMore}
+                        className='rounded-md px-4 py-2 text-sm font-medium text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50 disabled:opacity-50 dark:text-gray-200 dark:ring-gray-600 dark:hover:bg-gray-800'
+                    >
+                        {isLoadingMore ? 'Loading...' : 'Load more'}
+                    </button>
+                </div>
             )}
 
             <ImageLightbox

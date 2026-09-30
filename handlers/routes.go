@@ -433,6 +433,8 @@ func RegisterRoutes(r chi.Router, deps AppDependencies) {
 			r.Get("/search", deps.PersonHandler.SearchPeople)
 			r.Route("/{person_id}", func(r chi.Router) {
 				r.Get("/", deps.PersonHandler.GetPerson)
+				r.Get("/images", deps.PersonHandler.ListPersonImages)
+				r.With(requirePeopleManage).Get("/admin", deps.PersonHandler.GetPersonAdmin)
 				r.With(requirePeopleManage).Put("/", deps.PersonHandler.UpdatePerson)
 				r.With(requirePeopleManage).Delete("/", deps.PersonHandler.DeletePerson)
 				r.With(requirePeopleManage).Put("/key-photo", deps.PersonHandler.SetKeyPhoto)

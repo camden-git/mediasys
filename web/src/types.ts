@@ -15,6 +15,8 @@ export interface PersonImageResult {
     image_path: string;
     /** Relative thumbnail URL (e.g. "/thumbnails/<uuid>.webp"), when the image has one. */
     thumbnail_path?: string;
+    width?: number;
+    height?: number;
 }
 
 export interface UntaggedFaceResult {

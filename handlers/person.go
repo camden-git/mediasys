@@ -108,6 +108,72 @@ func (ph *PersonHandler) GetPerson(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, person)
 }
 
+// GetPersonAdmin returns a person with all of their faces, including faces in hidden albums.
+// GET /api/people/{person_id}/admin (requires people.manage)
+func (ph *PersonHandler) GetPersonAdmin(w http.ResponseWriter, r *http.Request) {
+	personID, err := strconv.ParseUint(chi.URLParam(r, "person_id"), 10, 64)
+	if err != nil {
+		WriteAPIError(w, http.StatusBadRequest, "InvalidID", "Invalid person ID format")
+		return
+	}
+	person, err := ph.PersonRepo.GetByID(uint(personID))
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			WriteAPIError(w, http.StatusNotFound, "PersonNotFound", "Person not found")
+		} else {
+			log.Printf("Error getting person %d: %v", personID, err)
+			WriteAPIError(w, http.StatusInternalServerError, "PersonFetchError", "Failed to retrieve person")
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, person)
+}
+
+// ListPersonImages returns a page of the visible images containing the person.
+// GET /api/people/{person_id}/images?offset=&limit=
+func (ph *PersonHandler) ListPersonImages(w http.ResponseWriter, r *http.Request) {
+	personID, err := strconv.ParseUint(chi.URLParam(r, "person_id"), 10, 64)
+	if err != nil {
+		WriteAPIError(w, http.StatusBadRequest, "InvalidID", "Invalid person ID format")
+		return
+	}
+	if _, err := ph.PersonRepo.GetBasic(uint(personID)); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			WriteAPIError(w, http.StatusNotFound, "PersonNotFound", "Person not found")
+		} else {
+			log.Printf("Error getting person %d: %v", personID, err)
+			WriteAPIError(w, http.StatusInternalServerError, "PersonFetchError", "Failed to retrieve person")
+		}
+		return
+	}
+	offset, limit := parsePagination(r, 60, 200)
+	images, total, err := ph.PersonRepo.FindImagesByPersonIDs([]uint{uint(personID)}, offset, limit)
+	if err != nil {
+		log.Printf("Error listing images for person %d: %v", personID, err)
+		WriteAPIError(w, http.StatusInternalServerError, "ImageListError", "Failed to list images")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items":    images,
+		"total":    total,
+		"offset":   offset,
+		"limit":    limit,
+		"has_more": int64(offset+len(images)) < total,
+	})
+}
+
+// parsePagination reads offset/limit query params, applying defaultLimit and capping at maxLimit.
+func parsePagination(r *http.Request, defaultLimit, maxLimit int) (offset, limit int) {
+	limit = defaultLimit
+	if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 {
+		limit = min(v, maxLimit)
+	}
+	if v, err := strconv.Atoi(r.URL.Query().Get("offset")); err == nil && v > 0 {
+		offset = v
+	}
+	return offset, limit
+}
+
 func (ph *PersonHandler) UpdatePerson(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "person_id")
 	personID, err := strconv.ParseUint(idStr, 10, 64)

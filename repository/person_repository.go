@@ -254,49 +254,64 @@ func (r *PersonRepository) FindPersonIDsByNameOrAlias(query string) ([]uint, err
 }
 
 // PersonImageResult is an image associated with a person, along with its thumbnail (when
-// available) so callers can render a grid without falling back to full-size previews.
+// available) and dimensions so callers can render a grid without falling back to
+// full-size previews.
 type PersonImageResult struct {
 	ImagePath     string  `json:"image_path"`
 	ThumbnailPath *string `json:"thumbnail_path,omitempty"`
+	Width         *int    `json:"width,omitempty"`
+	Height        *int    `json:"height,omitempty"`
 }
 
-// FindImagesByPersonIDs retrieves the distinct images associated with a list of person IDs,
-// including each image's thumbnail path.
-func (r *PersonRepository) FindImagesByPersonIDs(personIDs []uint) ([]PersonImageResult, error) {
+// FindImagesByPersonIDs retrieves one page of the distinct visible (not in a hidden album)
+// images that contain any of the given people, ordered by path, along with the total
+// number of matching images.
+func (r *PersonRepository) FindImagesByPersonIDs(personIDs []uint, offset, limit int) ([]PersonImageResult, int64, error) {
 	if len(personIDs) == 0 {
-		return []PersonImageResult{}, nil
+		return []PersonImageResult{}, 0, nil
 	}
-	var imagePaths []string
-	err := r.DB.Model(&models.Face{}).
-		Where("person_id IN ?", personIDs).
-		Where("image_path IN ("+visibleImagePathsSQL+")").
-		Order("image_path ASC").
-		Distinct().
-		Pluck("image_path", &imagePaths).Error
-	if err != nil {
-		return nil, fmt.Errorf("failed to find images by person IDs: %w", err)
-	}
-	if len(imagePaths) == 0 {
-		return []PersonImageResult{}, nil
+	base := func() *gorm.DB {
+		return r.DB.Table("faces AS f").
+			Joins("JOIN images i ON i.original_path = f.image_path AND i.deleted_at IS NULL").
+			Joins("JOIN albums a ON a.id = i.album_id AND a.deleted_at IS NULL AND a.is_hidden = false").
+			Where("f.deleted_at IS NULL AND f.person_id IN ?", personIDs)
 	}
 
-	var images []models.Image
-	if err := r.DB.Where("original_path IN ?", imagePaths).Find(&images).Error; err != nil {
-		return nil, fmt.Errorf("failed to load images by person IDs: %w", err)
+	var total int64
+	if err := base().Select("COUNT(DISTINCT i.original_path)").Scan(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("failed to count images by person IDs: %w", err)
 	}
-	thumbnailByPath := make(map[string]*string, len(images))
-	for _, img := range images {
-		if img.ThumbnailPath != nil && img.ThumbnailStatus == database.StatusDone {
-			u := "/" + *img.ThumbnailPath
-			thumbnailByPath[img.OriginalPath] = &u
+	if total == 0 {
+		return []PersonImageResult{}, 0, nil
+	}
+
+	var rows []struct {
+		OriginalPath    string
+		ThumbnailPath   *string
+		ThumbnailStatus string
+		Width           *int
+		Height          *int
+	}
+	q := base().
+		Select("i.original_path, i.thumbnail_path, i.thumbnail_status, i.width, i.height").
+		Group("i.original_path").
+		Order("i.original_path ASC").
+		Limit(limit).
+		Offset(offset)
+	if err := q.Scan(&rows).Error; err != nil {
+		return nil, 0, fmt.Errorf("failed to find images by person IDs: %w", err)
+	}
+
+	results := make([]PersonImageResult, 0, len(rows))
+	for _, row := range rows {
+		res := PersonImageResult{ImagePath: row.OriginalPath, Width: row.Width, Height: row.Height}
+		if row.ThumbnailPath != nil && row.ThumbnailStatus == database.StatusDone {
+			u := "/" + *row.ThumbnailPath
+			res.ThumbnailPath = &u
 		}
+		results = append(results, res)
 	}
-
-	results := make([]PersonImageResult, 0, len(imagePaths))
-	for _, p := range imagePaths {
-		results = append(results, PersonImageResult{ImagePath: p, ThumbnailPath: thumbnailByPath[p]})
-	}
-	return results, nil
+	return results, total, nil
 }
 
 // SearchByNameOrAlias searches for people by primary name or alias, returning up to limit results.
