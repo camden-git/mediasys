@@ -3,6 +3,9 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../../../store/useAuthStore';
 import PageContentBlock from '../../elements/PageContentBlock.tsx';
 import { Can } from '../../elements/Can.tsx';
+import { Button } from '../../elements/Button';
+
+const linkClass = 'text-blue-600 hover:underline dark:text-blue-400';
 
 const HomeContainer: React.FC = () => {
     const user = useAuthStore((s) => s.user);
@@ -21,9 +24,8 @@ const HomeContainer: React.FC = () => {
         navigate('/auth/login');
     };
 
-    if (!user) {
-        return <p>Loading user information or not authenticated...</p>;
-    }
+    // the admin router only renders this page for authenticated users
+    if (!user) return null;
 
     return (
         <PageContentBlock title={'Dashboard'}>
@@ -58,23 +60,66 @@ const HomeContainer: React.FC = () => {
                 <ul>
                     <Can permission={['user.list', 'user.view', 'user.create', 'user.edit', 'user.delete']}>
                         <li>
-                            <Link to='/admin/users'>Manage Users</Link>
+                            <Link to='/admin/users' className={linkClass}>
+                                Manage Users
+                            </Link>
                         </li>
                     </Can>
                     <Can permission={['role.list', 'role.view', 'role.create', 'role.edit', 'role.delete']}>
                         <li>
-                            <Link to='/admin/roles'>Manage Roles</Link>
+                            <Link to='/admin/roles' className={linkClass}>
+                                Manage Roles
+                            </Link>
                         </li>
                     </Can>
                     <Can permission={['invite.list', 'invite.view', 'invite.create', 'invite.edit', 'invite.delete']}>
                         <li>
-                            <Link to='/admin/invite-codes'>Manage Invite Codes</Link>
+                            <Link to='/admin/invite-codes' className={linkClass}>
+                                Manage Invite Codes
+                            </Link>
+                        </li>
+                    </Can>
+                    <Can permission='album.*' allowAnyAlbumAccess>
+                        <li>
+                            <Link to='/admin/albums' className={linkClass}>
+                                Manage Albums
+                            </Link>
+                        </li>
+                    </Can>
+                    <Can permission='album.group.manage'>
+                        <li>
+                            <Link to='/admin/groups' className={linkClass}>
+                                Manage Groups
+                            </Link>
+                        </li>
+                    </Can>
+                    <Can permission='collection.manage'>
+                        <li>
+                            <Link to='/admin/collections' className={linkClass}>
+                                Manage Collections
+                            </Link>
+                        </li>
+                    </Can>
+                    <Can permission='people.manage'>
+                        <li>
+                            <Link to='/admin/people' className={linkClass}>
+                                Manage People
+                            </Link>
+                        </li>
+                    </Can>
+                    <Can permission='face.manage'>
+                        <li>
+                            <Link to='/admin/faces' className={linkClass}>
+                                Face Tagging
+                            </Link>
                         </li>
                     </Can>
                 </ul>
             </div>
 
-            <button onClick={handleLogout}>Logout</button>
+            <Button outline onClick={handleLogout} className='mt-6'>
+                Logout
+            </Button>
         </PageContentBlock>
     );
 };
