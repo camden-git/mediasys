@@ -17,16 +17,22 @@ var fakeIPCounter struct {
 	n int
 }
 
-// nextFakeIP returns a unique client IP so tests do not share the per-IP
-// login/register rate limit buckets (middleware.RealIP honors X-Forwarded-For).
+// nextFakeIP returns a unique public client IP so tests do not share the per-IP
+// login/register rate limit buckets (the test server's loopback peer is a
+// trusted proxy, so X-Forwarded-For is honored).
 func nextFakeIP() string {
 	fakeIPCounter.Lock()
 	defer fakeIPCounter.Unlock()
 	fakeIPCounter.n++
-	return fmt.Sprintf("10.77.%d.%d", fakeIPCounter.n/250, fakeIPCounter.n%250+1)
+	return fmt.Sprintf("198.18.%d.%d", fakeIPCounter.n/250, fakeIPCounter.n%250+1)
 }
 
 func doJSONFromIP(t *testing.T, ip, method, path, token string, payload any) apiResponse {
+	t.Helper()
+	return doJSONWithHeaders(t, map[string]string{"X-Forwarded-For": ip}, method, path, token, payload)
+}
+
+func doJSONWithHeaders(t *testing.T, headers map[string]string, method, path, token string, payload any) apiResponse {
 	t.Helper()
 	env := requireShared(t)
 	data, err := json.Marshal(payload)
@@ -38,7 +44,9 @@ func doJSONFromIP(t *testing.T, ip, method, path, token string, payload any) api
 		t.Fatalf("build request: %v", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Forwarded-For", ip)
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
@@ -300,6 +308,48 @@ func TestLoginAndRegisterRateLimited(t *testing.T) {
 	}
 	if !got429 {
 		t.Fatal("expected register to be rate limited")
+	}
+}
+
+// TestLoginRateLimitClientIP checks that the rate limit bucket follows the
+// X-Forwarded-For hop appended by the trusted proxy, not client-controlled headers.
+func TestLoginRateLimitClientIP(t *testing.T) {
+	requireShared(t)
+	login := func(headers map[string]string) int {
+		return doJSONWithHeaders(t, headers, http.MethodPost, "/api/auth/login", "", map[string]string{
+			"username": "nobody", "password": "wrong-password",
+		}).StatusCode
+	}
+
+	// a fresh True-Client-IP / X-Real-IP per attempt does not escape the bucket
+	ip := nextFakeIP()
+	got429 := false
+	for i := 0; i < 30; i++ {
+		spoof := nextFakeIP()
+		status := login(map[string]string{"X-Forwarded-For": ip, "True-Client-IP": spoof, "X-Real-IP": spoof})
+		if status == http.StatusTooManyRequests {
+			got429 = true
+			break
+		}
+		if status != http.StatusUnauthorized {
+			t.Fatalf("expected 401 or 429, got %d", status)
+		}
+	}
+	if !got429 {
+		t.Fatal("expected login to be rate limited despite spoofed client IP headers")
+	}
+
+	// entries the client prepends to X-Forwarded-For are ignored
+	if status := login(map[string]string{"X-Forwarded-For": nextFakeIP() + ", " + ip}); status != http.StatusTooManyRequests {
+		t.Fatalf("expected 429 with a spoofed X-Forwarded-For prefix, got %d", status)
+	}
+
+	// behind an outer proxy (whose hop is trusted) the bucket still follows the client
+	if status := login(map[string]string{"X-Forwarded-For": ip + ", 172.18.0.1"}); status != http.StatusTooManyRequests {
+		t.Fatalf("expected 429 for the same client behind an outer proxy, got %d", status)
+	}
+	if status := login(map[string]string{"X-Forwarded-For": nextFakeIP() + ", 172.18.0.1"}); status != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for another client behind the outer proxy, got %d", status)
 	}
 }
 

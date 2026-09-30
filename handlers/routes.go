@@ -70,7 +70,7 @@ func RegisterRoutes(r chi.Router, deps AppDependencies) {
 	cfg := deps.Cfg
 
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
+	r.Use(clientIP(cfg.TrustedProxies))
 	r.Use(middleware.Logger)
 	r.Use(recoverer)
 	r.Use(middleware.Compress(5))

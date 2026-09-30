@@ -65,8 +65,8 @@ func (l *ipRateLimiter) allow(ip string) bool {
 	return true
 }
 
-// getClientIP returns the peer IP. middleware.RealIP has already rewritten
-// RemoteAddr from proxy headers, so the headers are not consulted again here.
+// getClientIP returns the peer IP. The clientIP middleware has already rewritten
+// RemoteAddr from trusted proxy headers, so they are not consulted again here.
 func getClientIP(r *http.Request) string {
 	addr := strings.TrimSpace(r.RemoteAddr)
 	if host, _, err := net.SplitHostPort(addr); err == nil {

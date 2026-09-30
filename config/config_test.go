@@ -1,6 +1,7 @@
 package config
 
 import (
+	"net/netip"
 	"reflect"
 	"strings"
 	"testing"
@@ -20,7 +21,7 @@ func setValidEnv(t *testing.T) {
 		"THUMBNAIL_QUEUE_SIZE", "NUM_THUMBNAIL_WORKERS", "NUM_DETECTION_WORKERS",
 		"DETECTION_QUEUE_SIZE", "MEMORY_TRIM_INTERVAL_MINUTES",
 		"FACE_RECOGNITION_THRESHOLD", "FACE_RECOGNITION_ENABLED",
-		"PUBLIC_URL", "CORS_ALLOWED_ORIGINS",
+		"PUBLIC_URL", "CORS_ALLOWED_ORIGINS", "TRUSTED_PROXIES",
 	} {
 		t.Setenv(k, "")
 	}
@@ -95,6 +96,9 @@ func TestLoadConfigInvalidValues(t *testing.T) {
 		{"float above range", "FACE_RECOGNITION_THRESHOLD", "1.5", "FACE_RECOGNITION_THRESHOLD must be between"},
 		{"float below range", "FACE_RECOGNITION_THRESHOLD", "-0.1", "FACE_RECOGNITION_THRESHOLD must be between"},
 		{"non-boolean", "S3_USE_SSL", "maybe", "S3_USE_SSL must be a boolean"},
+		{"invalid trusted proxy", "TRUSTED_PROXIES", "10.0.0.0/8,proxy.local", "TRUSTED_PROXIES entries must be IPs or CIDRs"},
+		{"trusted proxy prefix out of range", "TRUSTED_PROXIES", "10.0.0.0/33", "TRUSTED_PROXIES entries must be IPs or CIDRs"},
+		{"empty trusted proxy list", "TRUSTED_PROXIES", " , ", "TRUSTED_PROXIES must list at least one"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -207,4 +211,49 @@ func TestLoadConfigCORSOrigins(t *testing.T) {
 	if !reflect.DeepEqual(cfg.CORSAllowedOrigins, want) {
 		t.Fatalf("CORSAllowedOrigins = %v, want %v", cfg.CORSAllowedOrigins, want)
 	}
+}
+
+func TestLoadConfigTrustedProxies(t *testing.T) {
+	setValidEnv(t)
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	for _, ip := range []string{"127.0.0.1", "::1", "10.1.2.3", "172.18.0.2", "192.168.1.1", "fd00::1"} {
+		if !containsAddr(cfg.TrustedProxies, ip) {
+			t.Errorf("default TrustedProxies should contain %s", ip)
+		}
+	}
+	for _, ip := range []string{"203.0.113.7", "172.32.0.1", "2001:db8::1"} {
+		if containsAddr(cfg.TrustedProxies, ip) {
+			t.Errorf("default TrustedProxies should not contain %s", ip)
+		}
+	}
+
+	t.Setenv("TRUSTED_PROXIES", " 173.245.48.0/20 , 10.0.0.5,::ffff:192.0.2.1, 2400:cb00::/32,10.1.2.3/8")
+	cfg, err = LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	want := []netip.Prefix{
+		netip.MustParsePrefix("173.245.48.0/20"),
+		netip.MustParsePrefix("10.0.0.5/32"),
+		netip.MustParsePrefix("192.0.2.1/32"),
+		netip.MustParsePrefix("2400:cb00::/32"),
+		netip.MustParsePrefix("10.0.0.0/8"),
+	}
+	if !reflect.DeepEqual(cfg.TrustedProxies, want) {
+		t.Fatalf("TrustedProxies = %v, want %v", cfg.TrustedProxies, want)
+	}
+}
+
+func containsAddr(prefixes []netip.Prefix, ip string) bool {
+	addr := netip.MustParseAddr(ip)
+	for _, p := range prefixes {
+		if p.Contains(addr) {
+			return true
+		}
+	}
+	return false
 }

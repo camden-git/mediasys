@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/netip"
 	"net/url"
 	"os"
 	"strconv"
@@ -15,6 +16,10 @@ const (
 	defaultThumbnailMaxSize    = 300
 	defaultNumDetectionWorkers = 1
 	defaultDetectionQueueSize  = 10
+
+	// loopback and private ranges: the bundled nginx plus a same-host reverse
+	// proxy or tunnel (Caddy, Traefik, cloudflared)
+	defaultTrustedProxies = "127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7"
 )
 
 type Config struct {
@@ -36,6 +41,9 @@ type Config struct {
 
 	// origins allowed to make credentialed requests to auth/admin routes
 	CORSAllowedOrigins []string
+
+	// proxies whose X-Forwarded-For entries are believed when resolving the client IP
+	TrustedProxies []netip.Prefix
 
 	// externally visible base URL (e.g. https://photos.example.com), used for
 	// absolute links in share pages; when empty the request's host is used
@@ -144,6 +152,28 @@ func (e *envErrs) envBool(envVar string, defaultVal bool) bool {
 	return val
 }
 
+// envPrefixes reads a comma-separated list of IPs and CIDRs; a bare IP is
+// treated as a single-address prefix.
+func (e *envErrs) envPrefixes(envVar, defaultVal string) []netip.Prefix {
+	entries := splitList(getEnvOrDefault(envVar, defaultVal))
+	if len(entries) == 0 {
+		e.add(fmt.Errorf("%s must list at least one IP or CIDR", envVar))
+		return nil
+	}
+	var out []netip.Prefix
+	for _, entry := range entries {
+		if prefix, err := netip.ParsePrefix(entry); err == nil {
+			out = append(out, prefix.Masked())
+		} else if addr, err := netip.ParseAddr(entry); err == nil && addr.Zone() == "" {
+			addr = addr.Unmap()
+			out = append(out, netip.PrefixFrom(addr, addr.BitLen()))
+		} else {
+			e.add(fmt.Errorf("%s entries must be IPs or CIDRs, got %q", envVar, entry))
+		}
+	}
+	return out
+}
+
 func splitList(v string) []string {
 	var out []string
 	for _, p := range strings.Split(v, ",") {
@@ -177,6 +207,7 @@ func LoadConfig() (Config, error) {
 	numDetectionWorkers := errs.envInt("NUM_DETECTION_WORKERS", defaultNumDetectionWorkers, 1)
 	detectionQueueSize := errs.envInt("DETECTION_QUEUE_SIZE", defaultDetectionQueueSize, 1)
 	memoryTrimInterval := errs.envInt("MEMORY_TRIM_INTERVAL_MINUTES", 30, 0)
+	trustedProxies := errs.envPrefixes("TRUSTED_PROXIES", defaultTrustedProxies)
 
 	// Legacy DNN face detection
 	faceDNNConfig := getEnvOrDefault("FACE_DNN_CONFIG_PATH", "./models/deploy.prototxt")
@@ -229,6 +260,7 @@ func LoadConfig() (Config, error) {
 		S3UseSSL:                  s3UseSSL,
 		MaxUploadSize:             int64(maxUploadMB) << 20,
 		PublicURL:                 publicURL,
+		TrustedProxies:            trustedProxies,
 		CORSAllowedOrigins:        splitList(getEnvOrDefault("CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173,http://127.0.0.1:4173")),
 		ThumbnailMaxSize:          thumbMaxSize,
 		ThumbnailQueueSize:        queueSize,

@@ -71,6 +71,8 @@ services:
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET (32+ characters) in .env (see .env.example) (openssl rand -hex 32 makes one)}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8080,http://localhost:5173}
       PUBLIC_URL: ${PUBLIC_URL:-}
+      # empty = loopback and private ranges (see .env.example)
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
       FACE_RECOGNITION_ENABLED: ${FACE_RECOGNITION_ENABLED:-true}
       FACE_RECOGNITION_MODEL_NAME: ${FACE_RECOGNITION_MODEL_NAME:-arcface}
       FACE_RECOGNITION_THRESHOLD: ${FACE_RECOGNITION_THRESHOLD:-0.6}
