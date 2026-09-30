@@ -5,6 +5,8 @@ import { getAlbums } from '../../api/albums';
 import { getBannerUrl } from '../../api/media';
 import { useGroups } from '../../hooks/useGroups.ts';
 import { useDocumentTitle } from '../../hooks/useDocumentTitle.ts';
+import { useAuthStore } from '../../store/useAuthStore.ts';
+import { Can } from '../elements/Can.tsx';
 import { queryKeys } from '../../lib/queryKeys.ts';
 import LoadingSpinner from '../elements/LoadingSpinner.tsx';
 import { ExclamationTriangleIcon } from '@heroicons/react/24/outline';
@@ -15,10 +17,15 @@ const browseLinks = [
     { label: 'People', to: '/people' },
 ];
 
+const navLinkClass =
+    'text-zinc-700 underline decoration-zinc-400 hover:decoration-zinc-700 dark:text-zinc-300 dark:decoration-zinc-600 dark:hover:decoration-zinc-300';
+
 const AlbumList: React.FC = () => {
     useDocumentTitle('Albums');
     const albumsQuery = useQuery({ queryKey: queryKeys.albums.list(), queryFn: ({ signal }) => getAlbums(signal) });
     const { groups, isLoading: groupsLoading, error: groupsError } = useGroups();
+    const isAuthenticated = useAuthStore((s) => s.isAuthenticated());
+    const isInitializing = useAuthStore((s) => s.isInitializing);
     const albums = albumsQuery.data ?? [];
     const isLoading = albumsQuery.isLoading || groupsLoading;
     const fetchError = albumsQuery.error ?? groupsError;
@@ -29,14 +36,15 @@ const AlbumList: React.FC = () => {
             <h1 className='mb-4 text-3xl font-bold text-gray-950 dark:text-white'>Mediasys</h1>
             <nav aria-label='Browse' className='mb-8 flex gap-4 text-sm font-medium'>
                 {browseLinks.map(({ label, to }) => (
-                    <Link
-                        key={to}
-                        to={to}
-                        className='text-zinc-700 underline decoration-zinc-400 hover:decoration-zinc-700 dark:text-zinc-300 dark:decoration-zinc-600 dark:hover:decoration-zinc-300'
-                    >
+                    <Link key={to} to={to} className={navLinkClass}>
                         {label}
                     </Link>
                 ))}
+                {!isInitializing && (
+                    <Link to={isAuthenticated ? '/admin' : '/auth/login'} className={`${navLinkClass} ml-auto`}>
+                        {isAuthenticated ? 'Admin' : 'Sign in'}
+                    </Link>
+                )}
             </nav>
             {error && (
                 <>
@@ -105,6 +113,14 @@ const AlbumList: React.FC = () => {
                         {albums.length === 0 && (
                             <p className='col-span-full text-center text-gray-500 dark:text-gray-400'>
                                 No albums found.
+                                <Can permission='album.create'>
+                                    {' '}
+                                    Create one in the{' '}
+                                    <Link to='/admin/albums/create' className='underline'>
+                                        admin area
+                                    </Link>
+                                    .
+                                </Can>
                             </p>
                         )}
                         {albums.map((album) => (
