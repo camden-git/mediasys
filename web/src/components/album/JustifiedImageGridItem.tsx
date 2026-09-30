@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { FileInfo } from '../../types.ts';
 import { getThumbnailUrl } from '../../api.ts';
 
@@ -16,11 +16,13 @@ const JustifiedImageGridItem: React.FC<JustifiedImageGridItemProps> = React.memo
     ({ image, height, width, margin, onImageClick }) => {
         const [showTooltip, setShowTooltip] = useState(false);
         const [isInView, setIsInView] = useState(false);
-        const containerRef = useRef<HTMLDivElement | null>(null);
+        const containerRef = useRef<HTMLButtonElement | null>(null);
         const longPressTimerRef = useRef<number | null>(null);
         const isLongPressRef = useRef(false);
         const suppressNextClickRef = useRef(false);
         const touchStartPosRef = useRef<{ x: number; y: number } | null>(null);
+        const tooltipTimerRef = useRef<number | null>(null);
+        const resetTimerRef = useRef<number | null>(null);
 
         const thumbnailUrl = image.thumbnail_path ? getThumbnailUrl(image.thumbnail_path) : undefined;
 
@@ -53,6 +55,8 @@ const JustifiedImageGridItem: React.FC<JustifiedImageGridItemProps> = React.memo
             height: `${height}px`,
             marginRight: `${margin}px`,
             display: 'inline-block',
+            padding: 0,
+            border: 0,
             verticalAlign: 'top',
             position: 'relative',
             overflow: 'hidden',
@@ -80,7 +84,11 @@ const JustifiedImageGridItem: React.FC<JustifiedImageGridItemProps> = React.memo
         };
 
         useEffect(() => {
-            return () => clearLongPressTimer();
+            return () => {
+                clearLongPressTimer();
+                if (tooltipTimerRef.current !== null) window.clearTimeout(tooltipTimerRef.current);
+                if (resetTimerRef.current !== null) window.clearTimeout(resetTimerRef.current);
+            };
         }, []);
 
         const handleTouchStart = (e: React.TouchEvent) => {
@@ -94,7 +102,7 @@ const JustifiedImageGridItem: React.FC<JustifiedImageGridItemProps> = React.memo
                 suppressNextClickRef.current = true;
                 if (isMobile) {
                     setShowTooltip(true);
-                    setTimeout(() => setShowTooltip(false), 2000);
+                    tooltipTimerRef.current = window.setTimeout(() => setShowTooltip(false), 2000);
                 }
             }, 500);
         };
@@ -114,17 +122,24 @@ const JustifiedImageGridItem: React.FC<JustifiedImageGridItemProps> = React.memo
             touchStartPosRef.current = null;
             // keep suppression to swallow the synthetic click, then reset shortly
             if (isLongPressRef.current) {
-                setTimeout(() => {
+                resetTimerRef.current = window.setTimeout(() => {
                     suppressNextClickRef.current = false;
                     isLongPressRef.current = false;
                 }, 400);
             }
         };
 
-        const handleClick = useCallback(() => {
+        const handleTouchCancel = () => {
+            clearLongPressTimer();
+            touchStartPosRef.current = null;
+            isLongPressRef.current = false;
+            suppressNextClickRef.current = false;
+        };
+
+        const handleClick = () => {
             if (suppressNextClickRef.current) return;
             onImageClick(image);
-        }, [onImageClick, image]);
+        };
 
         const handleDragStart = (e: React.DragEvent) => {
             e.preventDefault();
@@ -132,19 +147,21 @@ const JustifiedImageGridItem: React.FC<JustifiedImageGridItemProps> = React.memo
         };
 
         return (
-            <div
+            <button
+                type='button'
                 ref={containerRef}
                 style={style}
+                aria-label={image.name}
                 onClick={handleClick}
                 onContextMenu={handleContextMenu}
                 onTouchStart={handleTouchStart}
                 onTouchMove={handleTouchMove}
                 onTouchEnd={handleTouchEnd}
+                onTouchCancel={handleTouchCancel}
                 onDragStart={handleDragStart}
             >
                 <div
-                    role='img'
-                    aria-label={image.name}
+                    aria-hidden='true'
                     className='absolute top-0 left-0 h-full w-full'
                     style={{
                         width: '100%',
@@ -168,7 +185,7 @@ const JustifiedImageGridItem: React.FC<JustifiedImageGridItemProps> = React.memo
                 )}
                 {showTooltip && (
                     <div
-                        className='bg-opacity-75 pointer-events-none absolute bottom-2 left-1/2 z-10 -translate-x-1/2 transform rounded bg-black px-2 py-1 text-xs text-white'
+                        className='pointer-events-none absolute bottom-2 left-1/2 z-10 -translate-x-1/2 transform rounded bg-black/75 px-2 py-1 text-xs text-white'
                         style={{
                             fontSize: '11px',
                             whiteSpace: 'nowrap',
@@ -178,7 +195,7 @@ const JustifiedImageGridItem: React.FC<JustifiedImageGridItemProps> = React.memo
                         Tap to view full size & save
                     </div>
                 )}
-            </div>
+            </button>
         );
     },
 );
