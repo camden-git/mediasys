@@ -1,6 +1,7 @@
 import React from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { LoginContainer } from '../components/auth/LoginContainer.tsx';
+import NotFound from '../components/NotFound.tsx';
 import { RegisterForm } from '../components/auth/RegisterForm.tsx';
 
 const AuthRouter: React.FC = () => {
@@ -10,6 +11,7 @@ const AuthRouter: React.FC = () => {
                 <Routes>
                     <Route path='login' element={<LoginContainer />} />
                     <Route path='register' element={<RegisterForm />} />
+                    <Route path='*' element={<NotFound />} />
                 </Routes>
             </div>
         </main>

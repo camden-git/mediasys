@@ -13,6 +13,7 @@ const GroupView = React.lazy(() => import('./components/groups/GroupView'));
 const GroupPhotosView = React.lazy(() => import('./components/groups/GroupPhotosView'));
 const PeoplePage = React.lazy(() => import('./components/people/PeoplePage'));
 const PersonView = React.lazy(() => import('./components/people/PersonView'));
+const NotFound = React.lazy(() => import('./components/NotFound'));
 const CollectionRouter = React.lazy(() => import('./routes/CollectionRouter'));
 
 function App() {
@@ -42,7 +43,8 @@ function App() {
                     <Route path='/people/:personId' element={<PersonView />} />
 
                     <Route path='/album/:identifier/*' element={<AlbumRouter />} />
-                    <Route path='/*' element={<IndexRouter />} />
+                    <Route path='/' element={<IndexRouter />} />
+                    <Route path='*' element={<NotFound />} />
                 </Routes>
             </Suspense>
         </BrowserRouter>
