@@ -4,6 +4,7 @@ import { Person, FileInfo, PersonImageResult } from '../../types.ts';
 import { getPersonById, getPersonImages } from '../../api/people';
 import { errorMessage, isAbortError } from '../../api/errors';
 import { getPreviewImagePath } from '../../api/media';
+import { useDocumentTitle } from '../../hooks/useDocumentTitle.ts';
 import AdvancedImageGrid from '../album/AdvancedImageGrid.tsx';
 import ImageLightbox from '../album/ImageLightbox.tsx';
 import LoadingSpinner from '../elements/LoadingSpinner.tsx';
@@ -21,6 +22,8 @@ const PersonView: React.FC = () => {
     const [hasMore, setHasMore] = useState(false);
     const [isLoadingMore, setIsLoadingMore] = useState(false);
     const [selectedImage, setSelectedImage] = useState<FileInfo | null>(null);
+
+    useDocumentTitle(person?.primary_name);
 
     useEffect(() => {
         if (!personId) return;

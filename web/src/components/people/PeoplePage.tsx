@@ -3,10 +3,12 @@ import { Link } from 'react-router-dom';
 import { Person } from '../../types.ts';
 import { getPeople } from '../../api/people';
 import { errorMessage, isAbortError } from '../../api/errors';
+import { useDocumentTitle } from '../../hooks/useDocumentTitle.ts';
 import LoadingSpinner from '../elements/LoadingSpinner.tsx';
 import { UserCircleIcon } from '@heroicons/react/24/outline';
 
 const PeoplePage: React.FC = () => {
+    useDocumentTitle('People');
     const [people, setPeople] = useState<Person[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);

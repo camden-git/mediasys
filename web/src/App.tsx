@@ -14,6 +14,7 @@ const GroupView = React.lazy(() => import('./components/groups/GroupView'));
 const GroupPhotosView = React.lazy(() => import('./components/groups/GroupPhotosView'));
 const PeoplePage = React.lazy(() => import('./components/people/PeoplePage'));
 const PersonView = React.lazy(() => import('./components/people/PersonView'));
+const PublicLayout = React.lazy(() => import('./components/router/PublicLayout'));
 const NotFound = React.lazy(() => import('./components/NotFound'));
 const CollectionRouter = React.lazy(() => import('./routes/CollectionRouter'));
 
@@ -29,14 +30,16 @@ function AppRoutes() {
                     <Route path='/admin/albums/view/:slug/*' element={<AdminAlbumRouter />} />
                     <Route path='/admin/*' element={<AdminRouter />} />
 
-                    <Route path='/groups' element={<GroupsPage />} />
-                    <Route path='/groups/:slug' element={<GroupView />} />
-                    <Route path='/groups/:slug/photos' element={<GroupPhotosView />} />
+                    <Route element={<PublicLayout />}>
+                        <Route path='/groups' element={<GroupsPage />} />
+                        <Route path='/groups/:slug' element={<GroupView />} />
+                        <Route path='/groups/:slug/photos' element={<GroupPhotosView />} />
 
-                    <Route path='/collections/*' element={<CollectionRouter />} />
+                        <Route path='/collections/*' element={<CollectionRouter />} />
 
-                    <Route path='/people' element={<PeoplePage />} />
-                    <Route path='/people/:personId' element={<PersonView />} />
+                        <Route path='/people' element={<PeoplePage />} />
+                        <Route path='/people/:personId' element={<PersonView />} />
+                    </Route>
 
                     <Route path='/album/:identifier/*' element={<AlbumRouter />} />
                     <Route path='/' element={<IndexRouter />} />
