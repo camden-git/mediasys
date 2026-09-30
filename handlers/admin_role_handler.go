@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/camden-git/mediasysbackend/models"
 	"github.com/camden-git/mediasysbackend/permissions"
@@ -89,8 +90,8 @@ func toRoleResponseDTO(role *models.Role) RoleResponseDTO {
 		GlobalPermissions:      role.GlobalPermissions,
 		GlobalAlbumPermissions: role.GlobalAlbumPermissions,
 		AlbumPermissions:       role.AlbumPermissions,
-		CreatedAt:              role.CreatedAt.Format(http.TimeFormat),
-		UpdatedAt:              role.UpdatedAt.Format(http.TimeFormat),
+		CreatedAt:              role.CreatedAt.UTC().Format(time.RFC3339),
+		UpdatedAt:              role.UpdatedAt.UTC().Format(time.RFC3339),
 	}
 }
 

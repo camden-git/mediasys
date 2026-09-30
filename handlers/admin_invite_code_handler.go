@@ -73,8 +73,8 @@ func toInviteCodeResponseDTO(ic *models.InviteCode) InviteCodeResponseDTO {
 		Uses:            ic.Uses,
 		IsActive:        ic.IsActive,
 		CreatedByUserID: ic.CreatedByUserID,
-		CreatedAt:       ic.CreatedAt.Format(http.TimeFormat),
-		UpdatedAt:       ic.UpdatedAt.Format(http.TimeFormat),
+		CreatedAt:       ic.CreatedAt.UTC().Format(time.RFC3339),
+		UpdatedAt:       ic.UpdatedAt.UTC().Format(time.RFC3339),
 	}
 }
 
