@@ -47,7 +47,7 @@ func (r *GormInviteCodeRepository) IncrementUses(id uint) error {
 
 func (r *GormInviteCodeRepository) ListAll() ([]models.InviteCode, error) {
 	var inviteCodes []models.InviteCode
-	err := r.db.Find(&inviteCodes).Error
+	err := r.db.Order("id").Find(&inviteCodes).Error
 	return inviteCodes, err
 }
 

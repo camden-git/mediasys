@@ -44,7 +44,7 @@ func (r *GormRoleRepository) GetByName(name string) (*models.Role, error) {
 func (r *GormRoleRepository) ListAll() ([]models.Role, error) {
 	var roles []models.Role
 	// Preload AlbumPermissions for all roles listed
-	err := r.db.Preload("AlbumPermissions").Find(&roles).Error
+	err := r.db.Preload("AlbumPermissions").Order("id").Find(&roles).Error
 	return roles, err
 }
 

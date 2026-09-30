@@ -177,7 +177,7 @@ func (r *GormUserRepository) Delete(id uint) error {
 func (r *GormUserRepository) ListAll() ([]models.User, error) {
 	var users []models.User
 
-	err := r.withRolePreloads(r.db).Find(&users).Error
+	err := r.withRolePreloads(r.db).Order("users.id").Find(&users).Error
 	if err != nil {
 		return nil, err
 	}
@@ -271,7 +271,7 @@ func (r *GormUserRepository) GetUsersWithAlbumPermissions(albumID uint) ([]model
 	// get users with direct album permissions
 	err := r.withRolePreloads(r.db.Joins("JOIN user_album_permissions ON users.id = user_album_permissions.user_id")).
 		Where("user_album_permissions.album_id = ?", albumID).
-		Find(&users).Error
+		Order("users.id").Find(&users).Error
 
 	if err != nil {
 		return nil, nil, err
@@ -291,7 +291,7 @@ func (r *GormUserRepository) GetUsersWithoutAlbumPermissions(albumID uint) ([]mo
 
 	// get users who don't have direct album permissions for this album
 	err := r.withRolePreloads(r.db.Where("id NOT IN (SELECT user_id FROM user_album_permissions WHERE album_id = ?)", albumID)).
-		Find(&users).Error
+		Order("users.id").Find(&users).Error
 
 	if err != nil {
 		return nil, err

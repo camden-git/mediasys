@@ -27,6 +27,9 @@ func (p PaginationParams) Offset() int {
 	if p.Page <= 1 {
 		return 0
 	}
+	if p.PerPage > 0 && p.Page-1 > math.MaxInt/p.PerPage {
+		return math.MaxInt
+	}
 	return (p.Page - 1) * p.PerPage
 }
 
@@ -90,9 +93,6 @@ func NewPaginationMeta(total int, params PaginationParams, count int) Pagination
 	if currentPage < 1 {
 		currentPage = 1
 	}
-	if totalPages > 0 && currentPage > totalPages {
-		currentPage = totalPages
-	}
 
 	return PaginationMeta{
 		Total:       total,
@@ -115,9 +115,9 @@ func PaginateSlice[T any](items []T, params PaginationParams) ([]T, PaginationMe
 		start = total
 	}
 
-	end := start + params.PerPage
-	if end > total {
-		end = total
+	end := total
+	if params.PerPage < total-start {
+		end = start + params.PerPage
 	}
 
 	pageItems := slices.Clone(items[start:end])
