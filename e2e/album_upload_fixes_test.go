@@ -349,3 +349,32 @@ func TestReuploadReplacesOriginal(t *testing.T) {
 		t.Fatalf("expected the re-uploaded original to be served, status %d", orig.StatusCode)
 	}
 }
+
+// Hidden groups are unlisted, not access-controlled: they must stay out of the
+// public list but still open by direct link.
+func TestHiddenGroupReachableByLink(t *testing.T) {
+	env := requireShared(t)
+	s := randomSuffix()
+	resp := doJSON(t, http.MethodPost, "/api/admin/groups", env.adminToken, map[string]any{"name": "HG " + s, "slug": "hg-" + s, "is_hidden": true})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create group: %d %s", resp.StatusCode, resp.Body)
+	}
+
+	if r := doRequest(t, http.MethodGet, "/api/groups/hg-"+s, "", nil, ""); r.StatusCode != http.StatusOK {
+		t.Fatalf("get hidden group: %d %s", r.StatusCode, r.Body)
+	}
+	if r := doRequest(t, http.MethodGet, "/api/groups/hg-"+s+"/photos", "", nil, ""); r.StatusCode != http.StatusOK {
+		t.Fatalf("get hidden group photos: %d %s", r.StatusCode, r.Body)
+	}
+
+	list := doRequest(t, http.MethodGet, "/api/groups", "", nil, "")
+	var groups []struct {
+		Slug string `json:"slug"`
+	}
+	list.decodeData(t, &groups)
+	for _, g := range groups {
+		if g.Slug == "hg-"+s {
+			t.Fatalf("hidden group should not be listed")
+		}
+	}
+}

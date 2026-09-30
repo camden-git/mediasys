@@ -46,10 +46,6 @@ func (h *AlbumGroupHandler) GetGroup(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	if group.IsHidden {
-		WriteAPIError(w, http.StatusNotFound, "GroupNotFound", "Album group not found")
-		return
-	}
 	setCacheHeaders(w, 300)
 	WriteAPIResponse(w, http.StatusOK, toPublicAlbumGroup(group))
 }
@@ -65,10 +61,6 @@ func (h *AlbumGroupHandler) GetGroupPhotos(w http.ResponseWriter, r *http.Reques
 			log.Printf("Error getting album group '%s' for photos: %v", slug, err)
 			WriteAPIError(w, http.StatusInternalServerError, "GroupFetchError", "Failed to retrieve album group")
 		}
-		return
-	}
-	if group.IsHidden {
-		WriteAPIError(w, http.StatusNotFound, "GroupNotFound", "Album group not found")
 		return
 	}
 
