@@ -26,7 +26,7 @@ func (ah *AlbumHandler) ShareAlbumHTML(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	absolute := absoluteURLFunc(r)
+	absolute := absoluteURLFunc(r, ah.PublicURL)
 
 	pageURL := absolute("/album/" + album.Slug)
 

@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -35,6 +36,10 @@ type Config struct {
 
 	// origins allowed to make credentialed requests to auth/admin routes
 	CORSAllowedOrigins []string
+
+	// externally visible base URL (e.g. https://photos.example.com), used for
+	// absolute links in share pages; when empty the request's host is used
+	PublicURL string
 
 	// thumbnail generation settings
 	ThumbnailMaxSize int
@@ -175,6 +180,14 @@ func LoadConfig() (Config, error) {
 		return Config{}, fmt.Errorf("JWT_SECRET must not be set to the known default value; generate a new secret")
 	}
 
+	publicURL := strings.TrimRight(strings.TrimSpace(os.Getenv("PUBLIC_URL")), "/")
+	if publicURL != "" {
+		u, err := url.Parse(publicURL)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return Config{}, fmt.Errorf("PUBLIC_URL must be an absolute http(s) URL, got %q", publicURL)
+		}
+	}
+
 	cfg := Config{
 		DatabaseURL:               dbURL,
 		DatabaseDebug:             getEnvBoolOrDefault("DATABASE_DEBUG", false),
@@ -185,6 +198,7 @@ func LoadConfig() (Config, error) {
 		S3Region:                  getEnvOrDefault("S3_REGION", "us-east-1"),
 		S3UseSSL:                  getEnvBoolOrDefault("S3_USE_SSL", false),
 		MaxUploadSize:             int64(getEnvIntOrDefault("MAX_UPLOAD_SIZE_MB", 200)) << 20,
+		PublicURL:                 publicURL,
 		CORSAllowedOrigins:        splitList(getEnvOrDefault("CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173,http://127.0.0.1:4173")),
 		ThumbnailMaxSize:          thumbMaxSize,
 		ThumbnailQueueSize:        queueSize,

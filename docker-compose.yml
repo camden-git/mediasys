@@ -56,6 +56,7 @@ services:
       # required: the server refuses to start without a real secret (see .env.example)
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env (see .env.example) — try: openssl rand -hex 32}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8080,http://localhost:5173}
+      PUBLIC_URL: ${PUBLIC_URL:-}
       FACE_RECOGNITION_ENABLED: ${FACE_RECOGNITION_ENABLED:-true}
       FACE_RECOGNITION_MODEL_NAME: ${FACE_RECOGNITION_MODEL_NAME:-arcface}
       CUDA_ENABLED: ${CUDA_ENABLED:-false}

@@ -15,8 +15,10 @@ type sharePage struct {
 }
 
 // absoluteURLFunc returns a function that turns a site-relative path into an absolute
-// URL using the scheme and host the request arrived with (honouring X-Forwarded-* headers).
-func absoluteURLFunc(r *http.Request) func(string) string {
+// URL. When publicURL is set it is used as the base; otherwise the scheme and host
+// the request arrived with are used (honouring X-Forwarded-* headers, which are
+// client controlled unless a trusted proxy overwrites them).
+func absoluteURLFunc(r *http.Request, publicURL string) func(string) string {
 	scheme := "http"
 	if r.Header.Get("X-Forwarded-Proto") == "https" || r.TLS != nil {
 		scheme = "https"
@@ -26,6 +28,11 @@ func absoluteURLFunc(r *http.Request) func(string) string {
 		host = r.Host
 	}
 
+	base := scheme + "://" + host
+	if publicURL != "" {
+		base = strings.TrimRight(publicURL, "/")
+	}
+
 	return func(path string) string {
 		if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
 			return path
@@ -33,7 +40,7 @@ func absoluteURLFunc(r *http.Request) func(string) string {
 		if !strings.HasPrefix(path, "/") {
 			path = "/" + path
 		}
-		return scheme + "://" + host + path
+		return base + path
 	}
 }
 

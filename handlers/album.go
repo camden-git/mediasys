@@ -21,6 +21,7 @@ type AlbumHandler struct {
 	UserRepo  repository.UserRepository
 	ThumbGen  *workers.ImageProcessor
 	Store     *media.Store
+	PublicURL string // externally visible base URL for share pages
 }
 
 func (ah *AlbumHandler) getAlbumByIdentifier(identifier string) (*models.Album, error) {

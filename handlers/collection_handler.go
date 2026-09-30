@@ -15,6 +15,7 @@ import (
 // CollectionHandler serves public collection endpoints.
 type CollectionHandler struct {
 	CollectionRepo repository.CollectionRepositoryInterface
+	PublicURL      string // externally visible base URL for share pages
 }
 
 // collectionPublicResponse is the public view of a collection with banners as paths.

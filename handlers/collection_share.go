@@ -26,7 +26,7 @@ func (h *CollectionHandler) ShareCollectionHTML(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	absolute := absoluteURLFunc(r)
+	absolute := absoluteURLFunc(r, h.PublicURL)
 
 	pageURL := absolute("/collections/" + collection.Slug)
 

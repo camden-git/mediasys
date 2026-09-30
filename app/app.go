@@ -110,7 +110,7 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		Store:     mediaStore,
 		DB:        gormDB,
 
-		AlbumHandler:        &handlers.AlbumHandler{AlbumRepo: albumRepo, ImageRepo: imageRepo, UserRepo: userRepo, ThumbGen: imageProcessor, Store: mediaStore},
+		AlbumHandler:        &handlers.AlbumHandler{AlbumRepo: albumRepo, ImageRepo: imageRepo, UserRepo: userRepo, ThumbGen: imageProcessor, Store: mediaStore, PublicURL: cfg.PublicURL},
 		PersonHandler:       &handlers.PersonHandler{PersonRepo: personRepo, FaceRepo: faceRepo, ImageRepo: imageRepo, Store: mediaStore, Cfg: cfg},
 		FaceHandler:         &handlers.FaceHandler{FaceRepo: faceRepo, EmbeddingRepo: faceEmbeddingRepo, PersonRepo: personRepo, ImageRepo: imageRepo, Store: mediaStore, Cfg: cfg, FaceRecognitionService: faceRecognitionService},
 		ImagePreviewHandler: &handlers.ImagePreviewHandler{FaceRepo: faceRepo, ImageRepo: imageRepo, Store: mediaStore, Cfg: cfg},
@@ -132,7 +132,7 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		AlbumGroupHandler:      &handlers.AlbumGroupHandler{GroupRepo: albumGroupRepo, ImageRepo: imageRepo},
 		AdminImageTagHandler:   &handlers.AdminImageTagHandler{TagRepo: imageTagRepo, AlbumRepo: albumRepo, ImageRepo: imageRepo},
 		AdminCollectionHandler: handlers.NewAdminCollectionHandler(collectionRepo, mediaProcessor, mediaStore),
-		CollectionHandler:      &handlers.CollectionHandler{CollectionRepo: collectionRepo},
+		CollectionHandler:      &handlers.CollectionHandler{CollectionRepo: collectionRepo, PublicURL: cfg.PublicURL},
 		SetupHandler:           handlers.NewSetupHandler(userRepo, roleRepo),
 	}
 
