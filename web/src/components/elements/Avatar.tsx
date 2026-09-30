@@ -9,8 +9,9 @@ interface AvatarProps {
 }
 
 export const Avatar: React.FC<AvatarProps> = ({ src, initials, className, alt = '', style }) => {
-    const [imgError, setImgError] = useState(false);
-    const showImg = src && !imgError;
+    // remember which src failed so a new src gets a fresh attempt
+    const [failedSrc, setFailedSrc] = useState<string | undefined>(undefined);
+    const showImg = src && src !== failedSrc;
 
     return (
         <span
@@ -19,7 +20,7 @@ export const Avatar: React.FC<AvatarProps> = ({ src, initials, className, alt = 
             style={style}
         >
             {showImg ? (
-                <img src={src} alt={alt} className='h-full w-full object-cover' onError={() => setImgError(true)} />
+                <img src={src} alt={alt} className='h-full w-full object-cover' onError={() => setFailedSrc(src)} />
             ) : (
                 <span className='text-xs leading-none font-semibold text-white'>{initials}</span>
             )}

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { forwardRef } from 'react';
 import { Field as FormikField, FieldProps } from 'formik';
 import { Input } from './Input';
@@ -22,7 +21,6 @@ export const FormikFieldComponent = forwardRef<HTMLInputElement | HTMLTextAreaEl
                 const hasError = touched[name] && errors[name];
 
                 const commonProps = {
-                    ref,
                     id: name,
                     'data-invalid': hasError ? true : undefined,
                     ...field,
@@ -48,9 +46,13 @@ export const FormikFieldComponent = forwardRef<HTMLInputElement | HTMLTextAreaEl
                     <Field className={className}>
                         {label && <Label htmlFor={name}>{label}</Label>}
                         {fieldType === 'textarea' ? (
-                            <Textarea {...commonProps} rows={rows} />
+                            <Textarea
+                                {...(commonProps as React.ComponentPropsWithoutRef<typeof Textarea>)}
+                                ref={ref as React.Ref<HTMLTextAreaElement>}
+                                rows={rows}
+                            />
                         ) : (
-                            <Input {...commonProps} />
+                            <Input {...commonProps} ref={ref as React.Ref<HTMLInputElement>} />
                         )}
                         {hasError ? (
                             <ErrorMessage>{errors[name] as string}</ErrorMessage>

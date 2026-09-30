@@ -68,11 +68,9 @@ export const NavbarItem = forwardRef(function NavbarItem(
 
     if ('to' in props && typeof props.to === 'string') {
         const cleanTo = props.to.replace(/\/$/, '');
-        if (includeSubPaths) {
-            current = cleanLocation.includes(cleanTo);
-        } else {
-            current = cleanLocation === cleanTo;
-        }
+        // root only matches exactly, otherwise "/" would prefix-match every path
+        current =
+            cleanLocation === cleanTo || (!!includeSubPaths && !!cleanTo && cleanLocation.startsWith(`${cleanTo}/`));
     } else {
         current = false;
     }

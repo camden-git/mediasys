@@ -114,7 +114,7 @@ export function TableCell({ className, children, ...props }: React.ComponentProp
                     data-row-link
                     to={href}
                     target={target}
-                    aria-label={title}
+                    aria-label={title ?? cellRef?.parentElement?.textContent?.trim().slice(0, 100) ?? undefined}
                     tabIndex={cellRef?.previousElementSibling === null ? 0 : -1}
                     className='absolute inset-0 focus:outline-none'
                 />

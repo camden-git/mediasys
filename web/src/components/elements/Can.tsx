@@ -21,7 +21,11 @@ const matchesPermission = (perm: string, userPerms: string[]): boolean => {
 
     // wildcard match
     if (perm.includes('*')) {
-        const regex = new RegExp(`^${perm.replace(/\./g, '\\.').replace(/\*/g, '.*')}$`);
+        const escaped = perm
+            .split('*')
+            .map((part) => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&'))
+            .join('.*');
+        const regex = new RegExp(`^${escaped}$`);
         return userPerms.some((up) => regex.test(up));
     }
 
