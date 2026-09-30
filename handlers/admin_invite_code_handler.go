@@ -26,10 +26,24 @@ type InviteCodeCreatePayload struct {
 	MaxUses   *int    `json:"max_uses,omitempty"`   // Nullable for unlimited
 }
 
+// InviteCodeUpdatePayload uses json.RawMessage for the nullable fields so that an
+// omitted field (left unchanged) can be told apart from an explicit null (cleared).
 type InviteCodeUpdatePayload struct {
-	ExpiresAt *string `json:"expires_at,omitempty"`
-	MaxUses   *int    `json:"max_uses,omitempty"`
-	IsActive  *bool   `json:"is_active,omitempty"`
+	ExpiresAt json.RawMessage `json:"expires_at,omitempty"` // RFC3339 string, or null/"" to clear
+	MaxUses   json.RawMessage `json:"max_uses,omitempty"`   // integer >= 1, or null to make unlimited
+	IsActive  *bool           `json:"is_active,omitempty"`
+}
+
+// parseInviteExpiry parses an RFC3339 expiry and requires it to be in the future.
+func parseInviteExpiry(value string) (*time.Time, string) {
+	t, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return nil, "Invalid expires_at format (must be RFC3339)"
+	}
+	if !t.After(time.Now()) {
+		return nil, "expires_at must be in the future"
+	}
+	return &t, ""
 }
 
 // InviteCodeResponseDTO for API responses
@@ -118,18 +132,23 @@ func (h *AdminInviteCodeHandler) CreateInviteCode(w http.ResponseWriter, r *http
 		return
 	}
 
+	if payload.MaxUses != nil && *payload.MaxUses < 1 {
+		WriteAPIError(w, http.StatusBadRequest, "ValidationError", "max_uses must be at least 1")
+		return
+	}
+
 	inviteCode := &models.InviteCode{
 		CreatedByUserID: currentUser.ID,
 		MaxUses:         payload.MaxUses,
 	}
 
 	if payload.ExpiresAt != nil && *payload.ExpiresAt != "" {
-		t, err := time.Parse(time.RFC3339, *payload.ExpiresAt)
-		if err != nil {
-			WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Invalid expires_at format (must be RFC3339): "+err.Error())
+		t, msg := parseInviteExpiry(*payload.ExpiresAt)
+		if msg != "" {
+			WriteAPIError(w, http.StatusBadRequest, "ValidationError", msg)
 			return
 		}
-		inviteCode.ExpiresAt = &t
+		inviteCode.ExpiresAt = t
 	}
 
 	if err := h.InviteCodeRepo.Create(inviteCode); err != nil {
@@ -171,19 +190,33 @@ func (h *AdminInviteCodeHandler) UpdateInviteCode(w http.ResponseWriter, r *http
 	}
 
 	if payload.ExpiresAt != nil {
-		if *payload.ExpiresAt == "" {
+		var value *string
+		if err := json.Unmarshal(payload.ExpiresAt, &value); err != nil {
+			WriteAPIError(w, http.StatusBadRequest, "ValidationError", "expires_at must be an RFC3339 string or null")
+			return
+		}
+		if value == nil || *value == "" {
 			inviteCode.ExpiresAt = nil
 		} else {
-			t, err := time.Parse(time.RFC3339, *payload.ExpiresAt)
-			if err != nil {
-				WriteAPIError(w, http.StatusBadRequest, "ValidationError", "Invalid expires_at format (must be RFC3339): "+err.Error())
+			t, msg := parseInviteExpiry(*value)
+			if msg != "" {
+				WriteAPIError(w, http.StatusBadRequest, "ValidationError", msg)
 				return
 			}
-			inviteCode.ExpiresAt = &t
+			inviteCode.ExpiresAt = t
 		}
 	}
 	if payload.MaxUses != nil {
-		inviteCode.MaxUses = payload.MaxUses
+		var value *int
+		if err := json.Unmarshal(payload.MaxUses, &value); err != nil {
+			WriteAPIError(w, http.StatusBadRequest, "ValidationError", "max_uses must be an integer or null")
+			return
+		}
+		if value != nil && *value < 1 {
+			WriteAPIError(w, http.StatusBadRequest, "ValidationError", "max_uses must be at least 1")
+			return
+		}
+		inviteCode.MaxUses = value
 	}
 	if payload.IsActive != nil {
 		inviteCode.IsActive = *payload.IsActive
@@ -193,7 +226,13 @@ func (h *AdminInviteCodeHandler) UpdateInviteCode(w http.ResponseWriter, r *http
 		WriteAPIError(w, http.StatusInternalServerError, "InviteCodeUpdateError", "Failed to update invite code: "+err.Error())
 		return
 	}
-	WriteAPIResponse(w, http.StatusOK, toInviteCodeResponseDTO(inviteCode))
+
+	updated, err := h.InviteCodeRepo.GetByID(inviteCode.ID)
+	if err != nil {
+		WriteAPIError(w, http.StatusInternalServerError, "InviteCodeFetchError", "Failed to retrieve updated invite code: "+err.Error())
+		return
+	}
+	WriteAPIResponse(w, http.StatusOK, toInviteCodeResponseDTO(updated))
 }
 
 func (h *AdminInviteCodeHandler) DeleteInviteCode(w http.ResponseWriter, r *http.Request) {

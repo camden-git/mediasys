@@ -19,18 +19,26 @@ func (r *GormInviteCodeRepository) Create(inviteCode *models.InviteCode) error {
 
 func (r *GormInviteCodeRepository) GetByCode(code string) (*models.InviteCode, error) {
 	var inviteCode models.InviteCode
-	err := r.db.Where("code = ?", code).First(&inviteCode).Error
-	return &inviteCode, err
+	if err := r.db.Where("code = ?", code).First(&inviteCode).Error; err != nil {
+		return nil, err
+	}
+	return &inviteCode, nil
 }
 
 func (r *GormInviteCodeRepository) GetByID(id uint) (*models.InviteCode, error) {
 	var inviteCode models.InviteCode
-	err := r.db.First(&inviteCode, id).Error
-	return &inviteCode, err
+	if err := r.db.First(&inviteCode, id).Error; err != nil {
+		return nil, err
+	}
+	return &inviteCode, nil
 }
 
+// Update writes only the admin-editable columns, so concurrent changes to uses are not overwritten.
+// Nil ExpiresAt/MaxUses are stored as NULL.
 func (r *GormInviteCodeRepository) Update(inviteCode *models.InviteCode) error {
-	return r.db.Save(inviteCode).Error
+	return r.db.Model(&models.InviteCode{}).Where("id = ?", inviteCode.ID).
+		Select("expires_at", "max_uses", "is_active").
+		Updates(inviteCode).Error
 }
 
 func (r *GormInviteCodeRepository) IncrementUses(id uint) error {
