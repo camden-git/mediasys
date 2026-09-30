@@ -340,8 +340,7 @@ func (h *AuthHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"message": "Logged out successfully. Please discard your token."})
+	writeJSON(w, http.StatusOK, map[string]string{"message": "Logged out successfully. Please discard your token."})
 }
 
 // CurrentUser retrieves the authenticated user from the request context
@@ -353,9 +352,5 @@ func (h *AuthHandler) CurrentUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userForResponse := *user
-	userForResponse.PasswordHash = ""
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(userForResponse)
+	writeJSON(w, http.StatusOK, user)
 }
