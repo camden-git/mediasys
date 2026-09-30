@@ -6,8 +6,20 @@ const getAuthToken = (): string | null => localStorage.getItem('authToken');
 
 type ProgressCbs = { onStart: () => void; onComplete: () => void };
 let _progressCbs: ProgressCbs | null = null;
+let _inFlight = 0;
 export const registerProgressCallbacks = (cb: ProgressCbs) => {
     _progressCbs = cb;
+};
+
+const progressStart = () => {
+    _inFlight++;
+    _progressCbs?.onStart();
+};
+
+// Only complete the progress bar once every in-flight request has settled.
+const progressDone = () => {
+    _inFlight = Math.max(0, _inFlight - 1);
+    if (_inFlight === 0) _progressCbs?.onComplete();
 };
 
 const http: AxiosInstance = axios.create({
@@ -18,7 +30,7 @@ const http: AxiosInstance = axios.create({
 });
 
 http.interceptors.request.use((req) => {
-    _progressCbs?.onStart();
+    progressStart();
 
     // Add auth token if available
     const token = getAuthToken();
@@ -46,12 +58,12 @@ http.interceptors.request.use((req) => {
 
 http.interceptors.response.use(
     (resp: AxiosResponse) => {
-        _progressCbs?.onComplete();
+        progressDone();
 
         return resp;
     },
     (error) => {
-        _progressCbs?.onComplete();
+        progressDone();
 
         // The backend always returns errors as {"errors": [{code, status, detail}]}, so if the
         // response body came back as a JSON string for some reason, parse it before extracting.

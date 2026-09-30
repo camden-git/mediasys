@@ -7,7 +7,6 @@ type Timer = ReturnType<typeof setTimeout>;
 
 const ProgressBar: React.FC = () => {
     const interval = useRef<Timer>(null) as React.MutableRefObject<Timer>;
-    const timeout = useRef<Timer>(null) as React.MutableRefObject<Timer>;
     const [visible, setVisible] = useState(false);
     const progress = useProgressStore((s) => s.progress);
     const continuous = useProgressStore((s) => s.continuous);
@@ -15,7 +14,6 @@ const ProgressBar: React.FC = () => {
 
     useEffect(() => {
         return () => {
-            if (timeout.current) clearTimeout(timeout.current);
             if (interval.current) clearInterval(interval.current);
         };
     }, []);
@@ -24,7 +22,9 @@ const ProgressBar: React.FC = () => {
         setVisible((progress || 0) > 0);
 
         if (progress === 100) {
-            timeout.current = setTimeout(() => setProgress(undefined), 500);
+            // cleared if a new load starts (progress changes) before the 500ms elapses
+            const t = setTimeout(() => setProgress(undefined), 500);
+            return () => clearTimeout(t);
         }
     }, [progress, setProgress]);
 

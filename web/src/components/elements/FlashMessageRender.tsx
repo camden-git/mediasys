@@ -4,6 +4,7 @@ import Notification from './Notification.tsx';
 
 interface FlashMessageRenderProps {
     byKey: string;
+    /** @deprecated ignored; flashes render in a fixed overlay. Remove from callers. */
     className?: string;
 }
 
@@ -22,10 +23,6 @@ const FlashMessageRender: React.FC<FlashMessageRenderProps> = ({ byKey }) => {
             clearTimer.current = window.setTimeout(() => clearFlashes(byKey), 0);
         };
     }, [byKey, clearFlashes]);
-
-    if (filteredFlashes.length === 0) {
-        return null;
-    }
 
     return (
         <div

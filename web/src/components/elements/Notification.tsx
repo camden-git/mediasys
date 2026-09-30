@@ -6,7 +6,7 @@ import {
     ShieldExclamationIcon,
 } from '@heroicons/react/24/outline';
 import { XMarkIcon } from '@heroicons/react/20/solid';
-import { useState, Fragment } from 'react';
+import { useEffect, useState, Fragment } from 'react';
 
 export type FlashMessageType = 'success' | 'info' | 'warning' | 'error';
 
@@ -17,8 +17,17 @@ interface Props {
     onClose?: () => void;
 }
 
+const SUCCESS_DISMISS_MS = 5000;
+
 const Notification = ({ title, children, type, onClose }: Props) => {
     const [show, setShow] = useState<boolean>(true);
+
+    // success messages dismiss themselves; errors stay until closed
+    useEffect(() => {
+        if (type !== 'success') return;
+        const t = setTimeout(() => setShow(false), SUCCESS_DISMISS_MS);
+        return () => clearTimeout(t);
+    }, [type]);
 
     return (
         <Transition
