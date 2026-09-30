@@ -152,8 +152,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		ExpiresAt: expirationTime,
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	WriteAPIResponse(w, http.StatusOK, response)
 }
 
 var turnstileClient = &http.Client{Timeout: 10 * time.Second}
@@ -270,9 +269,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]string{"message": "User registered successfully. Please log in."})
+	WriteAPIResponse(w, http.StatusCreated, map[string]string{"message": "User registered successfully. Please log in."})
 }
 
 type UpdateProfilePayload struct {
@@ -340,7 +337,7 @@ func (h *AuthHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"message": "Logged out successfully. Please discard your token."})
+	WriteAPIResponse(w, http.StatusOK, map[string]string{"message": "Logged out successfully. Please discard your token."})
 }
 
 // CurrentUser retrieves the authenticated user from the request context
@@ -352,5 +349,5 @@ func (h *AuthHandler) CurrentUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, user)
+	WriteAPIResponse(w, http.StatusOK, user)
 }

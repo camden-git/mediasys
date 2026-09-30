@@ -118,10 +118,10 @@ func (fh *FaceHandler) AddFace(w http.ResponseWriter, r *http.Request) {
 	createdFace, fetchErr := fh.FaceRepo.GetByID(face.ID)
 	if fetchErr != nil {
 		log.Printf("Error fetching newly created face %d: %v", face.ID, fetchErr)
-		writeJSON(w, http.StatusCreated, face)
+		WriteAPIResponse(w, http.StatusCreated, face)
 		return
 	}
-	writeJSON(w, http.StatusCreated, createdFace)
+	WriteAPIResponse(w, http.StatusCreated, createdFace)
 }
 
 func (fh *FaceHandler) ListFacesByImage(w http.ResponseWriter, r *http.Request) {
@@ -141,7 +141,7 @@ func (fh *FaceHandler) ListFacesByImage(w http.ResponseWriter, r *http.Request) 
 	if faces == nil {
 		faces = []models.Face{}
 	}
-	writeJSON(w, http.StatusOK, faces)
+	WriteAPIResponse(w, http.StatusOK, faces)
 }
 
 func (fh *FaceHandler) GetFace(w http.ResponseWriter, r *http.Request) {
@@ -161,7 +161,7 @@ func (fh *FaceHandler) GetFace(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	writeJSON(w, http.StatusOK, face)
+	WriteAPIResponse(w, http.StatusOK, face)
 }
 
 func (fh *FaceHandler) UpdateFace(w http.ResponseWriter, r *http.Request) {
@@ -289,11 +289,10 @@ func (fh *FaceHandler) UpdateFace(w http.ResponseWriter, r *http.Request) {
 	updatedFace, err := fh.FaceRepo.GetByID(uint(faceID))
 	if err != nil {
 		log.Printf("Error fetching updated face %d: %v", faceID, err)
-		// still, the update was successful at DB level
-		writeJSON(w, http.StatusOK, map[string]string{"message": "Face updated successfully"})
+		WriteAPIError(w, http.StatusInternalServerError, "FaceFetchError", "Face was updated but could not be reloaded")
 		return
 	}
-	writeJSON(w, http.StatusOK, updatedFace)
+	WriteAPIResponse(w, http.StatusOK, updatedFace)
 }
 
 func (fh *FaceHandler) DeleteFace(w http.ResponseWriter, r *http.Request) {
@@ -353,7 +352,7 @@ func (fh *FaceHandler) SearchFacesByPerson(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if len(personIDs) == 0 {
-		writeJSON(w, http.StatusOK, []repository.PersonImageResult{})
+		WriteAPIResponse(w, http.StatusOK, []repository.PersonImageResult{})
 		return
 	}
 	offset, limit := parsePagination(r, 100, 500)
@@ -366,7 +365,7 @@ func (fh *FaceHandler) SearchFacesByPerson(w http.ResponseWriter, r *http.Reques
 	if images == nil {
 		images = []repository.PersonImageResult{}
 	}
-	writeJSON(w, http.StatusOK, images)
+	WriteAPIResponse(w, http.StatusOK, images)
 }
 
 // GetSimilarFaces finds faces similar to a given face ID
@@ -405,7 +404,7 @@ func (fh *FaceHandler) GetSimilarFaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, similarFaces)
+	WriteAPIResponse(w, http.StatusOK, similarFaces)
 }
 
 // GetUntaggedFaces returns untagged faces with person suggestions
@@ -471,7 +470,7 @@ func (fh *FaceHandler) GetUntaggedFaces(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, untaggedFaces)
+	WriteAPIResponse(w, http.StatusOK, untaggedFaces)
 }
 
 // TagFace tags a face with a person and optionally auto-tags similar faces
@@ -527,7 +526,7 @@ func (fh *FaceHandler) TagFace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"message": "Face tagged successfully"})
+	WriteAPIResponse(w, http.StatusOK, map[string]string{"message": "Face tagged successfully"})
 }
 
 // AutoTagFace automatically tags a face based on similar faces
@@ -606,7 +605,7 @@ func (fh *FaceHandler) AutoTagFace(w http.ResponseWriter, r *http.Request) {
 		response["person_name"] = *personName
 	}
 
-	writeJSON(w, http.StatusOK, response)
+	WriteAPIResponse(w, http.StatusOK, response)
 }
 
 // SuggestFace returns the best person suggestion for a face without tagging it
@@ -634,7 +633,7 @@ func (fh *FaceHandler) SuggestFace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	WriteAPIResponse(w, http.StatusOK, map[string]interface{}{
 		"suggested_person_id":   suggestion.PersonID,
 		"suggested_person_name": suggestion.PersonName,
 		"suggestion_count":      suggestion.Count,

@@ -220,13 +220,13 @@ export interface UpdateUserAlbumPermissionsPayload {
 }
 
 export const getAlbumUsers = async (albumId: number): Promise<AlbumUserPermissionResponse[]> => {
-    const response = await http.get<AlbumUserPermissionResponse[]>(`/admin/albums/${albumId}/users`);
-    return response.data;
+    const response = await http.get<ApiResponse<AlbumUserPermissionResponse[]>>(`/admin/albums/${albumId}/users`);
+    return response.data.data;
 };
 
 export const getAvailableUsers = async (albumId: number): Promise<User[]> => {
-    const response = await http.get<User[]>(`/admin/albums/${albumId}/users/available`);
-    return response.data;
+    const response = await http.get<ApiResponse<User[]>>(`/admin/albums/${albumId}/users/available`);
+    return response.data.data;
 };
 
 export const addUserToAlbum = async (albumId: number, payload: AddUserToAlbumPayload): Promise<any> => {

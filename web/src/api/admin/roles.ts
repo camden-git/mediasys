@@ -1,5 +1,11 @@
 import http from '../http';
-import { AdminRoleResponse, RoleCreatePayload, RoleUpdatePayload, UserSummary } from '../../types';
+import {
+    AdminRoleResponse,
+    PermissionGroupDefinition,
+    RoleCreatePayload,
+    RoleUpdatePayload,
+    UserSummary,
+} from '../../types';
 import { ApiResponse, PaginatedResult, PaginationRequest, toPaginatedResult, toPaginationQuery } from '../standard';
 
 export const listRoles = async (params?: PaginationRequest): Promise<PaginatedResult<AdminRoleResponse>> => {
@@ -47,6 +53,6 @@ export const removeUserFromRole = async (roleId: number, userId: number): Promis
 };
 
 export const getPermissionDefinitions = async () => {
-    const response = await http.get('/permissions');
-    return response.data;
+    const response = await http.get<ApiResponse<PermissionGroupDefinition[]>>('/permissions');
+    return response.data.data;
 };

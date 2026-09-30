@@ -136,7 +136,5 @@ func (h *SetupHandler) CreateFirstAdmin(w http.ResponseWriter, r *http.Request) 
 
 	fmt.Printf("Successfully created initial admin user '%s' with Super Administrator role.\n", adminUser.Username)
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]string{"message": "Initial admin user created successfully. Please log in."})
+	WriteAPIResponse(w, http.StatusCreated, map[string]string{"message": "Initial admin user created successfully. Please log in."})
 }

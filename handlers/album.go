@@ -56,7 +56,7 @@ func (ah *AlbumHandler) ListAlbums(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setCacheHeaders(w, 300)
-	writeJSON(w, http.StatusOK, toPublicAlbums(albums))
+	WriteAPIResponse(w, http.StatusOK, toPublicAlbums(albums))
 }
 
 func (ah *AlbumHandler) GetAlbum(w http.ResponseWriter, r *http.Request) {
@@ -106,5 +106,5 @@ func (ah *AlbumHandler) GetAlbum(w http.ResponseWriter, r *http.Request) {
 		Banners []string                 `json:"banners"`
 	}
 	setCacheHeaders(w, 300)
-	writeJSON(w, http.StatusOK, albumWithArtists{PublicAlbum: toPublicAlbum(album), Artists: artists, Banners: bannerPaths})
+	WriteAPIResponse(w, http.StatusOK, albumWithArtists{PublicAlbum: toPublicAlbum(album), Artists: artists, Banners: bannerPaths})
 }

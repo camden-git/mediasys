@@ -26,9 +26,7 @@ func (r apiResponse) decode(t *testing.T, v any) {
 }
 
 // decodeData unmarshals the "data" field of a handlers.WriteAPIResponse-shaped body
-// ({"data": ...}) into v. Roughly half the handlers in this codebase use that
-// envelope and half write their payload directly - see the WriteAPIResponse vs
-// writeJSON call sites in handlers/ for which is which.
+// ({"data": ...}) into v. Every JSON success response uses that envelope.
 func (r apiResponse) decodeData(t *testing.T, v any) {
 	t.Helper()
 	var wrapper struct {
@@ -146,15 +144,17 @@ func login(baseURL, username, password string) (string, error) {
 		return "", fmt.Errorf("unexpected status %d: %s", resp.StatusCode, body)
 	}
 	var parsed struct {
-		Token string `json:"token"`
+		Data struct {
+			Token string `json:"token"`
+		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		return "", err
 	}
-	if parsed.Token == "" {
+	if parsed.Data.Token == "" {
 		return "", fmt.Errorf("login response had no token: %s", body)
 	}
-	return parsed.Token, nil
+	return parsed.Data.Token, nil
 }
 
 // multipartUpload builds a multipart/form-data body uploading a single file under the

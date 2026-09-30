@@ -55,7 +55,7 @@ func createPerson(t *testing.T, token, name string, aliases ...string) personBod
 		t.Fatalf("failed to create person: %d %s", resp.StatusCode, resp.Body)
 	}
 	var p personBody
-	resp.decode(t, &p)
+	resp.decodeData(t, &p)
 	return p
 }
 
@@ -70,7 +70,7 @@ func addFace(t *testing.T, token, imagePath string, personID *uint) faceBody {
 		t.Fatalf("failed to add face: %d %s", resp.StatusCode, resp.Body)
 	}
 	var f faceBody
-	resp.decode(t, &f)
+	resp.decodeData(t, &f)
 	return f
 }
 
@@ -81,7 +81,7 @@ func getPerson(t *testing.T, id uint) personBody {
 		t.Fatalf("failed to get person %d: %d %s", id, resp.StatusCode, resp.Body)
 	}
 	var p personBody
-	resp.decode(t, &p)
+	resp.decodeData(t, &p)
 	return p
 }
 
@@ -173,7 +173,7 @@ func TestHiddenAlbumFacesExcludedFromPublicPeople(t *testing.T) {
 		var results []struct {
 			ImagePath string `json:"image_path"`
 		}
-		resp.decode(t, &results)
+		resp.decodeData(t, &results)
 		if len(results) != 1 || results[0].ImagePath != visiblePath {
 			t.Fatalf("expected only %q, got %+v", visiblePath, results)
 		}
@@ -185,7 +185,7 @@ func TestHiddenAlbumFacesExcludedFromPublicPeople(t *testing.T) {
 			t.Fatalf("expected 200, got %d: %s", resp.StatusCode, resp.Body)
 		}
 		var faces []faceBody
-		resp.decode(t, &faces)
+		resp.decodeData(t, &faces)
 		if len(faces) != 1 {
 			t.Fatalf("expected 1 face on hidden image, got %d", len(faces))
 		}
@@ -210,7 +210,7 @@ func TestDeletePersonCleansUp(t *testing.T) {
 			t.Fatalf("search failed: %d %s", resp.StatusCode, resp.Body)
 		}
 		var results []map[string]any
-		resp.decode(t, &results)
+		resp.decodeData(t, &results)
 		return len(results)
 	}
 	if n := search(); n != 1 {
@@ -231,7 +231,7 @@ func TestDeletePersonCleansUp(t *testing.T) {
 		t.Fatalf("get face failed: %d %s", resp.StatusCode, resp.Body)
 	}
 	var got faceBody
-	resp.decode(t, &got)
+	resp.decodeData(t, &got)
 	if got.PersonID != nil {
 		t.Fatalf("expected face to be unassigned after person delete, person_id=%d", *got.PersonID)
 	}

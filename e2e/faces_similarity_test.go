@@ -51,7 +51,7 @@ func listUntagged(t *testing.T, token, query string) []untaggedBody {
 		t.Fatalf("untagged failed: %d %s", resp.StatusCode, resp.Body)
 	}
 	var out []untaggedBody
-	resp.decode(t, &out)
+	resp.decodeData(t, &out)
 	return out
 }
 
@@ -78,7 +78,7 @@ func TestUntaggedFacesSQLFilteringAndSuggestions(t *testing.T) {
 	var tagged struct {
 		Confirmed bool `json:"confirmed"`
 	}
-	resp.decode(t, &tagged)
+	resp.decodeData(t, &tagged)
 	if !tagged.Confirmed {
 		t.Fatalf("manual PUT tag should be confirmed: %s", resp.Body)
 	}
@@ -151,7 +151,7 @@ func TestUntaggedFacesSQLFilteringAndSuggestions(t *testing.T) {
 		var s struct {
 			PersonID *uint `json:"suggested_person_id"`
 		}
-		resp.decode(t, &s)
+		resp.decodeData(t, &s)
 		if s.PersonID == nil || *s.PersonID != confirmedPerson.ID {
 			t.Fatalf("unexpected suggestion: %s", resp.Body)
 		}
@@ -165,7 +165,7 @@ func TestUntaggedFacesSQLFilteringAndSuggestions(t *testing.T) {
 		var sim []struct {
 			FaceID uint `json:"face_id"`
 		}
-		resp.decode(t, &sim)
+		resp.decodeData(t, &sim)
 		if len(sim) < 5 {
 			t.Fatalf("expected >=5 similar faces, got %d", len(sim))
 		}

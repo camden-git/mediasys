@@ -61,7 +61,7 @@ func loginFresh(t *testing.T, username, password string) (apiResponse, string) {
 		Token string `json:"token"`
 	}
 	if resp.StatusCode == http.StatusOK {
-		resp.decode(t, &parsed)
+		resp.decodeData(t, &parsed)
 	}
 	return resp, parsed.Token
 }
@@ -394,7 +394,7 @@ func TestAlbumUsersReturnMinimalDTO(t *testing.T) {
 	var members []struct {
 		User json.RawMessage `json:"user"`
 	}
-	resp.decode(t, &members)
+	resp.decodeData(t, &members)
 	if len(members) == 0 {
 		t.Fatal("expected at least one album member")
 	}
@@ -409,7 +409,7 @@ func TestAlbumUsersReturnMinimalDTO(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, resp.Body)
 	}
 	var available []json.RawMessage
-	resp.decode(t, &available)
+	resp.decodeData(t, &available)
 	if len(available) == 0 {
 		t.Fatal("expected available users")
 	}

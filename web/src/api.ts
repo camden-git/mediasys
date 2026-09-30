@@ -83,13 +83,13 @@ const apiClient = async (url: string, options: RequestInit = {}, signal?: AbortS
 
 export const getAlbums = async (): Promise<Album[]> => {
     const response = await apiClient(`/albums`);
-    return (await response.json()) as Album[];
+    return ((await response.json()) as { data: Album[] }).data;
 };
 
 export const getAlbumDetails = async (identifier: string, signal?: AbortSignal): Promise<Album> => {
     const encodedIdentifier = encodeURIComponent(identifier);
     const response = await apiClient(`/albums/${encodedIdentifier}`, {}, signal);
-    return (await response.json()) as Album;
+    return ((await response.json()) as { data: Album }).data;
 };
 
 export const getAlbumContents = async (
@@ -103,7 +103,7 @@ export const getAlbumContents = async (
     if (params?.limit !== undefined) search.set('limit', String(params.limit));
     const qs = search.toString();
     const response = await apiClient(`/albums/${encodedIdentifier}/contents${qs ? `?${qs}` : ''}`, {}, signal);
-    return (await response.json()) as DirectoryListing;
+    return ((await response.json()) as { data: DirectoryListing }).data;
 };
 
 // auth
@@ -112,7 +112,7 @@ export const loginUser = async (payload: LoginPayload): Promise<AuthResponse> =>
         method: 'POST',
         body: JSON.stringify(payload),
     });
-    return (await response.json()) as AuthResponse;
+    return ((await response.json()) as { data: AuthResponse }).data;
 };
 
 export const registerUser = async (payload: RegisterPayload): Promise<{ message: string }> => {
@@ -120,12 +120,12 @@ export const registerUser = async (payload: RegisterPayload): Promise<{ message:
         method: 'POST',
         body: JSON.stringify(payload),
     });
-    return (await response.json()) as { message: string }; // Assuming backend returns a message on successful registration
+    return ((await response.json()) as { data: { message: string } }).data;
 };
 
 export const getCurrentUser = async (): Promise<User> => {
     const response = await apiClient('/auth/me');
-    return (await response.json()) as User;
+    return ((await response.json()) as { data: User }).data;
 };
 
 export const getThumbnailUrl = (thumbnailPath: string): string => {
@@ -161,7 +161,7 @@ export const getFaceThumbnailUrl = (faceId: number): string => {
 
 export const getFacesForImage = async (imagePath: string): Promise<FaceData[]> => {
     const response = await apiClient(`/images/faces?path=${encodeURIComponent(imagePath)}`);
-    return (await response.json()) as FaceData[];
+    return ((await response.json()) as { data: FaceData[] }).data;
 };
 
 // Album Groups
@@ -195,18 +195,18 @@ export const getGroupPhotos = async (
 // People
 export const getPeople = async (signal?: AbortSignal): Promise<Person[]> => {
     const response = await apiClient('/people', {}, signal);
-    return (await response.json()) as Person[];
+    return ((await response.json()) as { data: Person[] }).data;
 };
 
 export const getPersonById = async (id: number, signal?: AbortSignal): Promise<Person> => {
     const response = await apiClient(`/people/${id}`, {}, signal);
-    return (await response.json()) as Person;
+    return ((await response.json()) as { data: Person }).data;
 };
 
 /** Admin variant of getPersonById that includes faces from hidden albums (requires people.manage). */
 export const getPersonByIdAdmin = async (id: number, signal?: AbortSignal): Promise<Person> => {
     const response = await apiClient(`/people/${id}/admin`, {}, signal);
-    return (await response.json()) as Person;
+    return ((await response.json()) as { data: Person }).data;
 };
 
 export interface PersonImagesPage {
@@ -226,17 +226,17 @@ export const getPersonImages = async (
     if (params.offset !== undefined) qs.set('offset', String(params.offset));
     if (params.limit !== undefined) qs.set('limit', String(params.limit));
     const response = await apiClient(`/people/${personId}/images?${qs}`, {}, signal);
-    return (await response.json()) as PersonImagesPage;
+    return ((await response.json()) as { data: PersonImagesPage }).data;
 };
 
 export const searchFacesByName = async (query: string, signal?: AbortSignal): Promise<PersonImageResult[]> => {
     const response = await apiClient(`/search/faces?query=${encodeURIComponent(query)}`, {}, signal);
-    return (await response.json()) as PersonImageResult[];
+    return ((await response.json()) as { data: PersonImageResult[] }).data;
 };
 
 export const searchPeople = async (q: string, limit = 5, signal?: AbortSignal): Promise<Person[]> => {
     const response = await apiClient(`/people/search?q=${encodeURIComponent(q)}&limit=${limit}`, {}, signal);
-    return (await response.json()) as Person[];
+    return ((await response.json()) as { data: Person[] }).data;
 };
 
 // People management (admin)
@@ -245,7 +245,7 @@ export const createPerson = async (name: string): Promise<Person> => {
         method: 'POST',
         body: JSON.stringify({ primary_name: name }),
     });
-    return (await response.json()) as Person;
+    return ((await response.json()) as { data: Person }).data;
 };
 
 export const updatePerson = async (id: number, name: string): Promise<Person> => {
@@ -253,7 +253,7 @@ export const updatePerson = async (id: number, name: string): Promise<Person> =>
         method: 'PUT',
         body: JSON.stringify({ primary_name: name }),
     });
-    return (await response.json()) as Person;
+    return ((await response.json()) as { data: Person }).data;
 };
 
 export const deletePerson = async (id: number): Promise<void> => {
@@ -265,7 +265,7 @@ export const addPersonAlias = async (personId: number, name: string): Promise<Al
         method: 'POST',
         body: JSON.stringify({ name }),
     });
-    return (await response.json()) as Alias;
+    return ((await response.json()) as { data: Alias }).data;
 };
 
 export const deletePersonAlias = async (personId: number, aliasId: number): Promise<void> => {
@@ -274,7 +274,7 @@ export const deletePersonAlias = async (personId: number, aliasId: number): Prom
 
 export const getPersonAliases = async (personId: number, signal?: AbortSignal): Promise<Alias[]> => {
     const response = await apiClient(`/people/${personId}/aliases`, {}, signal);
-    return (await response.json()) as Alias[];
+    return ((await response.json()) as { data: Alias[] }).data;
 };
 
 /** Returns the URL for a person's key photo thumbnail; the face id busts caches when the key photo changes. */
@@ -316,7 +316,7 @@ export const getUntaggedFaces = async (
     if (params.group_by_image) qs.set('group_by_image', 'true');
     if (params.album_id != null) qs.set('album_id', String(params.album_id));
     const response = await apiClient(`/faces/untagged?${qs}`, {}, signal);
-    return ((await response.json()) ?? []) as UntaggedFaceResult[];
+    return ((await response.json()) as { data: UntaggedFaceResult[] }).data;
 };
 
 export const tagFace = async (faceId: number, personId: number): Promise<void> => {
@@ -339,7 +339,7 @@ export const suggestFace = async (
     confidence: number;
 }> => {
     const response = await apiClient(`/faces/${faceId}/suggest`);
-    return await response.json();
+    return (await response.json()).data;
 };
 
 export const getAlbumContentsWithRating = async (
@@ -354,5 +354,5 @@ export const getAlbumContentsWithRating = async (
     if (params?.min_rating !== undefined) search.set('min_rating', String(params.min_rating));
     const qs = search.toString();
     const response = await apiClient(`/albums/${encodedIdentifier}/contents${qs ? `?${qs}` : ''}`, {}, signal);
-    return (await response.json()) as DirectoryListing;
+    return ((await response.json()) as { data: DirectoryListing }).data;
 };

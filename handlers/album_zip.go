@@ -55,7 +55,7 @@ func (ah *AlbumHandler) RequestAlbumZipGeneration(w http.ResponseWriter, r *http
 	ah.ThumbGen.QueueJob(zipJob)
 
 	log.Printf("Album ZIP generation requested and queued for Album ID: %d", album.ID)
-	writeJSON(w, http.StatusAccepted, map[string]string{"message": "Album ZIP generation request accepted and queued."})
+	WriteAPIResponse(w, http.StatusAccepted, map[string]string{"message": "Album ZIP generation request accepted and queued."})
 }
 
 func (ah *AlbumHandler) DownloadAlbumZipByID(w http.ResponseWriter, r *http.Request) {
@@ -82,7 +82,7 @@ func (ah *AlbumHandler) serveAlbumZip(w http.ResponseWriter, r *http.Request, id
 
 	if album.ZipStatus != database.StatusDone || album.ZipPath == nil || *album.ZipPath == "" {
 		if album.ZipStatus == database.StatusPending || album.ZipStatus == database.StatusProcessing {
-			writeJSON(w, http.StatusAccepted, map[string]string{
+			WriteAPIResponse(w, http.StatusAccepted, map[string]string{
 				"status":  album.ZipStatus,
 				"message": "ZIP archive is currently being generated. Please try again later.",
 			})

@@ -19,7 +19,7 @@ func TestInitialSetupLoginMe(t *testing.T) {
 		var user struct {
 			Username string `json:"username"`
 		}
-		resp.decode(t, &user)
+		resp.decodeData(t, &user)
 		if user.Username != env.adminUsername {
 			t.Fatalf("expected username %q, got %q", env.adminUsername, user.Username)
 		}

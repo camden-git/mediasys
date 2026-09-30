@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -54,12 +55,20 @@ type APIResponse[T any] struct {
 }
 
 // WriteAPIResponse writes a standardized JSON response.
+// Nil slices are serialized as [] rather than null.
 func WriteAPIResponse[T any](w http.ResponseWriter, status int, data T) {
+	if v := reflect.ValueOf(data); v.Kind() == reflect.Slice && v.IsNil() {
+		writeJSON(w, status, APIResponse[any]{Data: reflect.MakeSlice(v.Type(), 0, 0).Interface()})
+		return
+	}
 	writeJSON(w, status, APIResponse[T]{Data: data})
 }
 
 // WriteAPIPaginated writes a standardized JSON response including pagination metadata.
 func WriteAPIPaginated[T any](w http.ResponseWriter, status int, data []T, pagination PaginationMeta) {
+	if data == nil {
+		data = []T{}
+	}
 	meta := &APIMeta{Pagination: &pagination}
 	writeJSON(w, status, APIResponse[[]T]{Data: data, Meta: meta})
 }

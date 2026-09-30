@@ -161,7 +161,7 @@ func TestPublicListLimitIsClamped(t *testing.T) {
 		t.Fatalf("contents: %d %s", resp.StatusCode, resp.Body)
 	}
 	var listing directoryListing
-	resp.decode(t, &listing)
+	resp.decodeData(t, &listing)
 	if listing.Limit != 500 {
 		t.Fatalf("expected limit clamped to 500, got %d", listing.Limit)
 	}

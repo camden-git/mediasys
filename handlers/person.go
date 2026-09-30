@@ -65,11 +65,11 @@ func (ph *PersonHandler) CreatePerson(w http.ResponseWriter, r *http.Request) {
 	createdPerson, fetchErr := ph.PersonRepo.GetByID(person.ID)
 	if fetchErr != nil {
 		log.Printf("Error fetching newly created person %d with aliases: %v", person.ID, fetchErr)
-		writeJSON(w, http.StatusCreated, person)
+		WriteAPIResponse(w, http.StatusCreated, person)
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, createdPerson)
+	WriteAPIResponse(w, http.StatusCreated, createdPerson)
 }
 
 func (ph *PersonHandler) ListPeople(w http.ResponseWriter, r *http.Request) {
@@ -82,7 +82,7 @@ func (ph *PersonHandler) ListPeople(w http.ResponseWriter, r *http.Request) {
 	if people == nil {
 		people = []models.Person{}
 	}
-	writeJSON(w, http.StatusOK, people)
+	WriteAPIResponse(w, http.StatusOK, people)
 }
 
 func (ph *PersonHandler) GetPerson(w http.ResponseWriter, r *http.Request) {
@@ -103,7 +103,7 @@ func (ph *PersonHandler) GetPerson(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	writeJSON(w, http.StatusOK, person)
+	WriteAPIResponse(w, http.StatusOK, person)
 }
 
 // GetPersonAdmin returns a person with all of their faces, including faces in hidden albums.
@@ -124,7 +124,7 @@ func (ph *PersonHandler) GetPersonAdmin(w http.ResponseWriter, r *http.Request) 
 		}
 		return
 	}
-	writeJSON(w, http.StatusOK, person)
+	WriteAPIResponse(w, http.StatusOK, person)
 }
 
 // ListPersonImages returns a page of the visible images containing the person.
@@ -151,7 +151,10 @@ func (ph *PersonHandler) ListPersonImages(w http.ResponseWriter, r *http.Request
 		WriteAPIError(w, http.StatusInternalServerError, "ImageListError", "Failed to list images")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	if images == nil {
+		images = []repository.PersonImageResult{}
+	}
+	WriteAPIResponse(w, http.StatusOK, map[string]any{
 		"items":    images,
 		"total":    total,
 		"offset":   offset,
@@ -216,10 +219,10 @@ func (ph *PersonHandler) UpdatePerson(w http.ResponseWriter, r *http.Request) {
 	updatedPerson, err := ph.PersonRepo.GetByID(uint(personID))
 	if err != nil {
 		log.Printf("Error fetching updated person %d: %v", personID, err)
-		writeJSON(w, http.StatusOK, map[string]string{"message": "Person updated successfully, but failed to fetch full details."})
+		WriteAPIResponse(w, http.StatusOK, personToUpdate)
 		return
 	}
-	writeJSON(w, http.StatusOK, updatedPerson)
+	WriteAPIResponse(w, http.StatusOK, updatedPerson)
 }
 
 func (ph *PersonHandler) DeletePerson(w http.ResponseWriter, r *http.Request) {
@@ -258,7 +261,7 @@ func (ph *PersonHandler) ListAliases(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, aliases)
+	WriteAPIResponse(w, http.StatusOK, aliases)
 }
 
 func (ph *PersonHandler) AddAlias(w http.ResponseWriter, r *http.Request) {
@@ -308,13 +311,13 @@ func (ph *PersonHandler) AddAlias(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, alias)
+	WriteAPIResponse(w, http.StatusCreated, alias)
 }
 
 func (ph *PersonHandler) SearchPeople(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
 	if strings.TrimSpace(q) == "" {
-		writeJSON(w, http.StatusOK, []models.Person{})
+		WriteAPIResponse(w, http.StatusOK, []models.Person{})
 		return
 	}
 
@@ -337,7 +340,7 @@ func (ph *PersonHandler) SearchPeople(w http.ResponseWriter, r *http.Request) {
 	if people == nil {
 		people = []models.Person{}
 	}
-	writeJSON(w, http.StatusOK, people)
+	WriteAPIResponse(w, http.StatusOK, people)
 }
 
 func (ph *PersonHandler) DeleteAlias(w http.ResponseWriter, r *http.Request) {

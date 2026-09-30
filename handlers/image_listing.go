@@ -36,10 +36,10 @@ type DirectoryListing struct {
 	Path    string     `json:"path"`
 	Files   []FileInfo `json:"files"`
 	Parent  string     `json:"parent,omitempty"`
-	Total   int        `json:"total,omitempty"`
-	Offset  int        `json:"offset,omitempty"`
-	Limit   int        `json:"limit,omitempty"`
-	HasMore bool       `json:"has_more,omitempty"`
+	Total   int        `json:"total"`
+	Offset  int        `json:"offset"`
+	Limit   int        `json:"limit"`
+	HasMore bool       `json:"has_more"`
 }
 
 // imageToFileInfo converts an image row to the listing shape the frontend expects.

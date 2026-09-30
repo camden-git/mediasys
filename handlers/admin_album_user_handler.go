@@ -220,7 +220,7 @@ func (h *AdminAlbumUserHandler) GetAlbumUsers(w http.ResponseWriter, r *http.Req
 		})
 	}
 
-	writeJSON(w, http.StatusOK, response)
+	WriteAPIResponse(w, http.StatusOK, response)
 }
 
 // GetAvailableUsers returns all users who don't have permissions for a specific album
@@ -251,7 +251,7 @@ func (h *AdminAlbumUserHandler) GetAvailableUsers(w http.ResponseWriter, r *http
 	for _, user := range users {
 		summaries = append(summaries, toAlbumUserSummary(user))
 	}
-	writeJSON(w, http.StatusOK, summaries)
+	WriteAPIResponse(w, http.StatusOK, summaries)
 }
 
 // AddUserToAlbum adds a user to an album with specific permissions
@@ -320,7 +320,7 @@ func (h *AdminAlbumUserHandler) AddUserToAlbum(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, userAlbumPerm)
+	WriteAPIResponse(w, http.StatusCreated, userAlbumPerm)
 }
 
 // UpdateUserAlbumPermissions updates a user's permissions for a specific album
@@ -392,7 +392,7 @@ func (h *AdminAlbumUserHandler) UpdateUserAlbumPermissions(w http.ResponseWriter
 		return
 	}
 
-	writeJSON(w, http.StatusOK, userAlbumPerm)
+	WriteAPIResponse(w, http.StatusOK, userAlbumPerm)
 }
 
 // RemoveUserFromAlbum removes a user's permissions for a specific album

@@ -145,7 +145,7 @@ func TestAlbumUploadAndProcessing(t *testing.T) {
 			t.Fatalf("expected 200, got %d: %s", resp.StatusCode, resp.Body)
 		}
 		var listing directoryListing
-		resp.decode(t, &listing)
+		resp.decodeData(t, &listing)
 		if listing.Total != 1 {
 			t.Fatalf("expected 1 image in public listing, got %d", listing.Total)
 		}
@@ -183,14 +183,14 @@ func TestAlbumListingSortAndPaging(t *testing.T) {
 			return false
 		}
 		var listing directoryListing
-		resp.decode(t, &listing)
+		resp.decodeData(t, &listing)
 		return listing.Total == 3
 	})
 
 	t.Run("natural sort order", func(t *testing.T) {
 		resp := doRequest(t, http.MethodGet, "/api/albums/"+slug+"/contents?limit=100", "", nil, "")
 		var listing directoryListing
-		resp.decode(t, &listing)
+		resp.decodeData(t, &listing)
 		if len(listing.Files) != 3 {
 			t.Fatalf("expected 3 files, got %d", len(listing.Files))
 		}
@@ -205,14 +205,14 @@ func TestAlbumListingSortAndPaging(t *testing.T) {
 	t.Run("offset and limit page through results", func(t *testing.T) {
 		resp := doRequest(t, http.MethodGet, "/api/albums/"+slug+"/contents?limit=2&offset=0", "", nil, "")
 		var page1 directoryListing
-		resp.decode(t, &page1)
+		resp.decodeData(t, &page1)
 		if len(page1.Files) != 2 || !page1.HasMore || page1.Total != 3 {
 			t.Fatalf("expected page1 of 2 with has_more=true total=3, got %+v", page1)
 		}
 
 		resp = doRequest(t, http.MethodGet, "/api/albums/"+slug+"/contents?limit=2&offset=2", "", nil, "")
 		var page2 directoryListing
-		resp.decode(t, &page2)
+		resp.decodeData(t, &page2)
 		if len(page2.Files) != 1 || page2.HasMore || page2.Total != 3 {
 			t.Fatalf("expected page2 of 1 with has_more=false total=3, got %+v", page2)
 		}

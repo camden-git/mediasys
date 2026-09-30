@@ -59,5 +59,5 @@ func (ah *AlbumHandler) GetAlbumContents(w http.ResponseWriter, r *http.Request)
 		HasMore: offset+len(files) < total,
 	}
 	setCacheHeaders(w, 120)
-	writeJSON(w, http.StatusOK, listing)
+	WriteAPIResponse(w, http.StatusOK, listing)
 }

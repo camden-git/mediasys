@@ -271,7 +271,13 @@ func (h *AdminAlbumHandler) ListAlbumImages(w http.ResponseWriter, r *http.Reque
 	for i := range images {
 		files = append(files, imageToFileInfo(&images[i]))
 	}
-	WriteAPIResponse(w, http.StatusOK, DirectoryListing{Path: "/" + album.FolderPath, Files: files, Total: total})
+	WriteAPIResponse(w, http.StatusOK, DirectoryListing{
+		Path:    "/" + album.FolderPath,
+		Files:   files,
+		Total:   total,
+		Limit:   len(files),
+		HasMore: false,
+	})
 }
 
 // DeleteAlbumImage deletes a single image, its related records and all of its stored objects

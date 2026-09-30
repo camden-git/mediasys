@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -19,12 +18,9 @@ type DebugHandler struct {
 }
 
 type QueueDetectionResponse struct {
-	Success   bool   `json:"success"`
-	Message   string `json:"message"`
 	ImagePath string `json:"image_path"`
 	Queued    bool   `json:"queued"`
-	JobID     string `json:"job_id,omitempty"`
-	Error     string `json:"error,omitempty"`
+	JobID     string `json:"job_id"`
 }
 
 // QueueFaceDetection re-runs face detection for a specific image
@@ -35,26 +31,22 @@ func (dh *DebugHandler) QueueFaceDetection(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	response := QueueDetectionResponse{ImagePath: dbPath}
 	if !dh.Cfg.FaceRecognitionEnabled {
-		response.Message = "Face recognition is disabled"
-		dh.sendJSONResponse(w, response, http.StatusConflict)
+		WriteAPIError(w, http.StatusConflict, "FaceRecognitionDisabled", "Face recognition is disabled")
 		return
 	}
 	if err := dh.ImageRepo.RequeueTask(dbPath, "detection_status"); err != nil {
-		response.Message = "Image not found"
-		response.Error = err.Error()
-		dh.sendJSONResponse(w, response, http.StatusNotFound)
+		WriteAPIError(w, http.StatusNotFound, "ImageNotFound", "Image not found: "+err.Error())
 		return
 	}
 	dh.ImageProcessor.Wake()
 
-	response.Success = true
-	response.Queued = true
-	response.Message = "Face detection task queued successfully"
-	response.JobID = fmt.Sprintf("%s:%s", dbPath, workers.TaskDetection)
 	log.Printf("Debug API: Queued face detection for %s", dbPath)
-	dh.sendJSONResponse(w, response, http.StatusOK)
+	WriteAPIResponse(w, http.StatusOK, QueueDetectionResponse{
+		ImagePath: dbPath,
+		Queued:    true,
+		JobID:     fmt.Sprintf("%s:%s", dbPath, workers.TaskDetection),
+	})
 }
 
 // GetDetectionStatus returns the current detection status for an image
@@ -82,13 +74,5 @@ func (dh *DebugHandler) GetDetectionStatus(w http.ResponseWriter, r *http.Reques
 		"last_modified":          image.LastModified,
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(statusResponse)
-}
-
-// sendJSONResponse sends a JSON response with the given status code
-func (dh *DebugHandler) sendJSONResponse(w http.ResponseWriter, response QueueDetectionResponse, statusCode int) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(response)
+	WriteAPIResponse(w, http.StatusOK, statusResponse)
 }
