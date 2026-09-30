@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"runtime/debug"
-	"strconv"
 	"syscall"
 	"time"
 
@@ -27,14 +25,7 @@ func main() {
 		log.Fatalf("FATAL: Failed to load configuration: %v", err)
 	}
 
-	if memLimitStr := os.Getenv("GOMEMLIMIT"); memLimitStr != "" {
-		if memLimit, parseErr := strconv.ParseInt(memLimitStr, 10, 64); parseErr == nil && memLimit > 0 {
-			debug.SetMemoryLimit(memLimit)
-			log.Printf("GOMEMLIMIT set to %d bytes (%.1f GiB)", memLimit, float64(memLimit)/(1<<30))
-		} else {
-			log.Printf("Warning: Invalid GOMEMLIMIT value '%s', ignoring", memLimitStr)
-		}
-	}
+	// GOMEMLIMIT is read by the Go runtime itself (bytes, or units like 2GiB)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
