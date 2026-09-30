@@ -31,6 +31,13 @@ func SetJWTSecret(secret string) {
 
 const jwtExpirationHours = 24
 
+// authClaims are the JWT claims for auth tokens. TokenVersion must match the
+// user's current token version, so bumping it revokes older tokens.
+type authClaims struct {
+	TokenVersion int `json:"tv"`
+	jwt.RegisteredClaims
+}
+
 type AuthHandler struct {
 	UserRepo       repository.UserRepository
 	InviteCodeRepo repository.InviteCodeRepository
@@ -91,11 +98,14 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	expirationTime := time.Now().Add(jwtExpirationHours * time.Hour)
-	claims := &jwt.RegisteredClaims{
-		Subject:   fmt.Sprint(user.ID),
-		ExpiresAt: jwt.NewNumericDate(expirationTime),
-		IssuedAt:  jwt.NewNumericDate(time.Now()),
-		Issuer:    "mediasysbackend",
+	claims := &authClaims{
+		TokenVersion: user.TokenVersion,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   fmt.Sprint(user.ID),
+			ExpiresAt: jwt.NewNumericDate(expirationTime),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			Issuer:    "mediasysbackend",
+		},
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -265,6 +275,7 @@ func (h *AuthHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 			WriteAPIError(w, http.StatusInternalServerError, "HashingException", "Failed to hash new password")
 			return
 		}
+		user.TokenVersion++
 	}
 
 	if payload.FirstName != nil {

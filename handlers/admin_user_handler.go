@@ -289,6 +289,7 @@ func (h *AdminUserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 			WriteAPIError(w, http.StatusInternalServerError, "HashingError", "Failed to set new password: "+err.Error())
 			return
 		}
+		user.TokenVersion++
 	}
 	if payload.GlobalPermissions != nil {
 		for _, pKey := range *payload.GlobalPermissions {

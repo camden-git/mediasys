@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -39,25 +38,13 @@ func AuthMiddleware(userRepo repository.UserRepository, next http.Handler) http.
 		}
 		tokenString := parts[1]
 
-		claims := &jwt.RegisteredClaims{}
+		claims := &authClaims{}
 		token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-			}
 			return jwtKey, nil // jwtKey is defined in auth.go and set from config.Config.JWTSecret via SetJWTSecret
-		})
+		}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}), jwt.WithExpirationRequired())
 
-		if err != nil {
-			if errors.Is(err, jwt.ErrSignatureInvalid) {
-				WriteAPIError(w, http.StatusUnauthorized, "InvalidTokenSignature", "Invalid token signature")
-				return
-			}
-			WriteAPIError(w, http.StatusUnauthorized, "InvalidToken", "Invalid token: "+err.Error())
-			return
-		}
-
-		if !token.Valid {
-			WriteAPIError(w, http.StatusUnauthorized, "InvalidToken", "Invalid token")
+		if err != nil || !token.Valid {
+			WriteAPIError(w, http.StatusUnauthorized, "InvalidToken", "Invalid or expired token")
 			return
 		}
 
@@ -75,6 +62,11 @@ func AuthMiddleware(userRepo repository.UserRepository, next http.Handler) http.
 		if err != nil {
 			// This could happen if the user was deleted after the token was issued.
 			WriteAPIError(w, http.StatusUnauthorized, "UserNotFound", "User not found")
+			return
+		}
+
+		if user.TokenVersion != claims.TokenVersion {
+			WriteAPIError(w, http.StatusUnauthorized, "InvalidToken", "Token has been revoked")
 			return
 		}
 

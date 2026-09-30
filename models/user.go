@@ -18,6 +18,8 @@ type User struct {
 	PasswordHash      string   `json:"-" gorm:"not null"`                                   // "-" means don't include in JSON responses
 	GlobalPermissions []string `json:"global_permissions" gorm:"serializer:json;type:text"` // Use JSON serializer
 	Roles             []*Role  `json:"roles,omitempty" gorm:"many2many:user_roles;"`        // Roles assigned to the user
+	// TokenVersion is embedded in issued JWTs and bumped on password change to revoke outstanding tokens.
+	TokenVersion int `json:"-" gorm:"not null;default:0"`
 	// AlbumPermissionsMap holds the user's direct per-album permissions, keyed by album ID (as a string),
 	// loaded from the user_album_permissions table.
 	AlbumPermissionsMap map[string][]string `json:"album_permissions_map" gorm:"-"` // not directly mapped, handled by logic
