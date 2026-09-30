@@ -67,7 +67,12 @@ const AlbumSubusersPage: React.FC = () => {
     const albumId = useAlbumId();
     const { addFlash } = useFlash();
     const queryClient = useQueryClient();
-    const refreshAlbumUsers = () => queryClient.invalidateQueries({ queryKey: queryKeys.albums.detail(albumId) });
+    // members and the "available to add" list both change whenever someone is added or removed
+    const refreshAlbumUsers = () =>
+        Promise.all([
+            queryClient.invalidateQueries({ queryKey: queryKeys.albums.users(albumId!) }),
+            queryClient.invalidateQueries({ queryKey: queryKeys.albums.availableUsers(albumId!) }),
+        ]);
 
     const { users: albumUsers, isLoading: isLoadingUsers, error: usersError } = useAlbumUsers(albumId);
     const { users: availableUsers } = useAvailableUsers(albumId);
@@ -81,6 +86,7 @@ const AlbumSubusersPage: React.FC = () => {
     const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
     const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isRemoving, setIsRemoving] = useState(false);
 
     const albumPermissions = permissionDefinitions?.find((group) => group.key === 'album')?.permissions || [];
     const albumScopedPermissions = albumPermissions.filter((p) => p.scope === 'album');
@@ -176,8 +182,9 @@ const AlbumSubusersPage: React.FC = () => {
     };
 
     const handleRemoveConfirm = async () => {
-        if (!userToRemove) return;
+        if (!userToRemove || isRemoving) return;
 
+        setIsRemoving(true);
         try {
             await removeUserFromAlbum(albumId!, userToRemove.id);
             addFlash({
@@ -196,7 +203,27 @@ const AlbumSubusersPage: React.FC = () => {
                 title: 'Error',
                 message: error.message || 'Failed to remove user from album',
             });
+        } finally {
+            setIsRemoving(false);
         }
+    };
+
+    const openAddModal = () => {
+        setSelectedUserId(null);
+        setSelectedPermissions([]);
+        setShowAddModal(true);
+    };
+
+    const closeAddModal = () => {
+        setShowAddModal(false);
+        setSelectedUserId(null);
+        setSelectedPermissions([]);
+    };
+
+    const closeEditModal = () => {
+        setShowEditModal(false);
+        setSelectedUser(null);
+        setSelectedPermissions([]);
     };
 
     const openEditModal = (user: any) => {
@@ -223,7 +250,7 @@ const AlbumSubusersPage: React.FC = () => {
             <div className='flex items-center justify-between'>
                 <Heading>Album Subusers</Heading>
                 <Can permission={['album.manage.members.global', 'album.manage.members']} albumId={albumId}>
-                    <Button onClick={() => setShowAddModal(true)}>Add User</Button>
+                    <Button onClick={openAddModal}>Add User</Button>
                 </Can>
             </div>
 
@@ -348,7 +375,7 @@ const AlbumSubusersPage: React.FC = () => {
                 )}
             </div>
 
-            <Dialog open={showAddModal} onClose={() => setShowAddModal(false)}>
+            <Dialog open={showAddModal} onClose={closeAddModal}>
                 <DialogTitle>Add User to Album</DialogTitle>
                 <DialogBody>
                     <FieldGroup>
@@ -378,7 +405,7 @@ const AlbumSubusersPage: React.FC = () => {
                     </FieldGroup>
                 </DialogBody>
                 <DialogActions>
-                    <Button outline onClick={() => setShowAddModal(false)} disabled={isSubmitting}>
+                    <Button outline onClick={closeAddModal} disabled={isSubmitting}>
                         Cancel
                     </Button>
                     <Button onClick={handleAddUser} disabled={isSubmitting || !selectedUserId}>
@@ -387,7 +414,7 @@ const AlbumSubusersPage: React.FC = () => {
                 </DialogActions>
             </Dialog>
 
-            <Dialog open={showEditModal} onClose={() => setShowEditModal(false)}>
+            <Dialog open={showEditModal} onClose={closeEditModal}>
                 <DialogTitle>Edit User Permissions</DialogTitle>
                 <DialogBody>
                     {selectedUser && (
@@ -407,7 +434,7 @@ const AlbumSubusersPage: React.FC = () => {
                     </FieldGroup>
                 </DialogBody>
                 <DialogActions>
-                    <Button outline onClick={() => setShowEditModal(false)} disabled={isSubmitting}>
+                    <Button outline onClick={closeEditModal} disabled={isSubmitting}>
                         Cancel
                     </Button>
                     <Button onClick={handleUpdatePermissions} disabled={isSubmitting}>
@@ -416,18 +443,18 @@ const AlbumSubusersPage: React.FC = () => {
                 </DialogActions>
             </Dialog>
 
-            <Dialog open={showRemoveModal} onClose={() => setShowRemoveModal(false)}>
+            <Dialog open={showRemoveModal} onClose={() => !isRemoving && setShowRemoveModal(false)}>
                 <DialogTitle>Remove User</DialogTitle>
                 <DialogDescription>
                     Are you sure you want to remove {userToRemove?.username} from this album? This action cannot be
                     undone.
                 </DialogDescription>
                 <DialogActions>
-                    <Button plain onClick={() => setShowRemoveModal(false)}>
+                    <Button plain onClick={() => setShowRemoveModal(false)} disabled={isRemoving}>
                         Cancel
                     </Button>
-                    <Button color='red' onClick={handleRemoveConfirm}>
-                        Remove
+                    <Button color='red' onClick={handleRemoveConfirm} disabled={isRemoving}>
+                        {isRemoving ? 'Removing...' : 'Remove'}
                     </Button>
                 </DialogActions>
             </Dialog>
