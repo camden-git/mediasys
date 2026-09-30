@@ -173,8 +173,13 @@ func (s *Store) DeleteKeys(ctx context.Context, keys []string) {
 	go func() {
 		defer close(ch)
 		for _, k := range keys {
-			if k != "" {
-				ch <- minio.ObjectInfo{Key: k}
+			if k == "" {
+				continue
+			}
+			select {
+			case ch <- minio.ObjectInfo{Key: k}:
+			case <-ctx.Done():
+				return
 			}
 		}
 	}()
