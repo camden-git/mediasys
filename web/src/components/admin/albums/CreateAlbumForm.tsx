@@ -16,7 +16,12 @@ const validationSchema = Yup.object({
     name: Yup.string().required('Name is required').min(1, 'Name must be at least 1 character'),
     slug: Yup.string()
         .required('Slug is required')
-        .matches(/^[a-z0-9-]+$/, 'Slug can only contain lowercase letters, numbers, and hyphens')
+        .matches(
+            /^[a-z0-9]+(-[a-z0-9]+)*$/,
+            'Slug can only contain lowercase letters, numbers, and single hyphens between them',
+        )
+        // an all-digit slug would be ambiguous with a numeric album id
+        .test('not-numeric', 'Slug cannot be only digits', (v) => !v || !/^\d+$/.test(v))
         .min(1, 'Slug must be at least 1 character'),
     folder_path: Yup.string().optional(),
     description: Yup.string().optional(),
@@ -50,7 +55,7 @@ const CreateAlbumForm: React.FC = () => {
             <Formik
                 initialValues={initialValues}
                 validationSchema={validationSchema}
-                onSubmit={async (values, { setSubmitting }) => {
+                onSubmit={async (values, { setSubmitting, setFieldError, setFieldTouched }) => {
                     try {
                         await createAlbumAPI(values);
                         void invalidateAlbums();
@@ -62,6 +67,12 @@ const CreateAlbumForm: React.FC = () => {
                         });
                         navigate('/admin/albums');
                     } catch (err: any) {
+                        if (err?.status === 409) {
+                            setFieldTouched('slug', true, false);
+                            setFieldError('slug', 'An album with this slug already exists.');
+                            setSubmitting(false);
+                            return;
+                        }
                         addFlash({
                             key: 'album-create-error',
                             type: 'error',
@@ -101,7 +112,7 @@ const CreateAlbumForm: React.FC = () => {
                                             .replace(/[^a-z0-9\s-]/g, '')
                                             .replace(/\s+/g, '-')
                                             .replace(/-+/g, '-')
-                                            .trim();
+                                            .replace(/^-+|-+$/g, '');
                                         setFieldValue('slug', slug);
                                     }}
                                     onBlur={handleBlur}

@@ -31,6 +31,8 @@ export const queryKeys = {
     groups: {
         all: () => ['groups'] as const,
         list: () => [...queryKeys.groups.all(), 'list'] as const,
+        // admin listing includes hidden groups, so it must not share a cache entry with the public list
+        adminList: () => [...queryKeys.groups.all(), 'admin-list'] as const,
         detail: (slug: string) => [...queryKeys.groups.all(), slug] as const,
         photos: (slug: string, minRating?: number) =>
             [...queryKeys.groups.all(), slug, 'photos', minRating ?? null] as const,
