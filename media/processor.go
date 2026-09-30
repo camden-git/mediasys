@@ -3,11 +3,13 @@ package media
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	"io"
-	"log"
 	"math"
+	"os"
+	"strconv"
 
 	"github.com/chai2010/webp"
 	"github.com/disintegration/imaging"
@@ -26,7 +28,63 @@ const (
 	PreviewFileExtension    = ".webp"
 	PreviewLandscapeMaxLong = 3400
 	PreviewPortraitMaxLong  = 2200
+
+	// webpMaxDimension is the largest width or height WebP can encode.
+	webpMaxDimension = 16383
+
+	// DefaultMaxImagePixels caps the decoded size of an image (width x height)
+	// to guard against decompression bombs. Override with MEDIA_MAX_PIXELS.
+	DefaultMaxImagePixels = 100_000_000
+
+	// maxBannerUploadBytes bounds how much of an uploaded banner is buffered.
+	maxBannerUploadBytes = 64 << 20
 )
+
+// ErrImageTooLarge is returned for images whose pixel count exceeds the cap.
+var ErrImageTooLarge = errors.New("image dimensions exceed the maximum allowed")
+
+// MaxImagePixels returns the configured decoded-pixel cap.
+func MaxImagePixels() int64 {
+	if v := os.Getenv("MEDIA_MAX_PIXELS"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
+			return n
+		}
+	}
+	return DefaultMaxImagePixels
+}
+
+// checkDimensions reads only the image header from r and rejects images larger
+// than the pixel cap before any pixel data is decoded.
+func checkDimensions(r io.Reader) error {
+	cfg, _, err := image.DecodeConfig(r)
+	if err != nil {
+		return fmt.Errorf("failed to read image header: %w", err)
+	}
+	if cfg.Width <= 0 || cfg.Height <= 0 {
+		return fmt.Errorf("invalid image dimensions: %dx%d", cfg.Width, cfg.Height)
+	}
+	if px := int64(cfg.Width) * int64(cfg.Height); px > MaxImagePixels() {
+		return fmt.Errorf("%w: %dx%d (%d pixels)", ErrImageTooLarge, cfg.Width, cfg.Height, px)
+	}
+	return nil
+}
+
+// OpenImage decodes the image at path with its EXIF orientation applied,
+// refusing images over the pixel cap.
+func OpenImage(path string) (image.Image, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	if err := checkDimensions(f); err != nil {
+		return nil, err
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return nil, err
+	}
+	return imaging.Decode(f, imaging.AutoOrientation(true))
+}
 
 // Processor handles media transformations like thumbnailing and resizing and
 // writes the results to the object store.
@@ -86,7 +144,6 @@ func (p *Processor) GenerateThumbnail(originalImg image.Image, originalRelPath s
 	if err != nil {
 		return "", fmt.Errorf("failed to save thumbnail: %w", err)
 	}
-	log.Printf("processor: Generated thumbnail for %s at %s", originalRelPath, key)
 	return key, nil
 }
 
@@ -119,24 +176,32 @@ func (p *Processor) GeneratePreview(src image.Image, originalRelPath string) (st
 	if err != nil {
 		return "", fmt.Errorf("failed to save preview: %w", err)
 	}
-	log.Printf("processor: Generated preview for %s at %s", originalRelPath, key)
 	return key, nil
 }
 
 // ProcessBanner resizes an uploaded banner, stores it and returns the object key.
+// Banners are never upscaled and stay within WebP's dimension limit.
 func (p *Processor) ProcessBanner(fileData io.Reader) (string, error) {
-	img, format, err := image.Decode(fileData)
+	data, err := io.ReadAll(io.LimitReader(fileData, maxBannerUploadBytes+1))
+	if err != nil {
+		return "", fmt.Errorf("failed to read uploaded banner: %w", err)
+	}
+	if len(data) > maxBannerUploadBytes {
+		return "", errors.New("uploaded banner is too large")
+	}
+	if err := checkDimensions(bytes.NewReader(data)); err != nil {
+		return "", fmt.Errorf("invalid uploaded banner: %w", err)
+	}
+	img, err := imaging.Decode(bytes.NewReader(data), imaging.AutoOrientation(true))
 	if err != nil {
 		return "", fmt.Errorf("failed to decode uploaded banner image: %w", err)
 	}
-	log.Printf("processor: Decoded uploaded banner (format: %s)", format)
 
-	processedImg := imaging.Resize(img, BannerTargetWidth, 0, imaging.Lanczos)
+	processedImg := imaging.Fit(img, BannerTargetWidth, webpMaxDimension, imaging.Lanczos)
 
 	key, err := p.saveWebP(context.Background(), processedImg, BannerQuality, PrefixBanners)
 	if err != nil {
 		return "", fmt.Errorf("failed to save banner: %w", err)
 	}
-	log.Printf("processor: Processed and saved banner to %s", key)
 	return key, nil
 }

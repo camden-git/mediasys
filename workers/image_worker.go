@@ -18,7 +18,6 @@ import (
 	"github.com/camden-git/mediasysbackend/models"
 	"github.com/camden-git/mediasysbackend/realtime"
 	"github.com/camden-git/mediasysbackend/repository"
-	"github.com/disintegration/imaging"
 	"gocv.io/x/gocv"
 	"gorm.io/gorm"
 )
@@ -295,7 +294,7 @@ func (ip *ImageProcessor) processImage(job ImageJob) {
 	var decoded image.Image
 	var decodeErr error
 	if dlErr == nil && (needThumb || needPreview || needMeta) {
-		decoded, decodeErr = imaging.Open(localPath, imaging.AutoOrientation(true))
+		decoded, decodeErr = media.OpenImage(localPath)
 		if decodeErr != nil {
 			decodeErr = fmt.Errorf("failed to decode image: %w", decodeErr)
 		}
