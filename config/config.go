@@ -1,8 +1,8 @@
 package config
 
 import (
+	"errors"
 	"fmt"
-	"log"
 	"net/url"
 	"os"
 	"strconv"
@@ -77,6 +77,9 @@ type Config struct {
 // knownInsecureJWTSecret is the old hardcoded fallback secret that used to live in
 // handlers/auth.go. It must never be accepted as a real secret since it is public
 // (visible in source history), so LoadConfig rejects it explicitly.
+// minJWTSecretLen is the shortest JWT_SECRET accepted (HS256 wants >= 256 bits).
+const minJWTSecretLen = 32
+
 const knownInsecureJWTSecret = "your_super_secret_key_that_should_be_in_config"
 
 func getEnvOrDefault(key, defaultValue string) string {
@@ -87,40 +90,55 @@ func getEnvOrDefault(key, defaultValue string) string {
 	return value
 }
 
-func getEnvIntOrDefault(envVar string, defaultVal int) int {
+// envErrs collects invalid env values so LoadConfig can report all of them at once.
+type envErrs []error
+
+func (e *envErrs) add(err error) { *e = append(*e, err) }
+
+// envInt reads an integer env var, failing (rather than silently defaulting) on
+// malformed or out-of-range values.
+func (e *envErrs) envInt(envVar string, defaultVal, minVal int) int {
 	valStr := os.Getenv(envVar)
 	if valStr == "" {
 		return defaultVal
 	}
 	val, err := strconv.Atoi(valStr)
-	if err != nil || val <= 0 {
-		log.Printf("Warning: Invalid %s '%s'. Using default %d. Error: %v", envVar, valStr, defaultVal, err)
+	if err != nil {
+		e.add(fmt.Errorf("%s must be an integer, got %q", envVar, valStr))
+		return defaultVal
+	}
+	if val < minVal {
+		e.add(fmt.Errorf("%s must be >= %d, got %d", envVar, minVal, val))
 		return defaultVal
 	}
 	return val
 }
 
-func getEnvFloatOrDefault(envVar string, defaultVal float64) float64 {
+func (e *envErrs) envFloat(envVar string, defaultVal, minVal, maxVal float64) float64 {
 	valStr := os.Getenv(envVar)
 	if valStr == "" {
 		return defaultVal
 	}
 	val, err := strconv.ParseFloat(valStr, 64)
 	if err != nil {
-		log.Printf("Warning: Invalid %s '%s'. Using default %f. Error: %v", envVar, valStr, defaultVal, err)
+		e.add(fmt.Errorf("%s must be a number, got %q", envVar, valStr))
+		return defaultVal
+	}
+	if val < minVal || val > maxVal {
+		e.add(fmt.Errorf("%s must be between %g and %g, got %g", envVar, minVal, maxVal, val))
 		return defaultVal
 	}
 	return val
 }
 
-func getEnvBoolOrDefault(envVar string, defaultVal bool) bool {
+func (e *envErrs) envBool(envVar string, defaultVal bool) bool {
 	valStr := os.Getenv(envVar)
 	if valStr == "" {
 		return defaultVal
 	}
 	val, err := strconv.ParseBool(valStr)
 	if err != nil {
-		log.Printf("Warning: Invalid %s '%s'. Using default %t. Error: %v", envVar, valStr, defaultVal, err)
+		e.add(fmt.Errorf("%s must be a boolean, got %q", envVar, valStr))
 		return defaultVal
 	}
 	return val
@@ -137,6 +155,8 @@ func splitList(v string) []string {
 }
 
 func LoadConfig() (Config, error) {
+	var errs envErrs
+
 	dbURL := getEnvOrDefault("DATABASE_URL", "postgres://mediasys:mediasys@localhost:5432/mediasys?sslmode=disable")
 
 	s3Endpoint := getEnvOrDefault("S3_ENDPOINT", "localhost:9000")
@@ -146,13 +166,17 @@ func LoadConfig() (Config, error) {
 		return Config{}, fmt.Errorf("S3_ACCESS_KEY and S3_SECRET_KEY must be set")
 	}
 
-	thumbMaxSize := getEnvIntOrDefault("THUMBNAIL_MAX_SIZE", defaultThumbnailMaxSize)
+	databaseDebug := errs.envBool("DATABASE_DEBUG", false)
+	s3UseSSL := errs.envBool("S3_USE_SSL", false)
+	maxUploadMB := errs.envInt("MAX_UPLOAD_SIZE_MB", 200, 1)
 
-	queueSize := getEnvIntOrDefault("THUMBNAIL_QUEUE_SIZE", defaultThumbnailQueueSize)
-	numWorkers := getEnvIntOrDefault("NUM_THUMBNAIL_WORKERS", defaultNumThumbnailWorkers)
-	numDetectionWorkers := getEnvIntOrDefault("NUM_DETECTION_WORKERS", defaultNumDetectionWorkers)
-	detectionQueueSize := getEnvIntOrDefault("DETECTION_QUEUE_SIZE", defaultDetectionQueueSize)
-	memoryTrimInterval := getEnvIntOrDefault("MEMORY_TRIM_INTERVAL_MINUTES", 30)
+	thumbMaxSize := errs.envInt("THUMBNAIL_MAX_SIZE", defaultThumbnailMaxSize, 1)
+
+	queueSize := errs.envInt("THUMBNAIL_QUEUE_SIZE", defaultThumbnailQueueSize, 1)
+	numWorkers := errs.envInt("NUM_THUMBNAIL_WORKERS", defaultNumThumbnailWorkers, 1)
+	numDetectionWorkers := errs.envInt("NUM_DETECTION_WORKERS", defaultNumDetectionWorkers, 1)
+	detectionQueueSize := errs.envInt("DETECTION_QUEUE_SIZE", defaultDetectionQueueSize, 1)
+	memoryTrimInterval := errs.envInt("MEMORY_TRIM_INTERVAL_MINUTES", 30, 0)
 
 	// Legacy DNN face detection
 	faceDNNConfig := getEnvOrDefault("FACE_DNN_CONFIG_PATH", "./models/deploy.prototxt.txt")
@@ -164,9 +188,8 @@ func LoadConfig() (Config, error) {
 	// Face recognition
 	faceRecognitionModel := getEnvOrDefault("FACE_RECOGNITION_MODEL_PATH", "./models/arcface.onnx")
 	faceRecognitionModelName := getEnvOrDefault("FACE_RECOGNITION_MODEL_NAME", "arcface")
-	faceRecognitionThreshold := getEnvFloatOrDefault("FACE_RECOGNITION_THRESHOLD", 0.6)
-	faceRecognitionEnabled := getEnvBoolOrDefault("FACE_RECOGNITION_ENABLED", true)
-	// log.Printf("Config: FACE_RECOGNITION_ENABLED env var parsed as: %v", faceRecognitionEnabled)
+	faceRecognitionThreshold := errs.envFloat("FACE_RECOGNITION_THRESHOLD", 0.6, 0, 1)
+	faceRecognitionEnabled := errs.envBool("FACE_RECOGNITION_ENABLED", true)
 
 	// Cloudflare Turnstile
 	turnstileSiteKey := getEnvOrDefault("TURNSTILE_SITE_KEY", "")
@@ -179,6 +202,13 @@ func LoadConfig() (Config, error) {
 	if jwtSecret == knownInsecureJWTSecret {
 		return Config{}, fmt.Errorf("JWT_SECRET must not be set to the known default value; generate a new secret")
 	}
+	if len(jwtSecret) < minJWTSecretLen {
+		return Config{}, fmt.Errorf("JWT_SECRET must be at least %d characters (got %d); generate one with: openssl rand -hex 32", minJWTSecretLen, len(jwtSecret))
+	}
+
+	if err := errors.Join(errs...); err != nil {
+		return Config{}, fmt.Errorf("invalid configuration: %w", err)
+	}
 
 	publicURL := strings.TrimRight(strings.TrimSpace(os.Getenv("PUBLIC_URL")), "/")
 	if publicURL != "" {
@@ -190,14 +220,14 @@ func LoadConfig() (Config, error) {
 
 	cfg := Config{
 		DatabaseURL:               dbURL,
-		DatabaseDebug:             getEnvBoolOrDefault("DATABASE_DEBUG", false),
+		DatabaseDebug:             databaseDebug,
 		S3Endpoint:                s3Endpoint,
 		S3AccessKey:               s3AccessKey,
 		S3SecretKey:               s3SecretKey,
 		S3Bucket:                  getEnvOrDefault("S3_BUCKET", "mediasys"),
 		S3Region:                  getEnvOrDefault("S3_REGION", "us-east-1"),
-		S3UseSSL:                  getEnvBoolOrDefault("S3_USE_SSL", false),
-		MaxUploadSize:             int64(getEnvIntOrDefault("MAX_UPLOAD_SIZE_MB", 200)) << 20,
+		S3UseSSL:                  s3UseSSL,
+		MaxUploadSize:             int64(maxUploadMB) << 20,
 		PublicURL:                 publicURL,
 		CORSAllowedOrigins:        splitList(getEnvOrDefault("CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173,http://127.0.0.1:4173")),
 		ThumbnailMaxSize:          thumbMaxSize,
