@@ -44,6 +44,15 @@ func absoluteURLFunc(r *http.Request, publicURL string) func(string) string {
 	}
 }
 
+// writeShareNotFound answers a share link for a missing resource with a small HTML 404,
+// since browsers and link unfurlers (not API clients) request these routes.
+func writeShareNotFound(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusNotFound)
+	_, _ = w.Write([]byte("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>Not found</title></head>" +
+		"<body><p>This link is no longer available.</p></body></html>"))
+}
+
 // writeSharePage writes the share page HTML for link unfurlers.
 func writeSharePage(w http.ResponseWriter, p sharePage) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

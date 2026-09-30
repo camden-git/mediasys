@@ -18,7 +18,7 @@ func (h *CollectionHandler) ShareCollectionHTML(w http.ResponseWriter, r *http.R
 	collection, err := h.CollectionRepo.GetBySlug(slug)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			http.NotFound(w, r)
+			writeShareNotFound(w)
 		} else {
 			log.Printf("Error getting collection for share '%s': %v", slug, err)
 			WriteAPIError(w, http.StatusInternalServerError, "CollectionFetchError", "Internal Server Error")

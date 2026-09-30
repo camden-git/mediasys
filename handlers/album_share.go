@@ -18,7 +18,7 @@ func (ah *AlbumHandler) ShareAlbumHTML(w http.ResponseWriter, r *http.Request) {
 	album, err := ah.getAlbumByIdentifier(identifier)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			http.NotFound(w, r)
+			writeShareNotFound(w)
 		} else {
 			log.Printf("Error getting album for share '%s': %v", identifier, err)
 			WriteAPIError(w, http.StatusInternalServerError, "AlbumFetchError", "Internal Server Error")

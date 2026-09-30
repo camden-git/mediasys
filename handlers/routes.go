@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
+	"runtime/debug"
 
 	"github.com/camden-git/mediasysbackend/config"
 	"github.com/camden-git/mediasysbackend/media"
@@ -44,6 +46,26 @@ type AppDependencies struct {
 	SetupHandler           *SetupHandler
 }
 
+// recoverer turns handler panics into a 500 in the standard error shape.
+func recoverer(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			rec := recover()
+			if rec == nil {
+				return
+			}
+			if rec == http.ErrAbortHandler {
+				panic(rec)
+			}
+			log.Printf("panic serving %s %s: %v\n%s", r.Method, r.URL.Path, rec, debug.Stack())
+			if r.Header.Get("Connection") != "Upgrade" {
+				WriteAPIError(w, http.StatusInternalServerError, "InternalError", "Internal server error")
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
 // RegisterRoutes registers all middleware and API routes on the given router.
 func RegisterRoutes(r chi.Router, deps AppDependencies) {
 	cfg := deps.Cfg
@@ -51,8 +73,17 @@ func RegisterRoutes(r chi.Router, deps AppDependencies) {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
-	r.Use(middleware.Recoverer)
+	r.Use(recoverer)
 	r.Use(middleware.Compress(5))
+
+	// unmatched routes and methods answer with the standard error body (set before any
+	// sub-routers are mounted so that they inherit it)
+	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
+		WriteAPIError(w, http.StatusNotFound, "NotFound", "The requested resource was not found")
+	})
+	r.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) {
+		WriteAPIError(w, http.StatusMethodNotAllowed, "MethodNotAllowed", "Method not allowed for this resource")
+	})
 
 	// CORS is scoped to only auth and admin routes to avoid Vary: Origin on public
 	// cacheable endpoints (albums, groups, collections).

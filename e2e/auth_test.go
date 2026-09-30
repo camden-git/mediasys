@@ -1,6 +1,7 @@
 package e2e_test
 
 import (
+	"encoding/json"
 	"net/http"
 	"testing"
 )
@@ -102,6 +103,32 @@ func TestErrorResponseShape(t *testing.T) {
 		assertErrorShape(t, resp)
 	})
 
+	t.Run("unknown route", func(t *testing.T) {
+		resp := doRequest(t, http.MethodGet, "/api/no-such-route", "", nil, "")
+		if resp.StatusCode != http.StatusNotFound {
+			t.Fatalf("expected 404, got %d: %s", resp.StatusCode, resp.Body)
+		}
+		assertErrorShape(t, resp)
+	})
+
+	t.Run("wrong method", func(t *testing.T) {
+		resp := doRequest(t, http.MethodDelete, "/api/albums", "", nil, "")
+		if resp.StatusCode != http.StatusMethodNotAllowed {
+			t.Fatalf("expected 405, got %d: %s", resp.StatusCode, resp.Body)
+		}
+		assertErrorShape(t, resp)
+	})
+
+	t.Run("missing assets", func(t *testing.T) {
+		for _, p := range []string{"/api/thumbnails/nope.webp", "/api/originals/nope.jpg", "/api/preview/nope.jpg"} {
+			resp := doRequest(t, http.MethodGet, p, "", nil, "")
+			if resp.StatusCode != http.StatusNotFound {
+				t.Fatalf("%s: expected 404, got %d: %s", p, resp.StatusCode, resp.Body)
+			}
+			assertErrorShape(t, resp)
+		}
+	})
+
 	t.Run("validation error", func(t *testing.T) {
 		resp := doJSON(t, http.MethodPost, "/api/admin/albums", env.adminToken, map[string]any{})
 		// missing name/slug -> validation error, still standard shape
@@ -118,4 +145,23 @@ func TestErrorResponseShape(t *testing.T) {
 		}
 		assertErrorShape(t, resp)
 	})
+}
+
+// TestEmptyListsSerializeAsArrays checks that list endpoints without results send [] inside the envelope.
+func TestEmptyListsSerializeAsArrays(t *testing.T) {
+	requireShared(t)
+
+	for _, p := range []string{"/api/people/search?q=zzzz-no-such-person", "/api/search/faces?query=zzzz-no-such-person"} {
+		resp := doRequest(t, http.MethodGet, p, "", nil, "")
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s: expected 200, got %d: %s", p, resp.StatusCode, resp.Body)
+		}
+		var body struct {
+			Data json.RawMessage `json:"data"`
+		}
+		resp.decode(t, &body)
+		if string(body.Data) != "[]" {
+			t.Fatalf("%s: expected data to be [], got %s", p, body.Data)
+		}
+	}
 }

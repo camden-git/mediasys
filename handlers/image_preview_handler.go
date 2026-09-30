@@ -38,7 +38,7 @@ func (iph *ImagePreviewHandler) lookupImage(w http.ResponseWriter, r *http.Reque
 	img, err := iph.ImageRepo.GetByPath(imagePath)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			http.NotFound(w, r)
+			WriteAPIError(w, http.StatusNotFound, "ImageNotFound", "Image not found")
 		} else {
 			log.Printf("lookupImage: failed to load %s: %v", imagePath, err)
 			WriteAPIError(w, http.StatusInternalServerError, "DBError", "failed to load image")
@@ -94,13 +94,13 @@ func (iph *ImagePreviewHandler) ServeImageWithFaces(w http.ResponseWriter, r *ht
 	}
 	imgRow, err := iph.ImageRepo.GetByPath(dbPath)
 	if err != nil {
-		http.NotFound(w, r)
+		WriteAPIError(w, http.StatusNotFound, "ImageNotFound", "Image not found")
 		return
 	}
 
 	obj, _, err := iph.Store.Get(r.Context(), imgRow.ObjectKey)
 	if err != nil {
-		http.NotFound(w, r)
+		WriteAPIError(w, http.StatusNotFound, "ImageNotFound", "Image not found")
 		return
 	}
 	data, err := io.ReadAll(obj)

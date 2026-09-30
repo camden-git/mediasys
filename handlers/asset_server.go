@@ -56,7 +56,7 @@ func serveObject(w http.ResponseWriter, r *http.Request, store *media.Store, key
 	obj, info, err := store.Get(r.Context(), key)
 	if err != nil {
 		if errors.Is(err, media.ErrNotFound) {
-			http.NotFound(w, r)
+			WriteAPIError(w, http.StatusNotFound, "ObjectNotFound", "File not found")
 			return
 		}
 		log.Printf("serveObject: failed to open %s: %v", key, err)
