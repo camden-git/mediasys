@@ -71,7 +71,6 @@ const FaceTaggingContainer: React.FC = () => {
     useEffect(() => {
         fetchFaces(DEFAULT_FILTERS);
         return () => abortRef.current?.abort();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // The backend has no offset, so the queue is capped at one page. When the reviewer works it

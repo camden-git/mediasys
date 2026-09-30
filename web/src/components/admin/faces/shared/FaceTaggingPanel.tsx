@@ -52,7 +52,8 @@ const FaceTaggingPanel: React.FC<FaceTaggingPanelProps> = ({ face, onTagged, onD
 
     useEffect(() => {
         const handleKey = (e: KeyboardEvent) => {
-            if (e.key === 'a' && e.metaKey && !e.shiftKey && !e.altKey && !e.ctrlKey) {
+            // Cmd/Ctrl+Enter accepts the suggestion (Cmd+A stays "select all")
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && !e.repeat) {
                 if (face.suggested_person_id && !busy) {
                     e.preventDefault();
                     handleAcceptSuggestion();
@@ -142,6 +143,7 @@ const FaceTaggingPanel: React.FC<FaceTaggingPanelProps> = ({ face, onTagged, onD
     };
 
     const handleDelete = async () => {
+        if (!window.confirm('Delete this face? This cannot be undone.')) return;
         setBusy(true);
         setError(null);
         try {

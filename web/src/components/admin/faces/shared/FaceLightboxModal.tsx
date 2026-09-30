@@ -84,40 +84,55 @@ const FaceLightboxModal: React.FC<FaceLightboxModalProps> = ({
 
     const layout = useContainLayout(containerRef, naturalWidth, naturalHeight);
 
-    // Load image on face change
+    const faceId = face?.face_id;
+    const imagePath = face?.image_path;
+
+    // Load image on face change; a stale load must not populate the preview for a newer face
     useEffect(() => {
-        if (!face) return;
+        if (!imagePath) return;
+        let cancelled = false;
         setPreviewSrc('');
         setPreviewLoaded(false);
         setNaturalWidth(0);
         setNaturalHeight(0);
 
-        const url = getPreviewImageUrl(face.image_path);
-        const img = new Image();
-        img.onload = () => {
-            setPreviewSrc(url);
-            setNaturalWidth(img.naturalWidth);
-            setNaturalHeight(img.naturalHeight);
-            setPreviewLoaded(true);
-        };
-        img.onerror = () => {
-            const fallback = getOriginalImageUrl(face.image_path);
-            const img2 = new Image();
-            img2.onload = () => {
-                setPreviewSrc(fallback);
-                setNaturalWidth(img2.naturalWidth);
-                setNaturalHeight(img2.naturalHeight);
+        const load = (url: string, onError: () => void) => {
+            const img = new Image();
+            img.onload = () => {
+                if (cancelled) return;
+                setPreviewSrc(url);
+                setNaturalWidth(img.naturalWidth);
+                setNaturalHeight(img.naturalHeight);
                 setPreviewLoaded(true);
             };
-            img2.onerror = () => setPreviewLoaded(true);
-            img2.src = fallback;
+            img.onerror = () => {
+                if (!cancelled) onError();
+            };
+            img.src = url;
         };
-        img.src = url;
-    }, [face]);
+
+        load(getPreviewImageUrl(imagePath), () => load(getOriginalImageUrl(imagePath), () => setPreviewLoaded(true)));
+
+        return () => {
+            cancelled = true;
+        };
+    }, [faceId, imagePath]);
 
     // Keyboard navigation
     useEffect(() => {
         const handleKey = (e: KeyboardEvent) => {
+            const target = e.target as HTMLElement | null;
+            const typing =
+                !!target &&
+                (target.tagName === 'INPUT' ||
+                    target.tagName === 'TEXTAREA' ||
+                    target.tagName === 'SELECT' ||
+                    target.isContentEditable);
+            // Keys belong to the text field while typing; Escape just leaves the field.
+            if (typing) {
+                if (e.key === 'Escape') target?.blur();
+                return;
+            }
             if (e.key === 'Escape') onClose();
             else if (e.key === 'ArrowLeft' && currentIndex > 0) {
                 e.preventDefault();
@@ -200,6 +215,7 @@ const FaceLightboxModal: React.FC<FaceLightboxModalProps> = ({
                             <button
                                 onClick={() => canPrev && onNavigate(currentIndex - 1)}
                                 disabled={!canPrev}
+                                aria-label='Previous face'
                                 className='rounded-full p-2 text-white/80 transition-colors hover:bg-white/10 hover:text-white focus:outline-none disabled:opacity-30'
                             >
                                 <ChevronLeftIcon className='h-6 w-6' />
@@ -207,6 +223,7 @@ const FaceLightboxModal: React.FC<FaceLightboxModalProps> = ({
                             <button
                                 onClick={() => canNext && onNavigate(currentIndex + 1)}
                                 disabled={!canNext}
+                                aria-label='Next face'
                                 className='rounded-full p-2 text-white/80 transition-colors hover:bg-white/10 hover:text-white focus:outline-none disabled:opacity-30'
                             >
                                 <ChevronRightIcon className='h-6 w-6' />
@@ -224,6 +241,7 @@ const FaceLightboxModal: React.FC<FaceLightboxModalProps> = ({
                                     if (canPrev) onNavigate(currentIndex - 1);
                                 }}
                                 disabled={!canPrev}
+                                aria-label='Previous face'
                                 className='pointer-events-auto flex h-12 w-10 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-sm transition-opacity hover:bg-black/60 disabled:opacity-0'
                             >
                                 <ChevronLeftIcon className='h-7 w-7' />
@@ -234,6 +252,7 @@ const FaceLightboxModal: React.FC<FaceLightboxModalProps> = ({
                                     if (canNext) onNavigate(currentIndex + 1);
                                 }}
                                 disabled={!canNext}
+                                aria-label='Next face'
                                 className='pointer-events-auto flex h-12 w-10 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-sm transition-opacity hover:bg-black/60 disabled:opacity-0'
                             >
                                 <ChevronRightIcon className='h-7 w-7' />
