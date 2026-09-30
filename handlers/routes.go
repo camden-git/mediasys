@@ -43,7 +43,6 @@ type AppDependencies struct {
 	AdminImageTagHandler   *AdminImageTagHandler
 	AdminCollectionHandler *AdminCollectionHandler
 	CollectionHandler      *CollectionHandler
-	SetupHandler           *SetupHandler
 }
 
 // recoverer turns handler panics into a 500 in the standard error shape.
@@ -97,8 +96,6 @@ func RegisterRoutes(r chi.Router, deps AppDependencies) {
 	}).Handler
 
 	r.Route("/api", func(r chi.Router) {
-		r.Post("/setup/initial-admin", deps.SetupHandler.CreateFirstAdmin)
-
 		// authentication routes
 		r.Route("/auth", func(r chi.Router) {
 			r.Use(credentialedCORS)

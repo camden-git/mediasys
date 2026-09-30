@@ -7,8 +7,8 @@ import (
 )
 
 // TestInitialSetupLoginMe covers the basic auth flow: the initial admin created by
-// TestMain can fetch /api/auth/me, a second initial-admin attempt is rejected now
-// that a user exists, and bad credentials are rejected.
+// TestMain can fetch /api/auth/me, the removed HTTP setup route stays gone, and bad
+// credentials are rejected.
 func TestInitialSetupLoginMe(t *testing.T) {
 	env := requireShared(t)
 
@@ -34,15 +34,18 @@ func TestInitialSetupLoginMe(t *testing.T) {
 		assertErrorShape(t, resp)
 	})
 
-	t.Run("setup is rejected once a user exists", func(t *testing.T) {
+	// the first admin is created with `mediasys user create --admin`, never over HTTP
+	t.Run("initial admin setup route is gone", func(t *testing.T) {
 		resp := doJSON(t, http.MethodPost, "/api/setup/initial-admin", "", map[string]string{
 			"username": "someone-else",
-			"password": "irrelevant",
+			"password": "irrelevant-password",
 		})
-		if resp.StatusCode != http.StatusForbidden {
-			t.Fatalf("expected 403, got %d: %s", resp.StatusCode, resp.Body)
+		if resp.StatusCode != http.StatusNotFound {
+			t.Fatalf("expected 404, got %d: %s", resp.StatusCode, resp.Body)
 		}
-		assertErrorShape(t, resp)
+		if body := assertErrorShape(t, resp); body.Errors[0].Code != "NotFound" {
+			t.Fatalf("expected NotFound error code, got %q", body.Errors[0].Code)
+		}
 	})
 
 	t.Run("login with wrong password is rejected", func(t *testing.T) {

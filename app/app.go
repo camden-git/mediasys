@@ -135,7 +135,6 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		AdminImageTagHandler:   &handlers.AdminImageTagHandler{TagRepo: imageTagRepo, AlbumRepo: albumRepo, ImageRepo: imageRepo},
 		AdminCollectionHandler: handlers.NewAdminCollectionHandler(collectionRepo, mediaProcessor, mediaStore),
 		CollectionHandler:      &handlers.CollectionHandler{CollectionRepo: collectionRepo, PublicURL: cfg.PublicURL},
-		SetupHandler:           handlers.NewSetupHandler(userRepo, roleRepo),
 	}
 
 	r := chi.NewRouter()

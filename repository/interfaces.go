@@ -129,11 +129,6 @@ type UserRepository interface {
 	UpdateWithRoles(user *models.User, roleIDs []uint) error // saves the user and replaces its roles atomically
 	Delete(id uint) error
 	ListAll() ([]models.User, error)
-	CountAll() (int64, error)
-
-	// CreateFirstAdmin atomically creates the initial admin user and assigns
-	// them the named role, failing if any user already exists.
-	CreateFirstAdmin(user *models.User, roleName string) error
 
 	// direct album-specific permission management for a user
 	CreateUserAlbumPermission(uap *models.UserAlbumPermission) error

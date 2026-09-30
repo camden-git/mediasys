@@ -112,22 +112,6 @@ func doJSON(t *testing.T, method, path, token string, payload any) apiResponse {
 	return doRequest(t, method, path, token, body, "application/json")
 }
 
-// createInitialAdmin calls POST /api/setup/initial-admin directly (used before the
-// shared token exists yet).
-func createInitialAdmin(baseURL, username, password string) error {
-	data, _ := json.Marshal(map[string]string{"username": username, "password": password})
-	resp, err := http.Post(baseURL+"/api/setup/initial-admin", "application/json", bytes.NewReader(data))
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusCreated {
-		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, b)
-	}
-	return nil
-}
-
 // login calls POST /api/auth/login directly and returns the issued token.
 func login(baseURL, username, password string) (string, error) {
 	data, _ := json.Marshal(map[string]string{"username": username, "password": password})

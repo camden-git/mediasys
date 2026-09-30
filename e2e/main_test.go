@@ -52,6 +52,7 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 
 	"github.com/camden-git/mediasysbackend/app"
+	"github.com/camden-git/mediasysbackend/cli"
 	"github.com/camden-git/mediasysbackend/config"
 )
 
@@ -167,7 +168,7 @@ func setupShared() (func(), error) {
 		adminPassword: "test-password-" + suffix,
 	}
 
-	if err := createInitialAdmin(server.URL, env.adminUsername, env.adminPassword); err != nil {
+	if _, err := cli.CreateUser(a.DB, cli.NewUser{Username: env.adminUsername, Password: env.adminPassword, Admin: true}); err != nil {
 		server.Close()
 		_ = a.Close()
 		return nil, fmt.Errorf("create initial admin: %w", err)
