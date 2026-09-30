@@ -1,9 +1,8 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FileInfo } from '../../types.ts';
 import useResizeObserver from '../../hooks/useResizeObserver.ts';
 import { computeLayout, ProcessedRow, LayoutOptions } from '../../lib/galleryLayout.ts';
 import JustifiedImageGridItem from './JustifiedImageGridItem.tsx';
-import debounce from 'lodash-es/debounce';
 
 interface AdvancedImageGridProps {
     images: FileInfo[];
@@ -24,49 +23,35 @@ const AdvancedImageGrid: React.FC<AdvancedImageGridProps> = ({
     debounceDelay = 250,
     onImageClick,
 }) => {
-    const [gridRef, containerSize] = useResizeObserver<HTMLDivElement>();
+    const [, containerSize, gridRef] = useResizeObserver<HTMLDivElement>();
     const [processedLayout, setProcessedLayout] = useState<ProcessedRow[]>([]);
 
-    const layoutOptions = useMemo(
-        (): LayoutOptions => ({
-            containerWidth: containerSize.width,
-            targetRowHeight: targetRowHeight,
-            boxSpacing: boxSpacing,
-            stretchLastRow: stretchLastRow,
-            maxRowHeightRatio: maxRowHeightRatio,
-        }),
-        [containerSize.width, targetRowHeight, boxSpacing, stretchLastRow, maxRowHeightRatio],
-    );
-
-    const calculateAndSetLayout = useCallback(() => {
-        if (layoutOptions.containerWidth > 0 && images.length > 0) {
-            const layout = computeLayout(images, layoutOptions);
-            setProcessedLayout(layout);
-        } else {
-            setProcessedLayout([]);
+    // debounce the measured width itself; first non-zero width is applied immediately
+    const [width, setWidth] = useState(0);
+    useEffect(() => {
+        if (containerSize.width === 0 || width === 0) {
+            setWidth(containerSize.width);
+            return;
         }
-    }, [images, layoutOptions]);
-
-    const debouncedCalculateLayout = useMemo(
-        () =>
-            debounce(calculateAndSetLayout, debounceDelay, {
-                leading: true,
-                trailing: true,
-            }),
-        [calculateAndSetLayout, debounceDelay],
-    );
+        const timer = setTimeout(() => setWidth(containerSize.width), debounceDelay);
+        return () => clearTimeout(timer);
+    }, [containerSize.width, debounceDelay, width]);
 
     useEffect(() => {
-        if (containerSize.width > 0) {
-            debouncedCalculateLayout();
+        if (width > 0 && images.length > 0) {
+            setProcessedLayout(
+                computeLayout(images, {
+                    containerWidth: width,
+                    targetRowHeight,
+                    boxSpacing,
+                    stretchLastRow,
+                    maxRowHeightRatio,
+                } satisfies LayoutOptions),
+            );
         } else {
             setProcessedLayout([]);
         }
-
-        return () => {
-            debouncedCalculateLayout.cancel();
-        };
-    }, [containerSize.width, debouncedCalculateLayout]);
+    }, [images, width, targetRowHeight, boxSpacing, stretchLastRow, maxRowHeightRatio]);
 
     return (
         <div ref={gridRef} className='advanced-image-grid w-full'>
