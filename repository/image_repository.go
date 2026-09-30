@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/camden-git/mediasysbackend/database"
@@ -28,6 +27,14 @@ func NewImageRepository(db *gorm.DB) *ImageRepository {
 
 // ErrPathOwnedByOtherAlbum is returned when an image path already belongs to a different album.
 var ErrPathOwnedByOtherAlbum = errors.New("image path belongs to another album")
+
+// taggedFaceOverlapIoU is the overlap above which a fresh detection is treated
+// as a duplicate of an already tagged face.
+const taggedFaceOverlapIoU = 0.5
+
+// ErrStaleImage is returned when a task result no longer applies because the
+// image was deleted or re-uploaded (its object key changed) while the task ran.
+var ErrStaleImage = errors.New("image was deleted or replaced while the task ran")
 
 var taskColumns = map[string]string{
 	"metadata_status":  "metadata_error",
@@ -111,30 +118,44 @@ func taskResult(taskErr error) (string, *string) {
 	return database.StatusDone, nil
 }
 
+// applyResult writes a task outcome to the image row identified by path and
+// object key, returning ErrStaleImage when no such row exists any more.
+func applyResult(db *gorm.DB, originalPath, objectKey string, updates map[string]interface{}) error {
+	res := db.Model(&models.Image{}).
+		Where("original_path = ? AND object_key = ?", originalPath, objectKey).Updates(updates)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrStaleImage
+	}
+	return nil
+}
+
 // UpdateThumbnailResult records the outcome of thumbnail generation
-func (r *ImageRepository) UpdateThumbnailResult(originalPath string, thumbKey *string, taskErr error) error {
+func (r *ImageRepository) UpdateThumbnailResult(originalPath, objectKey string, thumbKey *string, taskErr error) error {
 	status, errStr := taskResult(taskErr)
-	return r.DB.Model(&models.Image{}).Where("original_path = ?", originalPath).Updates(map[string]interface{}{
+	return applyResult(r.DB, originalPath, objectKey, map[string]interface{}{
 		"thumbnail_path":         thumbKey,
 		"thumbnail_status":       status,
 		"thumbnail_processed_at": time.Now().Unix(),
 		"thumbnail_error":        errStr,
-	}).Error
+	})
 }
 
 // UpdatePreviewResult records the outcome of preview generation
-func (r *ImageRepository) UpdatePreviewResult(originalPath string, previewKey *string, taskErr error) error {
+func (r *ImageRepository) UpdatePreviewResult(originalPath, objectKey string, previewKey *string, taskErr error) error {
 	status, errStr := taskResult(taskErr)
-	return r.DB.Model(&models.Image{}).Where("original_path = ?", originalPath).Updates(map[string]interface{}{
+	return applyResult(r.DB, originalPath, objectKey, map[string]interface{}{
 		"preview_path":         previewKey,
 		"preview_status":       status,
 		"preview_processed_at": time.Now().Unix(),
 		"preview_error":        errStr,
-	}).Error
+	})
 }
 
 // UpdateMetadataResult records extracted metadata
-func (r *ImageRepository) UpdateMetadataResult(originalPath string, meta *media.Metadata, taskErr error) error {
+func (r *ImageRepository) UpdateMetadataResult(originalPath, objectKey string, meta *media.Metadata, taskErr error) error {
 	status, errStr := taskResult(taskErr)
 	updateData := map[string]interface{}{
 		"metadata_status":       status,
@@ -155,17 +176,39 @@ func (r *ImageRepository) UpdateMetadataResult(originalPath string, meta *media.
 		updateData["taken_at"] = meta.TakenAt
 		updateData["rating"] = meta.Rating
 	}
-	return r.DB.Model(&models.Image{}).Where("original_path = ?", originalPath).Updates(updateData).Error
+	return applyResult(r.DB, originalPath, objectKey, updateData)
 }
 
-// UpdateDetectionResult replaces untagged faces with fresh detections
-func (r *ImageRepository) UpdateDetectionResult(originalPath string, detections []media.DetectionResult, taskErr error) error {
+// MarkTaskError forces a task into the error state, e.g. after a worker panic.
+func (r *ImageRepository) MarkTaskError(originalPath, objectKey, taskStatusColumn string, taskErr error) error {
+	errorColumn, ok := taskColumns[taskStatusColumn]
+	if !ok {
+		return fmt.Errorf("invalid task status column name: %s", taskStatusColumn)
+	}
+	status, errStr := taskResult(taskErr)
+	return applyResult(r.DB, originalPath, objectKey, map[string]interface{}{
+		taskStatusColumn: status,
+		errorColumn:      errStr,
+	})
+}
+
+// UpdateDetectionResult replaces untagged faces with fresh detections. The image
+// row is updated first so a deleted or re-uploaded image rolls everything back.
+func (r *ImageRepository) UpdateDetectionResult(originalPath, objectKey string, detections []media.DetectionResult, taskErr error) error {
 	status, errStr := taskResult(taskErr)
 	if taskErr != nil {
 		detections = nil
 	}
 
 	return r.DB.Transaction(func(tx *gorm.DB) error {
+		if err := applyResult(tx, originalPath, objectKey, map[string]interface{}{
+			"detection_status":       status,
+			"detection_processed_at": time.Now().Unix(),
+			"detection_error":        errStr,
+		}); err != nil {
+			return err
+		}
+
 		var oldFaceIDs []uint
 		if err := tx.Unscoped().Model(&models.Face{}).
 			Where("image_path = ? AND person_id IS NULL", originalPath).Pluck("id", &oldFaceIDs).Error; err != nil {
@@ -192,7 +235,7 @@ func (r *ImageRepository) UpdateDetectionResult(originalPath string, detections 
 				for _, det := range detections {
 					overlapsTagged := false
 					for _, tf := range taggedFaces {
-						if boxIoU(det.X, det.Y, det.X+det.W, det.Y+det.H, tf.X1, tf.Y1, tf.X2, tf.Y2) > 0.5 {
+						if boxIoU(det.X, det.Y, det.X+det.W, det.Y+det.H, tf.X1, tf.Y1, tf.X2, tf.Y2) > taggedFaceOverlapIoU {
 							overlapsTagged = true
 							break
 						}
@@ -242,14 +285,9 @@ func (r *ImageRepository) UpdateDetectionResult(originalPath string, detections 
 					return fmt.Errorf("failed to create face embedding for face %d: %w", newFaces[i].ID, err)
 				}
 			}
-			log.Printf("repository: stored %d face(s) for %s", len(newFaces), originalPath)
 		}
 
-		return tx.Model(&models.Image{}).Where("original_path = ?", originalPath).Updates(map[string]interface{}{
-			"detection_status":       status,
-			"detection_processed_at": time.Now().Unix(),
-			"detection_error":        errStr,
-		}).Error
+		return nil
 	})
 }
 

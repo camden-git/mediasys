@@ -68,10 +68,13 @@ type ImageRepositoryInterface interface {
 	GetByPath(originalPath string) (*models.Image, error)
 	Upsert(img *models.Image) (*models.Image, error)
 	MarkTaskProcessing(originalPath, taskStatusColumn string) error
-	UpdateThumbnailResult(originalPath string, thumbKey *string, taskErr error) error
-	UpdatePreviewResult(originalPath string, previewKey *string, taskErr error) error
-	UpdateMetadataResult(originalPath string, meta *media.Metadata, taskErr error) error
-	UpdateDetectionResult(originalPath string, detections []media.DetectionResult, taskErr error) error
+	// Update*Result apply a task outcome only while the image still has the given
+	// object key, returning ErrStaleImage when it was deleted or re-uploaded.
+	UpdateThumbnailResult(originalPath, objectKey string, thumbKey *string, taskErr error) error
+	UpdatePreviewResult(originalPath, objectKey string, previewKey *string, taskErr error) error
+	UpdateMetadataResult(originalPath, objectKey string, meta *media.Metadata, taskErr error) error
+	UpdateDetectionResult(originalPath, objectKey string, detections []media.DetectionResult, taskErr error) error
+	MarkTaskError(originalPath, objectKey, taskStatusColumn string, taskErr error) error
 	RequeueTask(originalPath, taskStatusColumn string) error
 	ResetInterruptedTasks() error
 	ListPendingProcessing(limit int) ([]models.Image, error)

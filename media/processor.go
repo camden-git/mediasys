@@ -205,3 +205,13 @@ func (p *Processor) ProcessBanner(fileData io.Reader) (string, error) {
 	}
 	return key, nil
 }
+
+// CheckImageFile rejects an image file over the pixel cap without decoding it.
+func CheckImageFile(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return checkDimensions(f)
+}
