@@ -78,6 +78,23 @@ func (r *GormCollectionRepository) GetBanners(collectionID uint) ([]models.Colle
 	return banners, err
 }
 
+// GetBannersByCollectionIDs returns the banners of the given collections in one
+// query, each list ordered by sort_order.
+func (r *GormCollectionRepository) GetBannersByCollectionIDs(collectionIDs []uint) (map[uint][]models.CollectionBanner, error) {
+	out := make(map[uint][]models.CollectionBanner, len(collectionIDs))
+	if len(collectionIDs) == 0 {
+		return out, nil
+	}
+	var banners []models.CollectionBanner
+	if err := r.db.Where("collection_id IN ?", collectionIDs).Order("sort_order ASC, id ASC").Find(&banners).Error; err != nil {
+		return nil, err
+	}
+	for _, b := range banners {
+		out[b.CollectionID] = append(out[b.CollectionID], b)
+	}
+	return out, nil
+}
+
 // AddBanner inserts a new banner for a collection.
 func (r *GormCollectionRepository) AddBanner(banner *models.CollectionBanner) error {
 	banner.CreatedAt = time.Now().Unix()

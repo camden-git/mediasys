@@ -193,6 +193,8 @@ type CollectionRepositoryInterface interface {
 	// total number of matching images.
 	ListImages(collectionID uint, sortOrder string, offset, limit int) ([]models.Image, int, error)
 	GetBanners(collectionID uint) ([]models.CollectionBanner, error)
+	// GetBannersByCollectionIDs loads the banners of many collections in one query, keyed by collection ID.
+	GetBannersByCollectionIDs(collectionIDs []uint) (map[uint][]models.CollectionBanner, error)
 	AddBanner(banner *models.CollectionBanner) error
 	DeleteCollectionBanner(bannerID uint, collectionID uint) error
 	ReorderCollectionBanners(collectionID uint, orderedIDs []uint) error

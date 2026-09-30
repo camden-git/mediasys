@@ -33,13 +33,24 @@ type collectionPublicResponse struct {
 	UpdatedAt                int64                        `json:"updated_at"`
 }
 
-func (h *CollectionHandler) buildPublicResponse(c *models.Collection) *collectionPublicResponse {
+// buildPublicResponse builds the public view of a collection. preloaded, when
+// non-nil, holds the collection's own banners (batch-loaded by the caller).
+func (h *CollectionHandler) buildPublicResponse(c *models.Collection, preloaded []models.CollectionBanner) *collectionPublicResponse {
 	var bannerPaths []string
 	if c.InheritBannersFromAlbums {
-		inherited, _ := h.CollectionRepo.GetInheritedBannerPaths(c.ID)
+		inherited, err := h.CollectionRepo.GetInheritedBannerPaths(c.ID)
+		if err != nil {
+			log.Printf("Error loading inherited banners for collection %d: %v", c.ID, err)
+		}
 		bannerPaths = inherited
 	} else {
-		banners, _ := h.CollectionRepo.GetBanners(c.ID)
+		banners := preloaded
+		if banners == nil {
+			var err error
+			if banners, err = h.CollectionRepo.GetBanners(c.ID); err != nil {
+				log.Printf("Error loading banners for collection %d: %v", c.ID, err)
+			}
+		}
 		bannerPaths = make([]string, 0, len(banners))
 		for _, b := range banners {
 			bannerPaths = append(bannerPaths, b.ImagePath)
@@ -72,10 +83,23 @@ func (h *CollectionHandler) ListCollections(w http.ResponseWriter, r *http.Reque
 		WriteAPIError(w, http.StatusInternalServerError, "CollectionListError", "Failed to retrieve collections")
 		return
 	}
+	ids := make([]uint, len(collections))
+	for i := range collections {
+		ids[i] = collections[i].ID
+	}
+	bannersByID, err := h.CollectionRepo.GetBannersByCollectionIDs(ids)
+	if err != nil {
+		log.Printf("Error loading banners for public collections: %v", err)
+		WriteAPIError(w, http.StatusInternalServerError, "CollectionListError", "Failed to retrieve collections")
+		return
+	}
 	result := make([]*collectionPublicResponse, len(collections))
-	for i, c := range collections {
-		c := c
-		result[i] = h.buildPublicResponse(&c)
+	for i := range collections {
+		banners := bannersByID[collections[i].ID]
+		if banners == nil {
+			banners = []models.CollectionBanner{}
+		}
+		result[i] = h.buildPublicResponse(&collections[i], banners)
 	}
 	setCacheHeaders(w, 300)
 	WriteAPIResponse(w, http.StatusOK, result)
@@ -95,7 +119,7 @@ func (h *CollectionHandler) GetCollection(w http.ResponseWriter, r *http.Request
 		return
 	}
 	setCacheHeaders(w, 300)
-	WriteAPIResponse(w, http.StatusOK, h.buildPublicResponse(c))
+	WriteAPIResponse(w, http.StatusOK, h.buildPublicResponse(c, nil))
 }
 
 // GetCollectionPhotos returns paginated images matching a collection's tag filters.

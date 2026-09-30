@@ -79,11 +79,19 @@ func (h *AdminCollectionHandler) ListCollections(w http.ResponseWriter, r *http.
 		WriteAPIError(w, http.StatusInternalServerError, "CollectionListError", "Failed to retrieve collections")
 		return
 	}
+	ids := make([]uint, len(collections))
+	for i := range collections {
+		ids[i] = collections[i].ID
+	}
+	bannersByID, err := h.CollectionRepo.GetBannersByCollectionIDs(ids)
+	if err != nil {
+		log.Printf("Error loading banners for collection list: %v", err)
+		WriteAPIError(w, http.StatusInternalServerError, "CollectionListError", "Failed to retrieve collections")
+		return
+	}
 	result := make([]*adminCollectionResponse, len(collections))
-	for i, c := range collections {
-		banners, _ := h.CollectionRepo.GetBanners(c.ID)
-		c := c
-		result[i] = buildCollectionAdminResponse(&c, banners)
+	for i := range collections {
+		result[i] = buildCollectionAdminResponse(&collections[i], bannersByID[collections[i].ID])
 	}
 	WriteAPIResponse(w, http.StatusOK, result)
 }
