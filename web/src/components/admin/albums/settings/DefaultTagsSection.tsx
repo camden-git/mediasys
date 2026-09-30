@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import { AlbumDefaultTag } from '../../../../types';
 import { useAlbumId } from '../../../../store/albumContextHooks';
 import { getAlbumDefaultTags, setAlbumDefaultTags } from '../../../../api/admin/imageTags';
@@ -18,15 +18,20 @@ export function DefaultTagsSection() {
     const [newKey, setNewKey] = useState('');
     const [newValue, setNewValue] = useState('');
     const [isSaving, setIsSaving] = useState(false);
+    // Saving replaces the whole tag set, so it must never run before the current tags loaded successfully
+    const [isLoaded, setIsLoaded] = useState(false);
+    const [loadError, setLoadError] = useState<string | null>(null);
     const { clearFlashes, clearAndAddHttpError, addFlash } = useFlash();
 
     const fetchTags = useCallback(async () => {
         if (!id) return;
+        setLoadError(null);
         try {
             const data = await getAlbumDefaultTags(id);
             setTags(data);
-        } catch {
-            // silently ignore initial fetch errors
+            setIsLoaded(true);
+        } catch (error: any) {
+            setLoadError(error?.message || 'Failed to load default tags.');
         }
     }, [id]);
 
@@ -51,6 +56,7 @@ export function DefaultTagsSection() {
     };
 
     const save = async () => {
+        if (!isLoaded) return;
         clearFlashes('default-tags');
         setIsSaving(true);
         try {
@@ -74,19 +80,32 @@ export function DefaultTagsSection() {
             className={'mt-16 pb-8'}
         >
             <FlashMessageRender byKey='default-tags' />
+            {loadError && (
+                <div role='alert' className='mb-4 flex items-center gap-3 text-sm text-red-600'>
+                    <span>Could not load default tags: {loadError}</span>
+                    <Button type='button' plain onClick={fetchTags}>
+                        Retry
+                    </Button>
+                </div>
+            )}
 
             {tags.length > 0 ? (
                 <DescriptionList>
                     {tags.map((t, idx) => (
-                        <>
+                        <Fragment key={`${t.tag_key}\u0000${t.tag_value}`}>
                             <DescriptionTerm>{t.tag_key}</DescriptionTerm>
                             <DescriptionDetails>
                                 {t.tag_value}
-                                <Button type='button' plain onClick={() => removeTag(idx)} aria-label='Remove tag'>
+                                <Button
+                                    type='button'
+                                    plain
+                                    onClick={() => removeTag(idx)}
+                                    aria-label={`Remove tag ${t.tag_key}: ${t.tag_value}`}
+                                >
                                     <TrashIcon className='size-4' />
                                 </Button>
                             </DescriptionDetails>
-                        </>
+                        </Fragment>
                     ))}
                 </DescriptionList>
             ) : (
@@ -115,13 +134,13 @@ export function DefaultTagsSection() {
                         />
                     </Field>
                 </div>
-                <Button type='button' onClick={addTag} plain>
+                <Button type='button' onClick={addTag} plain aria-label='Add tag'>
                     <PlusIcon className='size-4' />
                 </Button>
             </FieldGroup>
 
             <div className='mt-4 flex justify-end'>
-                <Button onClick={save} disabled={isSaving}>
+                <Button onClick={save} disabled={isSaving || !isLoaded}>
                     {isSaving ? 'Saving...' : 'Save Default Tags'}
                 </Button>
             </div>
