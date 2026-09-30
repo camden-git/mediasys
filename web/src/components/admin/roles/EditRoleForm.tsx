@@ -29,7 +29,7 @@ const EditRoleForm: React.FC<EditRoleFormProps> = ({ isOpen, onClose, role }) =>
                 name: role.name,
                 global_permissions: role.global_permissions || [],
                 global_album_permissions: role.global_album_permissions || [],
-                album_permissions: role.album_permissions.map((ap) => ({
+                album_permissions: (role.album_permissions ?? []).map((ap) => ({
                     id: ap.id,
                     album_id: ap.album_id,
                     permissions: ap.permissions || [],

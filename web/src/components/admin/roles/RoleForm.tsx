@@ -15,12 +15,20 @@ const RoleSchema = Yup.object().shape({
     name: Yup.string().required('Role name is required.'),
     global_permissions: Yup.array().of(Yup.string()),
     global_album_permissions: Yup.array().of(Yup.string()),
-    album_permissions: Yup.array().of(
-        Yup.object().shape({
-            album_id: Yup.number().required('Album selection is required.'),
-            permissions: Yup.array().of(Yup.string()).min(1, 'At least one permission is required for an album rule.'),
+    album_permissions: Yup.array()
+        .of(
+            Yup.object().shape({
+                // 0 is the "nothing selected" placeholder, which required() alone lets through
+                album_id: Yup.number().required('Album selection is required.').min(1, 'Album selection is required.'),
+                permissions: Yup.array()
+                    .of(Yup.string())
+                    .min(1, 'At least one permission is required for an album rule.'),
+            }),
+        )
+        .test('unique-albums', 'Each album can only have one rule.', (rules) => {
+            const ids = (rules ?? []).map((r) => r?.album_id).filter((id) => !!id);
+            return new Set(ids).size === ids.length;
         }),
-    ),
 });
 
 export interface RoleFormValues {
@@ -132,7 +140,7 @@ const RoleForm: React.FC<RoleFormProps> = ({
                     }
                 }}
             >
-                {({ values, handleChange, handleBlur, setFieldValue }) => (
+                {({ values, errors, handleChange, handleBlur, setFieldValue }) => (
                     <Form>
                         <DialogTitle>{title}</DialogTitle>
                         <DialogDescription>{description}</DialogDescription>
@@ -170,9 +178,9 @@ const RoleForm: React.FC<RoleFormProps> = ({
                                         {globalPermissionsOptions.map((perm) => (
                                             <CheckboxField key={perm.key}>
                                                 <Checkbox
-                                                    checked={values.global_permissions.includes(perm.key)}
+                                                    checked={(values.global_permissions ?? []).includes(perm.key)}
                                                     onChange={(checked) => {
-                                                        const current = values.global_permissions;
+                                                        const current = values.global_permissions ?? [];
                                                         setFieldValue(
                                                             'global_permissions',
                                                             checked
@@ -199,9 +207,9 @@ const RoleForm: React.FC<RoleFormProps> = ({
                                         {albumPermissionsOptions.map((perm) => (
                                             <CheckboxField key={perm.key}>
                                                 <Checkbox
-                                                    checked={values.global_album_permissions.includes(perm.key)}
+                                                    checked={(values.global_album_permissions ?? []).includes(perm.key)}
                                                     onChange={(checked) => {
-                                                        const current = values.global_album_permissions;
+                                                        const current = values.global_album_permissions ?? [];
                                                         setFieldValue(
                                                             'global_album_permissions',
                                                             checked
@@ -227,7 +235,10 @@ const RoleForm: React.FC<RoleFormProps> = ({
                                     <FieldArray name='album_permissions'>
                                         {({ push, remove }) => (
                                             <div className='mt-2 space-y-4'>
-                                                {values.album_permissions.map((ap, index) => (
+                                                {typeof errors.album_permissions === 'string' && (
+                                                    <FieldErrorMessage>{errors.album_permissions}</FieldErrorMessage>
+                                                )}
+                                                {(values.album_permissions ?? []).map((ap, index) => (
                                                     <div
                                                         key={index}
                                                         className='space-y-3 rounded-md border bg-gray-50 p-3 dark:bg-zinc-800/50'
@@ -281,6 +292,13 @@ const RoleForm: React.FC<RoleFormProps> = ({
                                                                         <option
                                                                             key={album.id}
                                                                             value={album.id.toString()}
+                                                                            disabled={(
+                                                                                values.album_permissions ?? []
+                                                                            ).some(
+                                                                                (other, otherIndex) =>
+                                                                                    otherIndex !== index &&
+                                                                                    other.album_id === album.id,
+                                                                            )}
                                                                         >
                                                                             {album.name} (ID: {album.id})
                                                                         </option>
@@ -297,9 +315,11 @@ const RoleForm: React.FC<RoleFormProps> = ({
                                                                 {albumPermissionsOptions.map((perm) => (
                                                                     <CheckboxField key={perm.key}>
                                                                         <Checkbox
-                                                                            checked={ap.permissions.includes(perm.key)}
+                                                                            checked={(ap.permissions ?? []).includes(
+                                                                                perm.key,
+                                                                            )}
                                                                             onChange={(checked) => {
-                                                                                const current = ap.permissions;
+                                                                                const current = ap.permissions ?? [];
                                                                                 setFieldValue(
                                                                                     `album_permissions.${index}.permissions`,
                                                                                     checked
