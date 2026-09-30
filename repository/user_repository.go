@@ -3,6 +3,7 @@ package repository
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/camden-git/mediasysbackend/models"
 	"gorm.io/gorm"
@@ -12,6 +13,10 @@ import (
 // ErrSetupAlreadyCompleted is returned by CreateFirstAdmin when a user
 // already exists, meaning initial setup has already been completed.
 var ErrSetupAlreadyCompleted = errors.New("setup already completed")
+
+// ErrInviteCodeInvalid is returned by CreateWithInviteCode when the invite code
+// does not exist, is inactive or expired, or has no uses left.
+var ErrInviteCodeInvalid = errors.New("invite code is invalid, expired, or exhausted")
 
 type GormUserRepository struct {
 	db *gorm.DB
@@ -83,6 +88,24 @@ func (r *GormUserRepository) hydrateUsersWithAlbumPermissions(users []models.Use
 
 func (r *GormUserRepository) Create(user *models.User) error {
 	return r.db.Create(user).Error
+}
+
+// CreateWithInviteCode claims one use of the invite code and creates the user in a
+// single transaction. The claim is a conditional UPDATE, so concurrent registrations
+// cannot exceed max_uses. Returns ErrInviteCodeInvalid if the code cannot be claimed.
+func (r *GormUserRepository) CreateWithInviteCode(user *models.User, code string) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		res := tx.Model(&models.InviteCode{}).
+			Where("code = ? AND is_active = ? AND (expires_at IS NULL OR expires_at > ?) AND (max_uses IS NULL OR uses < max_uses)", code, true, time.Now()).
+			UpdateColumn("uses", gorm.Expr("uses + 1"))
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return ErrInviteCodeInvalid
+		}
+		return tx.Create(user).Error
+	})
 }
 
 func (r *GormUserRepository) GetByID(id uint) (*models.User, error) {

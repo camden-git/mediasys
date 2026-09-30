@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -181,6 +182,33 @@ func getClientIP(r *http.Request) string {
 	return hostPort
 }
 
+const (
+	minPasswordLength = 8
+	maxPasswordBytes  = 72 // bcrypt ignores or rejects anything longer
+)
+
+// passwordPolicyError returns a validation message if the password is unacceptable, or "" if it is fine.
+func passwordPolicyError(password string) string {
+	if len(password) < minPasswordLength {
+		return fmt.Sprintf("Password must be at least %d characters", minPasswordLength)
+	}
+	if len(password) > maxPasswordBytes {
+		return fmt.Sprintf("Password must be at most %d bytes", maxPasswordBytes)
+	}
+	return ""
+}
+
+// writeUserPersistenceError writes a 409 for duplicate usernames and a generic 500 otherwise,
+// without leaking raw database errors to the client.
+func writeUserPersistenceError(w http.ResponseWriter, err error, action string) {
+	if repository.IsUniqueViolation(err) {
+		WriteAPIError(w, http.StatusConflict, "UsernameTaken", "That username is already taken")
+		return
+	}
+	log.Printf("%s: %v", action, err)
+	WriteAPIError(w, http.StatusInternalServerError, "PersistenceException", action)
+}
+
 type RegisterPayload struct {
 	Username   string `json:"username"`
 	Password   string `json:"password"`
@@ -202,14 +230,12 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	inviteCode, err := h.InviteCodeRepo.GetByCode(payload.InviteCode)
-	if err != nil {
-		WriteAPIError(w, http.StatusForbidden, "InviteCodeException", "Invalid or expired invite code")
+	if strings.TrimSpace(payload.Username) == "" {
+		WriteAPIError(w, http.StatusBadRequest, "ValidationException", "Username cannot be empty")
 		return
 	}
-
-	if !inviteCode.IsValid() {
-		WriteAPIError(w, http.StatusForbidden, "InviteCodeException", "Invite code is not valid (expired, inactive, or max uses reached)")
+	if msg := passwordPolicyError(payload.Password); msg != "" {
+		WriteAPIError(w, http.StatusBadRequest, "ValidationException", msg)
 		return
 	}
 
@@ -224,17 +250,14 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.UserRepo.Create(newUser); err != nil {
-		WriteAPIError(w, http.StatusInternalServerError, "PersistenceException", "Failed to create user: "+err.Error())
+	if err := h.UserRepo.CreateWithInviteCode(newUser, payload.InviteCode); err != nil {
+		if errors.Is(err, repository.ErrInviteCodeInvalid) {
+			WriteAPIError(w, http.StatusForbidden, "InviteCodeException", "Invalid or expired invite code")
+			return
+		}
+		writeUserPersistenceError(w, err, "Failed to create user")
 		return
 	}
-
-	if err := h.InviteCodeRepo.IncrementUses(inviteCode.ID); err != nil {
-		log.Printf("CRITICAL: User %s created but failed to increment uses for invite code %s (ID: %d): %v", newUser.Username, inviteCode.Code, inviteCode.ID, err)
-	}
-
-	// TODO: deactivate invite code if it reached max uses after this increment
-	// this requires fetching the code again to check current uses vs max_uses
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -262,7 +285,16 @@ func (h *AuthHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if payload.Username != nil && strings.TrimSpace(*payload.Username) == "" {
+		WriteAPIError(w, http.StatusBadRequest, "ValidationException", "Username cannot be empty")
+		return
+	}
+
 	if payload.NewPassword != nil {
+		if msg := passwordPolicyError(*payload.NewPassword); msg != "" {
+			WriteAPIError(w, http.StatusBadRequest, "ValidationException", msg)
+			return
+		}
 		if payload.CurrentPassword == nil || *payload.CurrentPassword == "" {
 			WriteAPIError(w, http.StatusBadRequest, "ValidationException", "current_password is required to set a new password")
 			return
@@ -289,13 +321,11 @@ func (h *AuthHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.UserRepo.Update(user); err != nil {
-		WriteAPIError(w, http.StatusInternalServerError, "PersistenceException", "Failed to update profile: "+err.Error())
+		writeUserPersistenceError(w, err, "Failed to update profile")
 		return
 	}
 
-	userForResponse := *user
-	userForResponse.PasswordHash = ""
-	WriteAPIResponse(w, http.StatusOK, userForResponse)
+	WriteAPIResponse(w, http.StatusOK, *user)
 }
 
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
